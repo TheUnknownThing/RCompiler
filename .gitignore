@@ -1,0 +1,55 @@
+# Build directories
+build/
+bin/
+lib/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Object files
+*.o
+*.obj
+
+# Executables
+*.exe
+*.out
+rcompiler
+unit_tests
+integration_tests
+
+# LLVM IR files
+*.ll
+*.bc
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Test output
+test_output/
+coverage/
+
+# Dependencies
+third_party/llvm/ 
