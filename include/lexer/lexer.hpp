@@ -76,6 +76,7 @@ enum class TokenType {
   RAW_IDENTIFIER,
   RESERVED_RAW_IDENTIFIER,
 
+  // literals
   FLOAT_LITERAL,
   CHAR_LITERAL,
   INTEGER_LITERAL,
@@ -86,6 +87,7 @@ enum class TokenType {
   C_STRING_LITERAL,
   RAW_C_STRING_LITERAL,
 
+  // operators
   ASSIGN,    // =
   PLUS,      // +
   MINUS,     // -
@@ -114,6 +116,8 @@ enum class TokenType {
 
 static std::map<TokenType, std::string> tokenTypeToRegex = {
     {TokenType::TOK_EOF, R"(\s*EOF\s*)"},
+
+    // Strict keywords
     {TokenType::AS, R"(\s*as\s*)"},
     {TokenType::BREAK, R"(\s*break\s*)"},
     {TokenType::CONST, R"(\s*const\s*)"},
@@ -152,6 +156,8 @@ static std::map<TokenType, std::string> tokenTypeToRegex = {
     {TokenType::ASYNC, R"(\s*async\s*)"},
     {TokenType::AWAIT, R"(\s*await\s*)"},
     {TokenType::DYN, R"(\s*dyn\s*)"},
+
+    // Reserved keywords
     {TokenType::ABSTRACT, R"(\s*abstract\s*)"},
     {TokenType::BECOME, R"(\s*become\s*)"},
     {TokenType::BOX, R"(\s*box\s*)"},
@@ -166,15 +172,21 @@ static std::map<TokenType, std::string> tokenTypeToRegex = {
     {TokenType::YIELD, R"(\s*yield\s*)"},
     {TokenType::TRY, R"(\s*try\s*)"},
     {TokenType::GEN, R"(\s*gen\s*)"},
+
+    // Weak keywords
     {TokenType::STATIC_LIFETIME, R"(\s*'static\s*)"},
     {TokenType::MACRO_RULES, R"(\s*macro_rules\s*)"},
     {TokenType::RAW, R"(\s*raw\s*)"},
     {TokenType::SAFE, R"(\s*safe\s*)"},
     {TokenType::UNION, R"(\s*union\s*)"},
+
+    // identifiers
     {TokenType::NON_KEYWORD_IDENTIFIER, R"(\s*[a-zA-Z_][a-zA-Z0-9_]*\b)"},
     {TokenType::RAW_IDENTIFIER, R"(\s*r#?[a-zA-Z_][a-zA-Z0-9_]*\b)"},
     {TokenType::RESERVED_RAW_IDENTIFIER,
      R"(\s*r#?self\b|\s*r#?Self\b|\s*r#?super\b)"},
+
+    // literals
     {TokenType::FLOAT_LITERAL, R"(\s*\d+\.\d+([eE][+-]?\d+)?\b)"},
     {TokenType::CHAR_LITERAL, R"(\s*'([^'\\]|\\.)'\b)"},
     {TokenType::INTEGER_LITERAL, R"(\s*\d+\b)"},
@@ -184,6 +196,8 @@ static std::map<TokenType, std::string> tokenTypeToRegex = {
     {TokenType::RAW_BYTE_LITERAL, R"(\s*br'([^'\\]|\\.)*'\b)"},
     {TokenType::C_STRING_LITERAL, R"(\s*c"([^"\\]|\\.)*"\b)"},
     {TokenType::RAW_C_STRING_LITERAL, R"(\s*cr"([^"\\]|\\.)*"\b)"},
+
+    // operators
     {TokenType::ASSIGN, R"(\s*=\s*)"},
     {TokenType::PLUS, R"(\s*\+\s*)"},
     {TokenType::MINUS, R"(\s*-\s*)"},
@@ -205,6 +219,7 @@ static std::map<TokenType, std::string> tokenTypeToRegex = {
     {TokenType::SEMICOLON, R"(\s*;\s*)"},
     {TokenType::QUESTION, R"(\s*\?\s*)"},
     {TokenType::COLON_COLON, R"(\s*:\:\s*)"},
+
     {TokenType::UNKNOWN, R"(\S+)"}};
 
 struct Token {

@@ -28,6 +28,7 @@ pub mod nested_comments {
     let e = "/* not a /* nested */ comment */";
     let f = "///";
     let g = "\\\" /* this is not a comment */
+
     \"";
     let h = "\\"; // this is a comment /////*"
     let i = 12/*this should not pass compilation*/13;

@@ -2,7 +2,7 @@
 #include <assert.h>
 
 int main() {
-  rc::Preprocessor p("../../examples/comments.rs");
+  rc::Preprocessor p("../../examples/preprocessor/comments.rs");
   auto processed_lines = p.preprocess();
 
   auto standard_output = R"(pub mod nested_comments {
@@ -13,6 +13,7 @@ let d = "*/";
 let e = "/* not a /* nested */ comment */";
 let f = "///";
 let g = "\\\" /* this is not a comment */
+
 \"";
 let h = "\\";
 let i = 12 13;

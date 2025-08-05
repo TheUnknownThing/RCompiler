@@ -120,11 +120,38 @@ inline std::vector<std::string> Preprocessor::preprocess() {
                line.end());
   }
 
-  processed_lines.erase(
-      std::remove_if(processed_lines.begin(), processed_lines.end(),
-                     [](const std::string &line) { return line.empty(); }),
-      processed_lines.end());
+  std::vector<std::string> final_lines;
+  bool in_multiline_string = false;
 
-  return processed_lines;
+  for (const std::string &line : processed_lines) {
+    bool line_has_string = false;
+    bool escaped = false;
+    int quote_count = 0;
+
+    for (char c : line) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (c == '\\') {
+        escaped = true;
+        continue;
+      }
+      if (c == '"') {
+        quote_count++;
+        line_has_string = true;
+      }
+    }
+
+    if (line_has_string && quote_count % 2 == 1) {
+      in_multiline_string = !in_multiline_string;
+    }
+
+    if (!line.empty() || in_multiline_string) {
+      final_lines.push_back(line);
+    }
+  }
+
+  return final_lines;
 }
 } // namespace rc
