@@ -192,6 +192,100 @@ inline void Lexer::firstPass() {
       continue;
     }
 
+    // raw string
+    if (i + 1 < n && (c == 'r' || (i + 2 < n && (c == 'b' || c == 'c') &&
+                                   source[i + 1] == 'r'))) {
+      TokenType tokenType = TokenType::STRING_LITERAL;
+      size_t prefixLen = 1;
+
+      if (c == 'b') {
+        tokenType = TokenType::BYTE_STRING_LITERAL;
+        prefixLen = 2;
+      } else if (c == 'c') {
+        tokenType = TokenType::C_STRING_LITERAL;
+        prefixLen = 2;
+      }
+
+      size_t hashCount = 0;
+      size_t pos = i + prefixLen;
+
+      while (pos < n && source[pos] == '#') {
+        ++hashCount;
+        ++pos;
+      }
+
+      if (pos < n && source[pos] == '"') {
+        std::size_t beg = i;
+        i = pos + 1;
+
+        while (i < n) {
+          if (source[i] == '"') {
+            bool closingMatch = true;
+            for (size_t j = 0; j < hashCount; ++j) {
+              if (i + 1 + j >= n || source[i + 1 + j] != '#') {
+                closingMatch = false;
+                break;
+              }
+            }
+
+            if (closingMatch) {
+              i = i + 1 + hashCount;
+              push(tokenType, beg, i);
+              break;
+            }
+          }
+          ++i;
+        }
+        continue;
+      }
+    }
+
+    if (i + 1 < n && (c == 'b' || c == 'c')) {
+      char next = source[i + 1];
+
+      if (c == 'b' && next == '\'') {
+        std::size_t beg = i;
+        i += 2;
+        bool escaped = false;
+        while (i < n) {
+          char d = source[i++];
+          if (!escaped && d == '\'')
+            break;
+          escaped = (!escaped && d == '\\');
+        }
+        push(TokenType::BYTE_LITERAL, beg, i);
+        continue;
+      }
+
+      if (c == 'b' && next == '"') {
+        std::size_t beg = i;
+        i += 2;
+        bool escaped = false;
+        while (i < n) {
+          char d = source[i++];
+          if (!escaped && d == '"')
+            break;
+          escaped = (!escaped && d == '\\');
+        }
+        push(TokenType::BYTE_STRING_LITERAL, beg, i);
+        continue;
+      }
+
+      if (c == 'c' && next == '"') {
+        std::size_t beg = i;
+        i += 2;
+        bool escaped = false;
+        while (i < n) {
+          char d = source[i++];
+          if (!escaped && d == '"')
+            break;
+          escaped = (!escaped && d == '\\');
+        }
+        push(TokenType::C_STRING_LITERAL, beg, i);
+        continue;
+      }
+    }
+
     // string literal
     if (c == '"') {
       std::size_t beg = i++;
@@ -298,11 +392,12 @@ inline void Lexer::verifyIntegerLiteral() {
   for (const auto &tok : tokens) {
     if (tok.type == TokenType::INTEGER_LITERAL) {
       // Check if the integer literal is valid
-      std::regex intRegex(R"((\b(?:0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|\d+)(?:(i32)?|(isize)?|(u32)?|(usize)?)\b))");
+      std::regex intRegex(
+          R"((\b(?:0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|\d+)(?:(i32)?|(isize)?|(u32)?|(usize)?)\b))");
       if (!std::regex_match(tok.lexeme, intRegex)) {
-        throw std::runtime_error(
-            "Compile Error: Invalid integer literal '" + tok.lexeme +
-            "' at position " + std::to_string(tok.lexeme.size()));
+        throw std::runtime_error("Compile Error: Invalid integer literal '" +
+                                 tok.lexeme + "' at position " +
+                                 std::to_string(tok.lexeme.size()));
       }
     }
   }
