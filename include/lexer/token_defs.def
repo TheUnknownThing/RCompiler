@@ -1,0 +1,126 @@
+X(TOK_EOF, "TOK_EOF") // End of file
+
+// Strict keywords
+X(AS, "AS")           // as
+X(BREAK, "BREAK")       // break
+X(CONST, "CONST")       // const
+X(CONTINUE, "CONTINUE")   // continue
+X(CRATE, "CRATE")       // crate
+X(ELSE, "ELSE")         // else
+X(ENUM, "ENUM")         // enum
+X(EXTERN, "EXTERN")     // extern
+X(FALSE, "FALSE")       // false
+X(FN, "FN")           // fn
+X(FOR, "FOR")         // for
+X(IF, "IF")           // if
+X(IMPL, "IMPL")         // impl
+X(IN, "IN")           // in
+X(LET, "LET")         // let
+X(LOOP, "LOOP")         // loop
+X(MATCH, "MATCH")       // match
+X(MOD, "MOD")         // mod
+X(MOVE, "MOVE")         // move
+X(MUT, "MUT")         // mut
+X(PUB, "PUB")         // pub
+X(REF, "REF")         // ref
+X(RETURN, "RETURN")     // return
+X(SELF, "SELF")         // self
+X(SELF_TYPE, "SELF_TYPE") // Self
+X(STATIC, "STATIC")     // static
+X(STRUCT, "STRUCT")     // struct
+X(SUPER, "SUPER")       // super
+X(TRAIT, "TRAIT")       // trait
+X(TRUE, "TRUE")         // true
+X(TYPE, "TYPE")         // type
+X(UNSAFE, "UNSAFE")     // unsafe
+X(USE, "USE")         // use
+X(WHERE, "WHERE")       // where
+X(WHILE, "WHILE")       // while
+X(ASYNC, "ASYNC")       // async
+X(AWAIT, "AWAIT")       // await
+X(DYN, "DYN")         // dyn
+
+// Reserved keywords
+X(ABSTRACT, "ABSTRACT") // abstract
+X(BECOME, "BECOME")   // become
+X(BOX, "BOX")       // box
+X(DO, "DO")         // do
+X(FINAL, "FINAL")     // final
+X(MACRO, "MACRO")     // macro
+X(OVERRIDE, "OVERRIDE") // override
+X(PRIV, "PRIV")       // priv
+X(TYPEOF, "TYPEOF")   // typeof
+X(UNSIZED, "UNSIZED")   // unsized
+X(VIRTUAL, "VIRTUAL")   // virtual
+X(YIELD, "YIELD")     // yield
+X(TRY, "TRY")       // try
+X(GEN, "GEN")       // gen
+
+// Weak keywords
+X(STATIC_LIFETIME, "STATIC_LIFETIME") // 'static
+X(MACRO_RULES, "MACRO_RULES")     // macro_rules
+X(RAW, "RAW")             // raw
+X(SAFE, "SAFE")            // safe
+X(UNION, "UNION")           // union
+
+// identifiers
+X(NON_KEYWORD_IDENTIFIER, "NON_KEYWORD_IDENTIFIER")
+
+// literals
+X(INTEGER_LITERAL, "INTEGER_LITERAL")
+X(CHAR_LITERAL, "CHAR_LITERAL")
+X(STRING_LITERAL, "STRING_LITERAL")
+X(C_STRING_LITERAL, "C_STRING_LITERAL")
+X(BYTE_STRING_LITERAL, "BYTE_STRING_LITERAL")
+X(BYTE_LITERAL, "BYTE_LITERAL")
+
+// operators
+X(SHL_EQ, "SHL_EQ")           // <<=
+X(SHR_EQ, "SHR_EQ")           // >>=
+X(COLON_COLON, "COLON_COLON")   // ::
+X(FAT_ARROW, "FAT_ARROW")       // =>
+X(ARROW, "ARROW")           // ->
+X(LE, "LE")               // <=
+X(GE, "GE")               // >=
+X(EQ, "EQ")               // ==
+X(NE, "NE")               // !=
+X(AND, "AND")             // &&
+X(OR, "OR")               // ||
+X(PLUS_EQ, "PLUS_EQ")         // +=
+X(MINUS_EQ, "MINUS_EQ")       // -=
+X(STAR_EQ, "STAR_EQ")         // *=
+X(SLASH_EQ, "SLASH_EQ")       // /=
+X(PERCENT_EQ, "PERCENT_EQ")     // %=
+X(AMPERSAND_EQ, "AMPERSAND_EQ") // &=
+X(PIPE_EQ, "PIPE_EQ")         // |=
+X(CARET_EQ, "CARET_EQ")       // ^=
+X(SHL, "SHL")             // <<
+X(SHR, "SHR")             // >>
+
+X(ASSIGN, "ASSIGN")       // =
+X(PLUS, "PLUS")           // +
+X(MINUS, "MINUS")         // -
+X(STAR, "STAR")           // *
+X(SLASH, "SLASH")         // /
+X(PERCENT, "PERCENT")       // %
+X(AMPERSAND, "AMPERSAND")     // &
+X(PIPE, "PIPE")           // |
+X(CARET, "CARET")         // ^
+X(NOT, "NOT")             // !
+X(QUESTION, "QUESTION")     // ?
+X(LT, "LT")               // <
+X(GT, "GT")               // >
+
+// punctuation
+X(L_PAREN, "L_PAREN")     // (
+X(R_PAREN, "R_PAREN")     // )
+X(L_BRACE, "L_BRACE")     // {
+X(R_BRACE, "R_BRACE")     // }
+X(L_BRACKET, "L_BRACKET")   // [
+X(R_BRACKET, "R_BRACKET")   // ]
+X(COMMA, "COMMA")         // ,
+X(DOT, "DOT")           // .
+X(COLON, "COLON")         // :
+X(SEMICOLON, "SEMICOLON")   // ;
+
+X(UNKNOWN, "UNKNOWN") // unknown
