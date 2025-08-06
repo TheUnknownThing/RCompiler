@@ -34,6 +34,7 @@ pub mod nested_comments {
     let i = 12/*this should not pass compilation*/13;
     let j = 12//; this should pass compilation
     ;
+    let k = "'//this is not a comment' '' // not a comment either";
 
     /* /* */ this is a fucking nested comment */
     // empty block comment

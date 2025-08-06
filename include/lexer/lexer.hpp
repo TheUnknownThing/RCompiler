@@ -2,6 +2,7 @@
 
 #include <regex>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace rc {
@@ -73,22 +74,30 @@ enum class TokenType {
 
   // identifiers
   NON_KEYWORD_IDENTIFIER,
-  RAW_IDENTIFIER,
-  RESERVED_RAW_IDENTIFIER,
 
   // literals
-  FLOAT_LITERAL,
-  CHAR_LITERAL,
   INTEGER_LITERAL,
+
+  CHAR_LITERAL,
   STRING_LITERAL,
-  RAW_STRING_LITERAL,
   C_STRING_LITERAL,
-  RAW_C_STRING_LITERAL,
   BYTE_STRING_LITERAL,
-  RAW_BYTE_STRING_LITERAL,
+  // RAW_STRING_LITERAL,
+  // RAW_C_STRING_LITERAL,
+  // RAW_BYTE_STRING_LITERAL,
   BYTE_LITERAL,
 
   // operators
+  COLON_COLON, // ::
+  FAT_ARROW,   // =>
+  ARROW,       // ->
+  LE,          // <=
+  GE,          // >=
+  EQ,          // ==
+  NE,          // !=
+  AND,         // &&
+  OR,          // ||
+
   ASSIGN,    // =
   PLUS,      // +
   MINUS,     // -
@@ -98,129 +107,136 @@ enum class TokenType {
   AMPERSAND, // &
   PIPE,      // |
   CARET,     // ^
+  NOT,       // !
+  QUESTION,  // ?
 
-  L_PAREN,     // (
-  R_PAREN,     // )
-  L_BRACE,     // {
-  R_BRACE,     // }
-  L_BRACKET,   // [
-  R_BRACKET,   // ]
-  COMMA,       // ,
-  DOT,         // .
-  COLON,       // :
-  SEMICOLON,   // ;
-  QUESTION,    // ?
-  COLON_COLON, // ::
+  L_PAREN,   // (
+  R_PAREN,   // )
+  L_BRACE,   // {
+  R_BRACE,   // }
+  L_BRACKET, // [
+  R_BRACKET, // ]
+  COMMA,     // ,
+  DOT,       // .
+  COLON,     // :
+  SEMICOLON, // ;
 
   UNKNOWN // unknown
 };
 
 static std::map<TokenType, std::string> tokenTypeToRegex = {
-    {TokenType::TOK_EOF, R"(\s*EOF\s*)"},
-
     // Strict keywords
-    {TokenType::AS, R"(\s*as\s*)"},
-    {TokenType::BREAK, R"(\s*break\s*)"},
-    {TokenType::CONST, R"(\s*const\s*)"},
-    {TokenType::CONTINUE, R"(\s*continue\s*)"},
-    {TokenType::CRATE, R"(\s*crate\s*)"},
-    {TokenType::ELSE, R"(\s*else\s*)"},
-    {TokenType::ENUM, R"(\s*enum\s*)"},
-    {TokenType::EXTERN, R"(\s*extern\s*)"},
-    {TokenType::FALSE, R"(\s*false\s*)"},
-    {TokenType::FN, R"(\s*fn\s*)"},
-    {TokenType::FOR, R"(\s*for\s*)"},
-    {TokenType::IF, R"(\s*if\s*)"},
-    {TokenType::IMPL, R"(\s*impl\s*)"},
-    {TokenType::IN, R"(\s*in\s*)"},
-    {TokenType::LET, R"(\s*let\s*)"},
-    {TokenType::LOOP, R"(\s*loop\s*)"},
-    {TokenType::MATCH, R"(\s*match\s*)"},
-    {TokenType::MOD, R"(\s*mod\s*)"},
-    {TokenType::MOVE, R"(\s*move\s*)"},
-    {TokenType::MUT, R"(\s*mut\s*)"},
-    {TokenType::PUB, R"(\s*pub\s*)"},
-    {TokenType::REF, R"(\s*ref\s*)"},
-    {TokenType::RETURN, R"(\s*return\s*)"},
-    {TokenType::SELF, R"(\s*self\s*)"},
-    {TokenType::SELF_TYPE, R"(\s*Self\s*)"},
-    {TokenType::STATIC, R"(\s*static\s*)"},
-    {TokenType::STRUCT, R"(\s*struct\s*)"},
-    {TokenType::SUPER, R"(\s*super\s*)"},
-    {TokenType::TRAIT, R"(\s*trait\s*)"},
-    {TokenType::TRUE, R"(\s*true\s*)"},
-    {TokenType::TYPE, R"(\s*type\s*)"},
-    {TokenType::UNSAFE, R"(\s*unsafe\s*)"},
-    {TokenType::USE, R"(\s*use\s*)"},
-    {TokenType::WHERE, R"(\s*where\s*)"},
-    {TokenType::WHILE, R"(\s*while\s*)"},
-    {TokenType::ASYNC, R"(\s*async\s*)"},
-    {TokenType::AWAIT, R"(\s*await\s*)"},
-    {TokenType::DYN, R"(\s*dyn\s*)"},
+    {TokenType::AS, R"(\bas\b)"},
+    {TokenType::BREAK, R"(\bbreak\b)"},
+    {TokenType::CONST, R"(\bconst\b)"},
+    {TokenType::CONTINUE, R"(\bcontinue\b)"},
+    {TokenType::CRATE, R"(\bcrate\b)"},
+    {TokenType::ELSE, R"(\belse\b)"},
+    {TokenType::ENUM, R"(\benum\b)"},
+    {TokenType::EXTERN, R"(\bextern\b)"},
+    {TokenType::FALSE, R"(\bfalse\b)"},
+    {TokenType::FN, R"(\bfn\b)"},
+    {TokenType::FOR, R"(\bfor\b)"},
+    {TokenType::IF, R"(\bif\b)"},
+    {TokenType::IMPL, R"(\bimpl\b)"},
+    {TokenType::IN, R"(\bin\b)"},
+    {TokenType::LET, R"(\blet\b)"},
+    {TokenType::LOOP, R"(\bloop\b)"},
+    {TokenType::MATCH, R"(\bmatch\b)"},
+    {TokenType::MOD, R"(\bmod\b)"},
+    {TokenType::MOVE, R"(\bmove\b)"},
+    {TokenType::MUT, R"(\bmut\b)"},
+    {TokenType::PUB, R"(\bpub\b)"},
+    {TokenType::REF, R"(\bref\b)"},
+    {TokenType::RETURN, R"(\breturn\b)"},
+    {TokenType::SELF, R"(\bself\b)"},
+    {TokenType::SELF_TYPE, R"(\bSelf\b)"},
+    {TokenType::STATIC, R"(\bstatic\b)"},
+    {TokenType::STRUCT, R"(\bstruct\b)"},
+    {TokenType::SUPER, R"(\bsuper\b)"},
+    {TokenType::TRAIT, R"(\btrait\b)"},
+    {TokenType::TRUE, R"(\btrue\b)"},
+    {TokenType::TYPE, R"(\btype\b)"},
+    {TokenType::UNSAFE, R"(\bunsafe\b)"},
+    {TokenType::USE, R"(\buse\b)"},
+    {TokenType::WHERE, R"(\bwhere\b)"},
+    {TokenType::WHILE, R"(\bwhile\b)"},
+    {TokenType::ASYNC, R"(\basync\b)"},
+    {TokenType::AWAIT, R"(\bawait\b)"},
+    {TokenType::DYN, R"(\bdyn\b)"},
 
     // Reserved keywords
-    {TokenType::ABSTRACT, R"(\s*abstract\s*)"},
-    {TokenType::BECOME, R"(\s*become\s*)"},
-    {TokenType::BOX, R"(\s*box\s*)"},
-    {TokenType::DO, R"(\s*do\s*)"},
-    {TokenType::FINAL, R"(\s*final\s*)"},
-    {TokenType::MACRO, R"(\s*macro\s*)"},
-    {TokenType::OVERRIDE, R"(\s*override\s*)"},
-    {TokenType::PRIV, R"(\s*priv\s*)"},
-    {TokenType::TYPEOF, R"(\s*typeof\s*)"},
-    {TokenType::UNSIZED, R"(\s*unsized\s*)"},
-    {TokenType::VIRTUAL, R"(\s*virtual\s*)"},
-    {TokenType::YIELD, R"(\s*yield\s*)"},
-    {TokenType::TRY, R"(\s*try\s*)"},
-    {TokenType::GEN, R"(\s*gen\s*)"},
+    {TokenType::ABSTRACT, R"(\babstract\b)"},
+    {TokenType::BECOME, R"(\bbecome\b)"},
+    {TokenType::BOX, R"(\bbox\b)"},
+    {TokenType::DO, R"(\bdo\b)"},
+    {TokenType::FINAL, R"(\bfinal\b)"},
+    {TokenType::MACRO, R"(\bmacro\b)"},
+    {TokenType::OVERRIDE, R"(\boverride\b)"},
+    {TokenType::PRIV, R"(\bpriv\b)"},
+    {TokenType::TYPEOF, R"(\btypeof\b)"},
+    {TokenType::UNSIZED, R"(\bunsized\b)"},
+    {TokenType::VIRTUAL, R"(\bvirtual\b)"},
+    {TokenType::YIELD, R"(\byield\b)"},
+    {TokenType::TRY, R"(\btry\b)"},
+    {TokenType::GEN, R"(\bgen\b)"},
 
     // Weak keywords
+    // BUGGY!!!!!
     {TokenType::STATIC_LIFETIME, R"(\s*'static\s*)"},
     {TokenType::MACRO_RULES, R"(\s*macro_rules\s*)"},
     {TokenType::RAW, R"(\s*raw\s*)"},
     {TokenType::SAFE, R"(\s*safe\s*)"},
     {TokenType::UNION, R"(\s*union\s*)"},
 
-    // identifiers
-    {TokenType::NON_KEYWORD_IDENTIFIER, R"(\s*[a-zA-Z][a-zA-Z0-9_]*\b)"},
-    {TokenType::RAW_IDENTIFIER, R"(\s*r#?[a-zA-Z_][a-zA-Z0-9_]*\b)"},
-    {TokenType::RESERVED_RAW_IDENTIFIER,
-     R"(\s*r#?self\b|\s*r#?Self\b|\s*r#?super\b)"},
-
     // literals
-    {TokenType::FLOAT_LITERAL, R"(\s*\d+\.\d+([eE][+-]?\d+)?\b)"},
+    {TokenType::INTEGER_LITERAL, R"(\b(?:0[xX][0-9a-fA-F]+|0[oO][0-7]+|0[bB][01]+|\d+)[uiUL]*\b)"},
+
     {TokenType::CHAR_LITERAL, R"(\s*'([^'\\]|\\.)'\b)"},
-    {TokenType::INTEGER_LITERAL, R"(\s*\d+\b)"},
     {TokenType::STRING_LITERAL, R"(\s*"([^"\\]|\\.)*"\b)"},
     {TokenType::C_STRING_LITERAL, R"(\s*c"([^"\\]|\\.)*"\b)"},
-    {TokenType::RAW_STRING_LITERAL, R"(\s*r"([^"]|\\")*"\b)"},
-    {TokenType::RAW_C_STRING_LITERAL, R"(\s*r"c([^"]|\\")*"\b)"},
     {TokenType::BYTE_STRING_LITERAL, R"(\s*b"([^"\\]|\\.)*"\b)"},
-    {TokenType::RAW_BYTE_STRING_LITERAL, R"(\s*r"b([^"]|\\")*"\b)"},
+    // {TokenType::RAW_STRING_LITERAL, R"(\s*r"([^"]|\\")*"\b)"},
+    // {TokenType::RAW_C_STRING_LITERAL, R"(\s*r"c([^"]|\\")*"\b)"},
+    // {TokenType::RAW_BYTE_STRING_LITERAL, R"(\s*r"b([^"]|\\")*"\b)"},
     {TokenType::BYTE_LITERAL, R"(\s*b'([^'\\]|\\.)'\b)"},
-
+    
     // operators
-    {TokenType::ASSIGN, R"(\s*=\s*)"},
-    {TokenType::PLUS, R"(\s*\+\s*)"},
-    {TokenType::MINUS, R"(\s*-\s*)"},
-    {TokenType::STAR, R"(\s*\*\s*)"},
-    {TokenType::SLASH, R"(\s*/\s*)"},
-    {TokenType::PERCENT, R"(\s*%\s*)"},
-    {TokenType::AMPERSAND, R"(\s*&\s*)"},
-    {TokenType::PIPE, R"(\s*\|\s*)"},
-    {TokenType::CARET, R"(\s*\^\s*)"},
-    {TokenType::L_PAREN, R"(\s*\(\s*)"},
-    {TokenType::R_PAREN, R"(\s*\)\s*)"},
-    {TokenType::L_BRACE, R"(\s*\{\s*)"},
-    {TokenType::R_BRACE, R"(\s*\}\s*)"},
-    {TokenType::L_BRACKET, R"(\s*\[\s*)"},
-    {TokenType::R_BRACKET, R"(\s*\]\s*)"},
-    {TokenType::COMMA, R"(\s*,\s*)"},
-    {TokenType::DOT, R"(\s*\.\s*)"},
-    {TokenType::COLON, R"(\s*:\s*)"},
-    {TokenType::SEMICOLON, R"(\s*;\s*)"},
-    {TokenType::QUESTION, R"(\s*\?\s*)"},
-    {TokenType::COLON_COLON, R"(\s*:\:\s*)"},
+    {TokenType::COLON_COLON, R"(::)"},
+    {TokenType::FAT_ARROW, R"(=>)"},
+    {TokenType::ARROW, R"(->)"},
+    {TokenType::LE, R"(<=)"},
+    {TokenType::GE, R"(>=)"},
+    {TokenType::EQ, R"(==)"},
+    {TokenType::NE, R"(!=)"},
+    {TokenType::AND, R"(&&)"},
+    {TokenType::OR, R"(\|\|)"},
+
+    {TokenType::ASSIGN, R"(=)"},
+    {TokenType::PLUS, R"(\+)"},
+    {TokenType::MINUS, R"(-)"},
+    {TokenType::STAR, R"(\*)"},
+    {TokenType::SLASH, R"(/)"},
+    {TokenType::PERCENT, R"(%)"},
+    {TokenType::AMPERSAND, R"(&)"},
+    {TokenType::PIPE, R"(\|)"},
+    {TokenType::CARET, R"(\^)"},
+    {TokenType::NOT, R"(!)"},
+    {TokenType::QUESTION, R"(\?)"},
+
+    {TokenType::L_PAREN, R"(\()"},
+    {TokenType::R_PAREN, R"(\))"},
+    {TokenType::L_BRACE, R"(\{)"},
+    {TokenType::R_BRACE, R"(\})"},
+    {TokenType::L_BRACKET, R"(\[)"},
+    {TokenType::R_BRACKET, R"(\])"},
+    {TokenType::COMMA, R"(,)"},
+    {TokenType::DOT, R"(\.)"},
+    {TokenType::COLON, R"(:)"},
+    {TokenType::SEMICOLON, R"(;)"},
+
+    // identifiers
+    {TokenType::NON_KEYWORD_IDENTIFIER, R"(\b[a-zA-Z][a-zA-Z0-9_]\b)"},
 
     {TokenType::UNKNOWN, R"(\S+)"}};
 
@@ -229,23 +245,85 @@ struct Token {
   std::string lexeme;
 };
 
+struct StringToken {
+  TokenType type;
+  std::string value;
+  size_t start_pos;
+  size_t end_pos;
+};
+
 class Lexer {
 public:
-  Lexer(const std::vector<std::string> &source);
+  Lexer(const std::string &source);
   std::vector<Token> tokenize();
 
 private:
-  std::vector<std::string> source;
+  std::string source;
+  std::vector<StringToken> string_tokens;
+  void firstPass();
+  void checkForKeywords();
+  void extractStringTokens(const std::string &line);
 };
 
-inline Lexer::Lexer(const std::vector<std::string> &source) : source(source) {}
+inline Lexer::Lexer(const std::string &source) : source(source) {}
 
 inline std::vector<Token> Lexer::tokenize() {
+  extractStringTokens(source);
+
   std::vector<Token> tokens;
-  for (const auto &line : source) {
-    // placeholder
+
+  std::regex token_regex;
+  size_t pos = 0;
+  for (const auto &it : string_tokens) {
   }
+
   return tokens;
+}
+
+inline void Lexer::extractStringTokens(const std::string &line) {
+  bool in_string = false;
+  bool in_char = false;
+  bool escaped = false;
+  size_t start_pos = 0;
+
+  for (size_t i = 0; i < line.length(); ++i) {
+    char c = line[i];
+    if (in_string) {
+      if (escaped) {
+        escaped = false;
+      } else if (c == '\\') {
+        escaped = true;
+      } else if (c == '"') {
+        in_string = false;
+        string_tokens.push_back({TokenType::STRING_LITERAL,
+                                 line.substr(start_pos, i - start_pos + 1),
+                                 start_pos, i});
+      }
+    } else if (in_char) {
+      if (escaped) {
+        escaped = false;
+      } else if (c == '\\') {
+        escaped = true;
+      } else if (c == '\'') {
+        in_char = false;
+        string_tokens.push_back({TokenType::CHAR_LITERAL,
+                                 line.substr(start_pos, i - start_pos + 1),
+                                 start_pos, i});
+      }
+    } else {
+      if (c == '"') {
+        in_string = true;
+        start_pos = i;
+      } else if (c == '\'') {
+        in_char = true;
+        start_pos = i;
+      }
+    }
+  }
+}
+
+inline void Lexer::firstPass() {
+  
 }
 
 } // namespace rc
