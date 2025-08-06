@@ -56,13 +56,6 @@ X(YIELD, "YIELD")     // yield
 X(TRY, "TRY")       // try
 X(GEN, "GEN")       // gen
 
-// Weak keywords
-X(STATIC_LIFETIME, "STATIC_LIFETIME") // 'static
-X(MACRO_RULES, "MACRO_RULES")     // macro_rules
-X(RAW, "RAW")             // raw
-X(SAFE, "SAFE")            // safe
-X(UNION, "UNION")           // union
-
 // identifiers
 X(NON_KEYWORD_IDENTIFIER, "NON_KEYWORD_IDENTIFIER")
 

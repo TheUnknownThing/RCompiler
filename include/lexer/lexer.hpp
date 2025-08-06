@@ -153,6 +153,7 @@ private:
   bool checkWordBoundary(char c);
   bool isPunctuation(char c);
   void checkForKeywords();
+  void verifyIntegerLiteral();
 };
 
 inline Lexer::Lexer(const std::string &source) : source(source) {}
@@ -288,6 +289,20 @@ inline void Lexer::checkForKeywords() {
           tok.type = type;
           break;
         }
+      }
+    }
+  }
+}
+
+inline void Lexer::verifyIntegerLiteral() {
+  for (const auto &tok : tokens) {
+    if (tok.type == TokenType::INTEGER_LITERAL) {
+      // Check if the integer literal is valid
+      std::regex intRegex(R"((\b(?:0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|\d+)(?:(i32)?|(isize)?|(u32)?|(usize)?)\b))");
+      if (!std::regex_match(tok.lexeme, intRegex)) {
+        throw std::runtime_error(
+            "Compile Error: Invalid integer literal '" + tok.lexeme +
+            "' at position " + std::to_string(tok.lexeme.size()));
       }
     }
   }
