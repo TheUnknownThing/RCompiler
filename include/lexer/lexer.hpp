@@ -101,13 +101,13 @@ static std::map<std::string, TokenType> operatorToTokenType = {
     {"^", TokenType::CARET},
     {"!", TokenType::NOT},
     {"?", TokenType::QUESTION},
+    {"=", TokenType::EQ},
     {"<", TokenType::LT},
     {">", TokenType::GT},
     {"<<", TokenType::SHL},
     {">>", TokenType::SHR},
     {"<<=", TokenType::SHL_EQ},
     {">>=", TokenType::SHR_EQ},
-    {"::", TokenType::COLON_COLON},
     {"=>", TokenType::FAT_ARROW},
     {"->", TokenType::ARROW},
     {"<=", TokenType::LE},
@@ -126,12 +126,13 @@ static std::map<std::string, TokenType> operatorToTokenType = {
     {"^=", TokenType::CARET_EQ},
 };
 
-static std::map<char, TokenType> punctuationToTokenType = {
-    {'(', TokenType::L_PAREN},   {')', TokenType::R_PAREN},
-    {'{', TokenType::L_BRACE},   {'}', TokenType::R_BRACE},
-    {'[', TokenType::L_BRACKET}, {']', TokenType::R_BRACKET},
-    {',', TokenType::COMMA},     {'.', TokenType::DOT},
-    {':', TokenType::COLON},     {';', TokenType::SEMICOLON},
+static std::map<std::string, TokenType> punctuationToTokenType = {
+    {"::", TokenType::COLON_COLON}, {"(", TokenType::L_PAREN},
+    {")", TokenType::R_PAREN},      {"{", TokenType::L_BRACE},
+    {"}", TokenType::R_BRACE},      {"[", TokenType::L_BRACKET},
+    {"]", TokenType::R_BRACKET},    {",", TokenType::COMMA},
+    {".", TokenType::DOT},          {":", TokenType::COLON},
+    {";", TokenType::SEMICOLON},
 };
 
 struct Token {
@@ -185,13 +186,12 @@ inline void Lexer::firstPass() {
   while (i < n) {
     char c = source[i];
 
-    /* 1. skip blanks --------------------------------------------------- */
     if (std::isspace(static_cast<unsigned char>(c))) {
       ++i;
       continue;
     }
 
-    /* 2. string literal ------------------------------------------------ */
+    // string literal
     if (c == '"') {
       std::size_t beg = i++;
       bool escaped = false;
@@ -205,7 +205,7 @@ inline void Lexer::firstPass() {
       continue;
     }
 
-    /* 3. char literal -------------------------------------------------- */
+    // char literal
     if (c == '\'') {
       std::size_t beg = i++;
       bool escaped = false;
@@ -219,7 +219,7 @@ inline void Lexer::firstPass() {
       continue;
     }
 
-    /* 4. integer literal (digits+[_a-zA-Z0-9]*) ------------------------ */
+    // integer literal
     if (std::isdigit(static_cast<unsigned char>(c))) {
       std::size_t beg = i++;
       while (i < n && checkWordBoundary(source[i]))
@@ -228,7 +228,7 @@ inline void Lexer::firstPass() {
       continue;
     }
 
-    /* 5. identifier ---------------------------------------------------- */
+    // identifier or keyword
     if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
       std::size_t beg = i++;
       while (i < n && checkWordBoundary(source[i]))
@@ -237,16 +237,26 @@ inline void Lexer::firstPass() {
       continue;
     }
 
-    /* 6. punctuation --------------------------------------------------- */
+    // punctuation
     if (isPunctuation(c)) {
-      auto it = punctuationToTokenType.find(c);
+      auto it = punctuationToTokenType.find(std::string(1, c));
+      // check for two-character punctuation
+      if (i + 1 < n && isPunctuation(source[i + 1])) {
+        std::string punct = source.substr(i, 2);
+        auto it2 = punctuationToTokenType.find(punct);
+        if (it2 != punctuationToTokenType.end()) {
+          push(it2->second, i, i + 2);
+          i += 2;
+          continue;
+        }
+      }
       push(it != punctuationToTokenType.end() ? it->second : TokenType::UNKNOWN,
            i, i + 1);
       ++i;
       continue;
     }
 
-    /* 7. operator (longest match, 3-2-1 chars) ------------------------- */
+    // operators
     bool matched = false;
     for (int len = 3; len >= 1 && !matched; --len) {
       if (i + len > n)
@@ -262,7 +272,7 @@ inline void Lexer::firstPass() {
     if (matched)
       continue;
 
-    /* 8. everything else ---------------------------------------------- */
+    // unknown token
     push(TokenType::UNKNOWN, i, i + 1);
     ++i;
   }
