@@ -196,6 +196,50 @@ static std::map<TokenType, std::string> tokenTypeToRegex = {
     {TokenType::TRY, R"(\btry\b)"},
     {TokenType::GEN, R"(\bgen\b)"}};
 
+static std::map<std::string, TokenType> operatorToTokenType = {
+    {"+", TokenType::PLUS},
+    {"-", TokenType::MINUS},
+    {"*", TokenType::STAR},
+    {"/", TokenType::SLASH},
+    {"%", TokenType::PERCENT},
+    {"&", TokenType::AMPERSAND},
+    {"|", TokenType::PIPE},
+    {"^", TokenType::CARET},
+    {"!", TokenType::NOT},
+    {"?", TokenType::QUESTION},
+    {"<", TokenType::LT},
+    {">", TokenType::GT},
+    {"<<", TokenType::SHL},
+    {">>", TokenType::SHR},
+    {"<<=", TokenType::SHL_EQ},
+    {">>=", TokenType::SHR_EQ},
+    {"::", TokenType::COLON_COLON},
+    {"=>", TokenType::FAT_ARROW},
+    {"->", TokenType::ARROW},
+    {"<=", TokenType::LE},
+    {">=", TokenType::GE},
+    {"==", TokenType::EQ},
+    {"!=", TokenType::NE},
+    {"&&", TokenType::AND},
+    {"||", TokenType::OR},
+    {"+=", TokenType::PLUS_EQ},
+    {"-=", TokenType::MINUS_EQ},
+    {"*=", TokenType::STAR_EQ},
+    {"/=", TokenType::SLASH_EQ},
+    {"%=", TokenType::PERCENT_EQ},
+    {"&=", TokenType::AMPERSAND_EQ},
+    {"|=", TokenType::PIPE_EQ},
+    {"^=", TokenType::CARET_EQ},
+};
+
+static std::map<char, TokenType> punctuationToTokenType = {
+    {'(', TokenType::L_PAREN},   {')', TokenType::R_PAREN},
+    {'{', TokenType::L_BRACE},   {'}', TokenType::R_BRACE},
+    {'[', TokenType::L_BRACKET}, {']', TokenType::R_BRACKET},
+    {',', TokenType::COMMA},     {'.', TokenType::DOT},
+    {':', TokenType::COLON},     {';', TokenType::SEMICOLON},
+};
+
 struct Token {
   TokenType type;
   std::string lexeme;
@@ -297,41 +341,24 @@ inline void Lexer::firstPass() {
           tokens.push_back(
               {TokenType::UNKNOWN, source.substr(start_pos, i - start_pos)});
         }
+        std::string op = source.substr(start_pos, i - start_pos);
+        auto it = operatorToTokenType.find(op);
+        if (it != operatorToTokenType.end()) {
+          tokens.push_back({it->second, op});
+        } else {
+          tokens.push_back({TokenType::UNKNOWN, op});
+        }
+        start_pos = i;
         i--;
       }
     } else if (isPunctuation(c)) {
-      switch (c) {
-      case '(':
-        tokens.push_back({TokenType::L_PAREN, "("});
-        break;
-      case ')':
-        tokens.push_back({TokenType::R_PAREN, ")"});
-        break;
-      case '{':
-        tokens.push_back({TokenType::L_BRACE, "{"});
-        break;
-      case '}':
-        tokens.push_back({TokenType::R_BRACE, "}"});
-        break;
-      case '[':
-        tokens.push_back({TokenType::L_BRACKET, "["});
-        break;
-      case ']':
-        tokens.push_back({TokenType::R_BRACKET, "]"});
-        break;
-      case ',':
-        tokens.push_back({TokenType::COMMA, ","});
-        break;
-      case '.':
-        tokens.push_back({TokenType::DOT, "."});
-        break;
-      case ':':
-        tokens.push_back({TokenType::COLON, ":"});
-        break;
-      case ';':
-        tokens.push_back({TokenType::SEMICOLON, ";"});
-        break;
-      default:
+      if (start_pos < i) {
+        tokens.push_back({TokenType::UNKNOWN, source.substr(start_pos, i - start_pos)});
+      }
+      auto it = punctuationToTokenType.find(c);
+      if (it != punctuationToTokenType.end()) {
+        tokens.push_back({it->second, std::string(1, c)});
+      } else {
         tokens.push_back({TokenType::UNKNOWN, std::string(1, c)});
       }
       start_pos = i + 1;
