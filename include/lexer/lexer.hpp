@@ -88,15 +88,27 @@ enum class TokenType {
   BYTE_LITERAL,
 
   // operators
-  COLON_COLON, // ::
-  FAT_ARROW,   // =>
-  ARROW,       // ->
-  LE,          // <=
-  GE,          // >=
-  EQ,          // ==
-  NE,          // !=
-  AND,         // &&
-  OR,          // ||
+  SHL_EQ,       // <<=
+  SHR_EQ,       // >>=
+  COLON_COLON,  // ::
+  FAT_ARROW,    // =>
+  ARROW,        // ->
+  LE,           // <=
+  GE,           // >=
+  EQ,           // ==
+  NE,           // !=
+  AND,          // &&
+  OR,           // ||
+  PLUS_EQ,      // +=
+  MINUS_EQ,     // -=
+  STAR_EQ,      // *=
+  SLASH_EQ,     // /=
+  PERCENT_EQ,   // %=
+  AMPERSAND_EQ, // &=
+  PIPE_EQ,      // |=
+  CARET_EQ,     // ^=
+  SHL,          // <<
+  SHR,          // >>
 
   ASSIGN,    // =
   PLUS,      // +
@@ -109,7 +121,10 @@ enum class TokenType {
   CARET,     // ^
   NOT,       // !
   QUESTION,  // ?
+  LT,        // <
+  GT,        // >
 
+  // punctuation
   L_PAREN,   // (
   R_PAREN,   // )
   L_BRACE,   // {
@@ -179,77 +194,11 @@ static std::map<TokenType, std::string> tokenTypeToRegex = {
     {TokenType::VIRTUAL, R"(\bvirtual\b)"},
     {TokenType::YIELD, R"(\byield\b)"},
     {TokenType::TRY, R"(\btry\b)"},
-    {TokenType::GEN, R"(\bgen\b)"},
-
-    // Weak keywords
-    // BUGGY!!!!!
-    {TokenType::STATIC_LIFETIME, R"(\s*'static\s*)"},
-    {TokenType::MACRO_RULES, R"(\s*macro_rules\s*)"},
-    {TokenType::RAW, R"(\s*raw\s*)"},
-    {TokenType::SAFE, R"(\s*safe\s*)"},
-    {TokenType::UNION, R"(\s*union\s*)"},
-
-    // literals
-    {TokenType::INTEGER_LITERAL, R"(\b(?:0[xX][0-9a-fA-F]+|0[oO][0-7]+|0[bB][01]+|\d+)[uiUL]*\b)"},
-
-    {TokenType::CHAR_LITERAL, R"(\s*'([^'\\]|\\.)'\b)"},
-    {TokenType::STRING_LITERAL, R"(\s*"([^"\\]|\\.)*"\b)"},
-    {TokenType::C_STRING_LITERAL, R"(\s*c"([^"\\]|\\.)*"\b)"},
-    {TokenType::BYTE_STRING_LITERAL, R"(\s*b"([^"\\]|\\.)*"\b)"},
-    // {TokenType::RAW_STRING_LITERAL, R"(\s*r"([^"]|\\")*"\b)"},
-    // {TokenType::RAW_C_STRING_LITERAL, R"(\s*r"c([^"]|\\")*"\b)"},
-    // {TokenType::RAW_BYTE_STRING_LITERAL, R"(\s*r"b([^"]|\\")*"\b)"},
-    {TokenType::BYTE_LITERAL, R"(\s*b'([^'\\]|\\.)'\b)"},
-    
-    // operators
-    {TokenType::COLON_COLON, R"(::)"},
-    {TokenType::FAT_ARROW, R"(=>)"},
-    {TokenType::ARROW, R"(->)"},
-    {TokenType::LE, R"(<=)"},
-    {TokenType::GE, R"(>=)"},
-    {TokenType::EQ, R"(==)"},
-    {TokenType::NE, R"(!=)"},
-    {TokenType::AND, R"(&&)"},
-    {TokenType::OR, R"(\|\|)"},
-
-    {TokenType::ASSIGN, R"(=)"},
-    {TokenType::PLUS, R"(\+)"},
-    {TokenType::MINUS, R"(-)"},
-    {TokenType::STAR, R"(\*)"},
-    {TokenType::SLASH, R"(/)"},
-    {TokenType::PERCENT, R"(%)"},
-    {TokenType::AMPERSAND, R"(&)"},
-    {TokenType::PIPE, R"(\|)"},
-    {TokenType::CARET, R"(\^)"},
-    {TokenType::NOT, R"(!)"},
-    {TokenType::QUESTION, R"(\?)"},
-
-    {TokenType::L_PAREN, R"(\()"},
-    {TokenType::R_PAREN, R"(\))"},
-    {TokenType::L_BRACE, R"(\{)"},
-    {TokenType::R_BRACE, R"(\})"},
-    {TokenType::L_BRACKET, R"(\[)"},
-    {TokenType::R_BRACKET, R"(\])"},
-    {TokenType::COMMA, R"(,)"},
-    {TokenType::DOT, R"(\.)"},
-    {TokenType::COLON, R"(:)"},
-    {TokenType::SEMICOLON, R"(;)"},
-
-    // identifiers
-    {TokenType::NON_KEYWORD_IDENTIFIER, R"(\b[a-zA-Z][a-zA-Z0-9_]\b)"},
-
-    {TokenType::UNKNOWN, R"(\S+)"}};
+    {TokenType::GEN, R"(\bgen\b)"}};
 
 struct Token {
   TokenType type;
   std::string lexeme;
-};
-
-struct StringToken {
-  TokenType type;
-  std::string value;
-  size_t start_pos;
-  size_t end_pos;
 };
 
 class Lexer {
@@ -259,35 +208,46 @@ public:
 
 private:
   std::string source;
-  std::vector<StringToken> string_tokens;
+  std::vector<Token> tokens;
+
   void firstPass();
+  bool checkWordBoundary(char c);
+  bool isPunctuation(char c);
   void checkForKeywords();
-  void extractStringTokens(const std::string &line);
 };
 
 inline Lexer::Lexer(const std::string &source) : source(source) {}
 
 inline std::vector<Token> Lexer::tokenize() {
-  extractStringTokens(source);
-
-  std::vector<Token> tokens;
-
-  std::regex token_regex;
-  size_t pos = 0;
-  for (const auto &it : string_tokens) {
-  }
-
+  firstPass();
+  checkForKeywords();
   return tokens;
 }
 
-inline void Lexer::extractStringTokens(const std::string &line) {
+inline bool Lexer::checkWordBoundary(char c) {
+  if (std::isalnum(c) || c == '_') {
+    return true;
+  }
+  return false;
+}
+
+inline bool Lexer::isPunctuation(char c) {
+  return c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']' ||
+         c == ',' || c == '.' || c == ':' || c == ';';
+}
+
+inline void Lexer::firstPass() {
   bool in_string = false;
   bool in_char = false;
   bool escaped = false;
+  bool in_integer = false;
+  bool in_operator = false;
+  bool in_identifier = false;
+
   size_t start_pos = 0;
 
-  for (size_t i = 0; i < line.length(); ++i) {
-    char c = line[i];
+  for (size_t i = 0; i < source.length(); ++i) {
+    char c = source[i];
     if (in_string) {
       if (escaped) {
         escaped = false;
@@ -295,9 +255,8 @@ inline void Lexer::extractStringTokens(const std::string &line) {
         escaped = true;
       } else if (c == '"') {
         in_string = false;
-        string_tokens.push_back({TokenType::STRING_LITERAL,
-                                 line.substr(start_pos, i - start_pos + 1),
-                                 start_pos, i});
+        tokens.push_back({TokenType::STRING_LITERAL,
+                          source.substr(start_pos, i - start_pos + 1)});
       }
     } else if (in_char) {
       if (escaped) {
@@ -306,10 +265,76 @@ inline void Lexer::extractStringTokens(const std::string &line) {
         escaped = true;
       } else if (c == '\'') {
         in_char = false;
-        string_tokens.push_back({TokenType::CHAR_LITERAL,
-                                 line.substr(start_pos, i - start_pos + 1),
-                                 start_pos, i});
+        tokens.push_back({TokenType::CHAR_LITERAL,
+                          source.substr(start_pos, i - start_pos + 1)});
       }
+    } else if (in_integer) {
+      if (checkWordBoundary(c)) {
+        continue;
+      } else {
+        in_integer = false;
+        tokens.push_back({TokenType::INTEGER_LITERAL,
+                          source.substr(start_pos, i - start_pos)});
+        i--;
+      }
+    } else if (in_identifier) {
+      if (checkWordBoundary(c)) {
+        continue;
+      } else {
+        in_identifier = false;
+        tokens.push_back({TokenType::NON_KEYWORD_IDENTIFIER,
+                          source.substr(start_pos, i - start_pos)});
+        i--;
+      }
+    } else if (in_operator) {
+      if (c == '=' || c == '!' || c == '<' || c == '>' || c == '&' ||
+          c == '|' || c == '+' || c == '-' || c == '*' || c == '/' ||
+          c == '%' || c == '^') {
+        continue;
+      } else {
+        in_operator = false;
+        if (start_pos < i) {
+          tokens.push_back(
+              {TokenType::UNKNOWN, source.substr(start_pos, i - start_pos)});
+        }
+        i--;
+      }
+    } else if (isPunctuation(c)) {
+      switch (c) {
+      case '(':
+        tokens.push_back({TokenType::L_PAREN, "("});
+        break;
+      case ')':
+        tokens.push_back({TokenType::R_PAREN, ")"});
+        break;
+      case '{':
+        tokens.push_back({TokenType::L_BRACE, "{"});
+        break;
+      case '}':
+        tokens.push_back({TokenType::R_BRACE, "}"});
+        break;
+      case '[':
+        tokens.push_back({TokenType::L_BRACKET, "["});
+        break;
+      case ']':
+        tokens.push_back({TokenType::R_BRACKET, "]"});
+        break;
+      case ',':
+        tokens.push_back({TokenType::COMMA, ","});
+        break;
+      case '.':
+        tokens.push_back({TokenType::DOT, "."});
+        break;
+      case ':':
+        tokens.push_back({TokenType::COLON, ":"});
+        break;
+      case ';':
+        tokens.push_back({TokenType::SEMICOLON, ";"});
+        break;
+      default:
+        tokens.push_back({TokenType::UNKNOWN, std::string(1, c)});
+      }
+      start_pos = i + 1;
     } else {
       if (c == '"') {
         in_string = true;
@@ -317,13 +342,58 @@ inline void Lexer::extractStringTokens(const std::string &line) {
       } else if (c == '\'') {
         in_char = true;
         start_pos = i;
+      } else if (c == '0' || (c >= '1' && c <= '9')) {
+        if (!in_integer) {
+          in_integer = true;
+          start_pos = i;
+        }
+      } else if (std::isalpha(c)) {
+        if (!in_identifier) {
+          in_identifier = true;
+          start_pos = i;
+        }
+      } else if (std::isspace(c)) {
+        if (in_string || in_char || in_integer || in_identifier) {
+          if (in_string) {
+            tokens.push_back({TokenType::STRING_LITERAL,
+                              source.substr(start_pos, i - start_pos)});
+          } else if (in_char) {
+            tokens.push_back({TokenType::CHAR_LITERAL,
+                              source.substr(start_pos, i - start_pos)});
+          } else if (in_integer) {
+            tokens.push_back({TokenType::INTEGER_LITERAL,
+                              source.substr(start_pos, i - start_pos)});
+          } else if (in_identifier) {
+            tokens.push_back({TokenType::NON_KEYWORD_IDENTIFIER,
+                              source.substr(start_pos, i - start_pos)});
+          } else if (in_operator) {
+            tokens.push_back(
+                {TokenType::UNKNOWN, source.substr(start_pos, i - start_pos)});
+          }
+          start_pos = i + 1;
+          in_string = false;
+          in_char = false;
+          in_integer = false;
+          in_identifier = false;
+          in_operator = false;
+        }
       }
     }
   }
 }
 
-inline void Lexer::firstPass() {
-  
+inline void Lexer::checkForKeywords() {
+  for (auto &tok : tokens) {
+    if (tok.type == TokenType::NON_KEYWORD_IDENTIFIER) {
+      for (const auto &[type, pattern] : tokenTypeToRegex) {
+        std::regex regex(pattern);
+        if (std::regex_match(tok.lexeme, regex)) {
+          tok.type = type;
+          break;
+        }
+      }
+    }
+  }
 }
 
 } // namespace rc
