@@ -82,10 +82,11 @@ enum class TokenType {
   INTEGER_LITERAL,
   STRING_LITERAL,
   RAW_STRING_LITERAL,
-  BYTE_LITERAL,
-  RAW_BYTE_LITERAL,
   C_STRING_LITERAL,
   RAW_C_STRING_LITERAL,
+  BYTE_STRING_LITERAL,
+  RAW_BYTE_STRING_LITERAL,
+  BYTE_LITERAL,
 
   // operators
   ASSIGN,    // =
@@ -181,7 +182,7 @@ static std::map<TokenType, std::string> tokenTypeToRegex = {
     {TokenType::UNION, R"(\s*union\s*)"},
 
     // identifiers
-    {TokenType::NON_KEYWORD_IDENTIFIER, R"(\s*[a-zA-Z_][a-zA-Z0-9_]*\b)"},
+    {TokenType::NON_KEYWORD_IDENTIFIER, R"(\s*[a-zA-Z][a-zA-Z0-9_]*\b)"},
     {TokenType::RAW_IDENTIFIER, R"(\s*r#?[a-zA-Z_][a-zA-Z0-9_]*\b)"},
     {TokenType::RESERVED_RAW_IDENTIFIER,
      R"(\s*r#?self\b|\s*r#?Self\b|\s*r#?super\b)"},
@@ -191,11 +192,12 @@ static std::map<TokenType, std::string> tokenTypeToRegex = {
     {TokenType::CHAR_LITERAL, R"(\s*'([^'\\]|\\.)'\b)"},
     {TokenType::INTEGER_LITERAL, R"(\s*\d+\b)"},
     {TokenType::STRING_LITERAL, R"(\s*"([^"\\]|\\.)*"\b)"},
-    {TokenType::RAW_STRING_LITERAL, R"(\s*r#?"([^"#]|#")*"#\b)"},
-    {TokenType::BYTE_LITERAL, R"(\s*b'([^'\\]|\\.)'\b)"},
-    {TokenType::RAW_BYTE_LITERAL, R"(\s*br'([^'\\]|\\.)*'\b)"},
     {TokenType::C_STRING_LITERAL, R"(\s*c"([^"\\]|\\.)*"\b)"},
-    {TokenType::RAW_C_STRING_LITERAL, R"(\s*cr"([^"\\]|\\.)*"\b)"},
+    {TokenType::RAW_STRING_LITERAL, R"(\s*r"([^"]|\\")*"\b)"},
+    {TokenType::RAW_C_STRING_LITERAL, R"(\s*r"c([^"]|\\")*"\b)"},
+    {TokenType::BYTE_STRING_LITERAL, R"(\s*b"([^"\\]|\\.)*"\b)"},
+    {TokenType::RAW_BYTE_STRING_LITERAL, R"(\s*r"b([^"]|\\")*"\b)"},
+    {TokenType::BYTE_LITERAL, R"(\s*b'([^'\\]|\\.)'\b)"},
 
     // operators
     {TokenType::ASSIGN, R"(\s*=\s*)"},

@@ -17,7 +17,7 @@ public:
   Preprocessor(const std::string &filename);
   ~Preprocessor();
 
-  std::vector<std::string> preprocess();
+  std::string preprocess();
 
 private:
   std::vector<std::string> file_lines;
@@ -37,16 +37,17 @@ inline Preprocessor::Preprocessor(const std::string &filename) {
 
 inline Preprocessor::~Preprocessor() { file_lines.clear(); }
 
-inline std::vector<std::string> Preprocessor::preprocess() {
-  std::vector<std::string> processed_lines;
+inline std::string Preprocessor::preprocess() {
+  std::string result;
 
   int in_block_comment = 0;
+  bool in_string = false;
+  bool in_char = false;
+  bool escaped = false;
 
-  for (const std::string &line : file_lines) {
-    std::string processed_line;
-    bool in_string = false;
-    bool in_char = false;
-    bool escaped = false;
+  for (size_t line_idx = 0; line_idx < file_lines.size(); ++line_idx) {
+    const std::string &line = file_lines[line_idx];
+    bool line_start = true;
 
     for (size_t i = 0; i < line.length(); ++i) {
       char c = line[i];
@@ -56,7 +57,9 @@ inline std::vector<std::string> Preprocessor::preprocess() {
         if (c == '*' && next_c == '/') {
           in_block_comment--;
           if (in_block_comment == 0) {
-            processed_line += " ";
+            if (!result.empty() && result.back() != ' ') {
+              result += " ";
+            }
           }
           i++;
         } else if (c == '/' && next_c == '*') {
@@ -65,7 +68,7 @@ inline std::vector<std::string> Preprocessor::preprocess() {
         }
       } else if (in_string) {
         // string literals
-        processed_line += c;
+        result += c;
         if (escaped) {
           escaped = false;
         } else if (c == '\\') {
@@ -75,7 +78,7 @@ inline std::vector<std::string> Preprocessor::preprocess() {
         }
       } else if (in_char) {
         // char literals
-        processed_line += c;
+        result += c;
         if (escaped) {
           escaped = false;
         } else if (c == '\\') {
@@ -90,68 +93,57 @@ inline std::vector<std::string> Preprocessor::preprocess() {
           in_block_comment++;
           i++;
         } else if (c == '"') {
-          // in string literal
+          // entering string literal
           in_string = true;
-          processed_line += c;
+          result += c;
         } else if (c == '\'') {
           in_char = true;
-          processed_line += c;
+          result += c;
         } else {
-          processed_line += c;
+          // whitespace and tabs
+          if (std::isspace(c)) {
+            if (!result.empty() && result.back() != ' ') {
+              result += " ";
+            }
+          } else {
+            result += c;
+          }
+          line_start = false;
         }
       }
     }
 
-    processed_lines.push_back(processed_line);
-  }
-
-  for (auto &line : processed_lines) {
-    for (size_t i = 0; i < line.length(); ++i) {
-      if (line[i] == '\t') {
-        line[i] = ' ';
+    // line breaks
+    if (line_idx < file_lines.size() - 1) { // Not the last line
+      if (in_string) {
+        result += "\\n";
+      } else if (!in_block_comment && !result.empty() && result.back() != ' ') {
+        result += " ";
       }
-      line[i] = std::isspace(line[i]) ? ' ' : line[i];
-    }
-    line.erase(0, line.find_first_not_of(' '));
-    line.erase(line.find_last_not_of(' ') + 1);
-
-    line.erase(std::unique(line.begin(), line.end(),
-                           [](char a, char b) { return a == ' ' && b == ' '; }),
-               line.end());
-  }
-
-  std::vector<std::string> final_lines;
-  bool in_multiline_string = false;
-
-  for (const std::string &line : processed_lines) {
-    bool line_has_string = false;
-    bool escaped = false;
-    int quote_count = 0;
-
-    for (char c : line) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (c == '\\') {
-        escaped = true;
-        continue;
-      }
-      if (c == '"') {
-        quote_count++;
-        line_has_string = true;
-      }
-    }
-
-    if (line_has_string && quote_count % 2 == 1) {
-      in_multiline_string = !in_multiline_string;
-    }
-
-    if (!line.empty() || in_multiline_string) {
-      final_lines.push_back(line);
     }
   }
 
-  return final_lines;
+  std::string cleaned_result;
+  bool prev_space = false;
+  for (char c : result) {
+    if (c == ' ') {
+      if (!prev_space) {
+        cleaned_result += c;
+        prev_space = true;
+      }
+    } else {
+      cleaned_result += c;
+      prev_space = false;
+    }
+  }
+
+  size_t start = cleaned_result.find_first_not_of(' ');
+  if (start == std::string::npos) {
+    return {""};
+  }
+  size_t end = cleaned_result.find_last_not_of(' ');
+  cleaned_result = cleaned_result.substr(start, end - start + 1);
+
+  return cleaned_result;
 }
 } // namespace rc
