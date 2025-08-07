@@ -1,10 +1,13 @@
 #pragma once
 
 namespace nc {
+
+class BaseVisitor;
+
 class BaseNode {
 public:
   virtual ~BaseNode() = default;
-  virtual void accept(class Visitor &visitor) = 0;
+  virtual void accept(BaseVisitor &visitor) = 0;
 };
 
 class BaseVisitor {
