@@ -1,6 +1,6 @@
 #pragma once
 
-namespace nc {
+namespace rc {
 
 class BaseVisitor;
 
@@ -14,4 +14,4 @@ class BaseVisitor {
 public:
   virtual void visit(BaseNode &node) = 0;
 };
-} // namespace nc
+} // namespace rc

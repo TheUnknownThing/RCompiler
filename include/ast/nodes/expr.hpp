@@ -1,14 +1,16 @@
 #pragma once
 
 #include "base.hpp"
+#include "../types.hpp"
 
+#include <map>
 #include <string>
 #include <vector>
 
 namespace rc {
-class Expression : public nc::BaseNode {
+class Expression : public BaseNode {
 public:
-  virtual void accept(nc::BaseVisitor &visitor) = 0;
+  virtual void accept(BaseVisitor &visitor) = 0;
 };
 
 class LiteralExpr : public Expression {
@@ -17,7 +19,7 @@ public:
 
   LiteralExpr(const std::string &val) : value(val) {}
 
-  void accept(nc::BaseVisitor &visitor) override { visitor.visit(*this); }
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
 class IdentifierExpr : public Expression {
@@ -26,51 +28,84 @@ public:
 
   IdentifierExpr(const std::string &name) : name(name) {}
 
-  void accept(nc::BaseVisitor &visitor) override { visitor.visit(*this); }
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
 class BinaryExpr : public Expression {
 public:
-  nc::BaseNode *left;
-  nc::BaseNode *right;
+  BaseNode *left;
+  BaseNode *right;
   std::string op;
 
-  BinaryExpr(nc::BaseNode *l, nc::BaseNode *r, const std::string &op)
+  BinaryExpr(BaseNode *l, BaseNode *r, const std::string &op)
       : left(l), right(r), op(op) {}
 
-  void accept(nc::BaseVisitor &visitor) override { visitor.visit(*this); }
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
 class UnaryExpr : public Expression {
 public:
-  nc::BaseNode *operand;
+  BaseNode *operand;
   std::string op;
 
-  UnaryExpr(nc::BaseNode *op, const std::string &op_str)
+  UnaryExpr(BaseNode *op, const std::string &op_str)
       : operand(op), op(op_str) {}
 
-  void accept(nc::BaseVisitor &visitor) override { visitor.visit(*this); }
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
 class CallExpr : public Expression {
 public:
-  nc::BaseNode *callee;
-  std::vector<nc::BaseNode *> arguments;
+  BaseNode *callee;
+  std::vector<BaseNode *> arguments;
 
-  CallExpr(nc::BaseNode *c, const std::vector<nc::BaseNode *> &args)
+  CallExpr(BaseNode *c, const std::vector<BaseNode *> &args)
       : callee(c), arguments(args) {}
 
-  void accept(nc::BaseVisitor &visitor) override { visitor.visit(*this); }
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
 class AssignmentExpr : public Expression {
 public:
-  nc::BaseNode *target;
-  nc::BaseNode *value;
+  BaseNode *target;
+  BaseNode *value;
 
-  AssignmentExpr(nc::BaseNode *t, nc::BaseNode *v) : target(t), value(v) {}
+  AssignmentExpr(BaseNode *t, BaseNode *v) : target(t), value(v) {}
 
-  void accept(nc::BaseVisitor &visitor) override { visitor.visit(*this); }
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class IfExpr : public Expression {
+public:
+  BaseNode *condition;
+  BaseNode *then_branch;
+  BaseNode *else_branch;
+
+  IfExpr(BaseNode *cond, BaseNode *then_br, BaseNode *else_br)
+      : condition(cond), then_branch(then_br), else_branch(else_br) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class ReturnExpr : public Expression {
+public:
+  BaseNode *value;
+
+  ReturnExpr(BaseNode *val) : value(val) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class StructExpr : public Expression {
+public:
+  std::string name;
+  std::map<std::string, BaseNode *> fields;
+
+  StructExpr(const std::string &n,
+             const std::map<std::string, BaseNode *> &f)
+      : name(n), fields(f) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
 } // namespace rc
