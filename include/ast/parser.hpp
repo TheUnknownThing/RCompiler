@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "../lexer/lexer.hpp"
+#include "utils/parsec.hpp"
+#include "utils/pratt.hpp"
 #include "types.hpp"
 
 #include "nodes/base.hpp"
@@ -14,6 +16,28 @@
 #include "nodes/topLevel.hpp"
 
 namespace rc {
+
+class Parser {
+public:
+  Parser(std::vector<Token> tokens);
+  std::unique_ptr<RootNode> parse();
+
+private:
+  std::vector<Token> tokens;
+
+  std::unique_ptr<BaseNode> parse_statement();
+  std::unique_ptr<BaseNode> parse_expression();
+};
+
+inline Parser::Parser(std::vector<Token> tokens) : tokens(std::move(tokens)) {}
+
+inline std::unique_ptr<RootNode> Parser::parse() {
+  // TODO
+}
+
+/*
+
+Deprecated Parser Class
 
 class Parser {
 public:
@@ -37,24 +61,10 @@ private:
   Token &advance();
   bool is_at_end();
 
-  /**
-   * @brief Check if the next token is of the specified type.
-   * @param type The token type to check against.
-   * @return true if the next token matches the type, false otherwise.
-   */
   bool check(TokenType type);
 
-  /**
-   * @brief Consume the next token if it matches the specified type.
-   * @return true if a token was consumed, false otherwise.
-   */
   bool match(TokenType type);
 
-  /**
-   * @brief Check if the literal type matches one of the known types.
-   * @param type The literal type to check.
-   * @return true if the type is a known literal type, false otherwise.
-   */
   bool matchLiteralType(LiteralType type);
 };
 
@@ -145,5 +155,6 @@ inline std::unique_ptr<FunctionDecl> Parser::parse_function_declaration() {
     // TODO
   }
 }
+*/
 
 } // namespace rc

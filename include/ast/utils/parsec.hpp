@@ -253,7 +253,3 @@ inline Parser<TypeName> type_ =
     identifier.map([](const std::string &s) { return TypeName{s}; });
 
 } // namespace parsec
-
-inline parsec::Parser<rc::Token> operator""_tokType(const char *s, size_t n) {
-  return parsec::tok(parsec::token_type_from_name(std::string(s, n)));
-}
