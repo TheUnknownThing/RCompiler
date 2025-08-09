@@ -250,11 +250,41 @@ inline Parser<std::string> int_literal =
 inline Parser<rc::LiteralType> typ =
     Parser<rc::LiteralType>([](const std::vector<rc::Token> &toks,
                                size_t &pos) -> ParseResult<rc::LiteralType> {
-      if (pos < toks.size() &&
-          toks[pos].type == rc::TokenType::NON_KEYWORD_IDENTIFIER &&
-          rc::valid_literal_types.find(toks[pos].lexeme) !=
-              rc::valid_literal_types.end()) {
-        return rc::literal_type_map[toks[pos++].lexeme];
+      size_t saved_pos = pos;
+      if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
+        pos++; // consume '('
+        std::vector<rc::LiteralType> elements;
+
+        auto first = typ.parse(toks, pos);
+        if (first) {
+          elements.push_back(*first);
+
+          while (pos < toks.size() && toks[pos].type == rc::TokenType::COMMA) {
+            pos++; // consume ','
+            auto next = typ.parse(toks, pos);
+            if (!next) {
+              pos = saved_pos;
+              if (pos < toks.size() &&
+                  toks[pos].type == rc::TokenType::NON_KEYWORD_IDENTIFIER) {
+                const std::string &name = toks[pos].lexeme;
+                auto it = rc::literal_type_map.find(name);
+                if (it != rc::literal_type_map.end()) {
+                  pos++; // consume identifier
+                  return it->second;
+                }
+              }
+
+              return std::nullopt;
+            }
+            elements.push_back(*next);
+          }
+
+          if (pos < toks.size() && toks[pos].type == rc::TokenType::R_PAREN) {
+            pos++; // consume ')'
+            return rc::LiteralType::tuple(std::move(elements));
+          }
+        }
+        pos = saved_pos;
       }
       return std::nullopt;
     });
