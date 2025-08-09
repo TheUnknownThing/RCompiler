@@ -113,12 +113,12 @@ inline std::unique_ptr<BaseNode> Parser::parse_statement() {
 }
 
 inline std::unique_ptr<FunctionDecl> Parser::parse_function_declaration() {
-  std::string name;
-  std::vector<std::string> parameters;
+  Token name;
+  std::vector<Token> parameters;
   BlockStatement *body = nullptr;
 
   if (match(TokenType::NON_KEYWORD_IDENTIFIER)) {
-    name = previous().lexeme;
+    name = previous();
   } else {
     throw std::runtime_error("Expected function name");
   }
@@ -126,7 +126,7 @@ inline std::unique_ptr<FunctionDecl> Parser::parse_function_declaration() {
   if (match(TokenType::L_PAREN)) {
     while (!check(TokenType::R_PAREN) && !is_at_end()) {
       if (match(TokenType::NON_KEYWORD_IDENTIFIER)) {
-        parameters.push_back(previous().lexeme);
+        parameters.push_back(previous());
       } else {
         throw std::runtime_error("Expected parameter name");
       }

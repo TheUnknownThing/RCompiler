@@ -17,8 +17,8 @@ set(HEADERS include/*)
 add_executable(rcompiler ${SOURCES} ${HEADERS})
 
 # Compiler flags
-target_compile_options(rc PRIVATE -Wall -Wextra -std=c++20)
+target_compile_options(rcompiler PRIVATE -Wall -Wextra -std=c++20)
 
 # Enable testing
 # enable_testing()
-# add_subdirectory(tests) 
+# add_subdirectory(tests)

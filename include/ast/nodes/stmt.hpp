@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base.hpp"
+#include "../../lexer/lexer.hpp"
 
 #include <map>
 #include <string>
@@ -24,10 +25,10 @@ public:
 
 class LetStatement : public Statement {
 public:
-  std::string identifier;
+  Token identifier;
   BaseNode *initializer;
 
-  LetStatement(const std::string &id, BaseNode *init)
+  LetStatement(const Token &id, BaseNode *init)
       : identifier(id), initializer(init) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }

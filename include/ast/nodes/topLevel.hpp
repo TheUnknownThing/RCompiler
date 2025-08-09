@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../types.hpp"
+#include "../../lexer/lexer.hpp"
 #include "base.hpp"
 #include "stmt.hpp"
 
@@ -10,17 +11,17 @@
 namespace rc {
 class FunctionDecl : public BaseNode {
 public:
-  std::string name;
-  std::vector<std::string> parameters;
+  Token name;
+  std::vector<Token> parameters;
   std::vector<LiteralType> paramers_types;
   std::vector<LiteralType> return_types;
   BlockStatement *body;
 
-  FunctionDecl(const std::string &name, const std::vector<std::string> &params,
+  FunctionDecl(const Token &nameTok, const std::vector<Token> &params,
                const std::vector<LiteralType> &param_types,
                const std::vector<LiteralType> &return_types,
                BlockStatement *body)
-      : name(name), parameters(params), paramers_types(param_types),
+      : name(nameTok), parameters(params), paramers_types(param_types),
         return_types(return_types), body(body) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
@@ -28,12 +29,12 @@ public:
 
 class StructDecl : public BaseNode {
 public:
-  std::string name;
-  std::vector<std::pair<std::string, std::string>> fields;
+  Token name;
+  std::vector<std::pair<Token, Token>> fields; // field name, type token
 
-  StructDecl(const std::string &name,
-             const std::vector<std::pair<std::string, std::string>> &fields)
-      : name(name), fields(fields) {}
+  StructDecl(const Token &nameTok,
+             const std::vector<std::pair<Token, Token>> &fields)
+      : name(nameTok), fields(fields) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };

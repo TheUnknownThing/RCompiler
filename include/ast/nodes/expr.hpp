@@ -2,6 +2,7 @@
 
 #include "base.hpp"
 #include "../types.hpp"
+#include "../../lexer/lexer.hpp"
 
 #include <map>
 #include <string>
@@ -15,18 +16,18 @@ public:
 
 class LiteralExpr : public Expression {
 public:
-  std::string value;
+  Token tok;
 
-  LiteralExpr(const std::string &val) : value(val) {}
+  LiteralExpr(const Token &token) : tok(token) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
 class IdentifierExpr : public Expression {
 public:
-  std::string name;
+  Token name;
 
-  IdentifierExpr(const std::string &name) : name(name) {}
+  IdentifierExpr(const Token &nameTok) : name(nameTok) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
@@ -35,10 +36,10 @@ class BinaryExpr : public Expression {
 public:
   BaseNode *left;
   BaseNode *right;
-  std::string op;
+  Token op;
 
-  BinaryExpr(BaseNode *l, BaseNode *r, const std::string &op)
-      : left(l), right(r), op(op) {}
+  BinaryExpr(BaseNode *l, BaseNode *r, const Token &opTok)
+      : left(l), right(r), op(opTok) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
@@ -46,10 +47,10 @@ public:
 class UnaryExpr : public Expression {
 public:
   BaseNode *operand;
-  std::string op;
+  Token op;
 
-  UnaryExpr(BaseNode *op, const std::string &op_str)
-      : operand(op), op(op_str) {}
+  UnaryExpr(BaseNode *opnd, const Token &opTok)
+      : operand(opnd), op(opTok) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
@@ -98,11 +99,11 @@ public:
 
 class StructExpr : public Expression {
 public:
-  std::string name;
-  std::map<std::string, BaseNode *> fields;
+  Token name;
+  std::vector<std::pair<Token, BaseNode *>> fields;
 
-  StructExpr(const std::string &n,
-             const std::map<std::string, BaseNode *> &f)
+  StructExpr(const Token &n,
+             const std::vector<std::pair<Token, BaseNode *>> &f)
       : name(n), fields(f) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
