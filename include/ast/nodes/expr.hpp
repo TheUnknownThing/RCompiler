@@ -14,99 +14,61 @@ public:
   virtual void accept(BaseVisitor &visitor) = 0;
 };
 
-class LiteralExpr : public Expression {
+class NameExpression : public Expression {
 public:
-  Token tok;
+  std::string name;
 
-  LiteralExpr(const Token &token) : tok(token) {}
+  NameExpression(std::string n) : name(std::move(n)) {}
 
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+  void accept(BaseVisitor &visitor) override {
+    visitor.visit(*this);
+  }
 };
 
-class IdentifierExpr : public Expression {
+class IntExpression : public Expression {
 public:
-  Token name;
+  std::string value;
 
-  IdentifierExpr(const Token &nameTok) : name(nameTok) {}
+  IntExpression(std::string v) : value(std::move(v)) {}
 
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+  void accept(BaseVisitor &visitor) override {
+    visitor.visit(*this);
+  }
 };
 
-class BinaryExpr : public Expression {
+class PrefixExpression : public Expression {
 public:
-  BaseNode *left;
-  BaseNode *right;
-  Token op;
-
-  BinaryExpr(BaseNode *l, BaseNode *r, const Token &opTok)
-      : left(l), right(r), op(opTok) {}
-
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+  rc::Token op;
+  Expression *right;
+  
+  PrefixExpression(rc::Token o, Expression *r) : op(std::move(o)), right(r) {}
+  void accept(BaseVisitor &visitor) override {
+    visitor.visit(*this);
+  }
 };
 
-class UnaryExpr : public Expression {
+class BinaryExpression : public Expression {
 public:
-  BaseNode *operand;
-  Token op;
-
-  UnaryExpr(BaseNode *opnd, const Token &opTok)
-      : operand(opnd), op(opTok) {}
-
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+  Expression *left;
+  rc::Token op;
+  Expression *right;
+  
+  BinaryExpression(Expression *l, rc::Token o, Expression *r)
+      : left(l), op(std::move(o)), right(r) {}
+  void accept(BaseVisitor &visitor) override {
+    visitor.visit(*this);
+  }
 };
 
-class CallExpr : public Expression {
+class GroupExpression : public Expression {
 public:
-  BaseNode *callee;
-  std::vector<BaseNode *> arguments;
+  Expression *inner;
 
-  CallExpr(BaseNode *c, const std::vector<BaseNode *> &args)
-      : callee(c), arguments(args) {}
+  explicit GroupExpression(Expression *e) : inner(e) {}
 
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
-};
-
-class AssignmentExpr : public Expression {
-public:
-  BaseNode *target;
-  BaseNode *value;
-
-  AssignmentExpr(BaseNode *t, BaseNode *v) : target(t), value(v) {}
-
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
-};
-
-class IfExpr : public Expression {
-public:
-  BaseNode *condition;
-  BaseNode *then_branch;
-  BaseNode *else_branch;
-
-  IfExpr(BaseNode *cond, BaseNode *then_br, BaseNode *else_br)
-      : condition(cond), then_branch(then_br), else_branch(else_br) {}
-
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
-};
-
-class ReturnExpr : public Expression {
-public:
-  BaseNode *value;
-
-  ReturnExpr(BaseNode *val) : value(val) {}
-
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
-};
-
-class StructExpr : public Expression {
-public:
-  Token name;
-  std::vector<std::pair<Token, BaseNode *>> fields;
-
-  StructExpr(const Token &n,
-             const std::vector<std::pair<Token, BaseNode *>> &f)
-      : name(n), fields(f) {}
-
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+  void accept(BaseVisitor &visitor) override {
+    visitor.visit(*this);
+  }
 };
 
 } // namespace rc

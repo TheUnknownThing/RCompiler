@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 #include <string>
 
 namespace rc {
@@ -47,5 +48,11 @@ std::map<LiteralType, std::string> literal_type_reverse_map = {
     {LiteralType::RAW_BYTE_STRING, "raw_byte_string"},
     {LiteralType::CHAR, "char"},
     {LiteralType::BYTE, "byte"}
+};
+
+std::set<std::string> valid_literal_types = {
+    "i32", "u32", "isize", "usize", "string", "raw_string",
+    "c_string", "raw_c_string", "byte_string", "raw_byte_string",
+    "char", "byte"
 };
 }

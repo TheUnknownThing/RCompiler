@@ -6,14 +6,16 @@
 #include <vector>
 
 #include "../lexer/lexer.hpp"
+#include "types.hpp"
 #include "utils/parsec.hpp"
 #include "utils/pratt.hpp"
-#include "types.hpp"
 
 #include "nodes/base.hpp"
 #include "nodes/expr.hpp"
 #include "nodes/stmt.hpp"
 #include "nodes/topLevel.hpp"
+
+using namespace parsec;
 
 namespace rc {
 
@@ -32,6 +34,28 @@ private:
 inline Parser::Parser(std::vector<Token> tokens) : tokens(std::move(tokens)) {}
 
 inline std::unique_ptr<RootNode> Parser::parse() {
+  // TODO
+}
+
+inline std::unique_ptr<BaseNode> Parser::parse_statement() {
+  auto tbl = pratt::default_table();
+  auto expr = pratt::pratt_expr(tbl);
+
+  auto let_stmt =
+      tok(TokenType::LET)
+          .thenR(identifier)
+          .thenL(tok(TokenType::COLON))
+          .combine(typ,
+                   [](auto name, auto ty) { return std::make_pair(name, ty); })
+          .thenL(tok(TokenType::EQ))
+          .combine(expr, [](auto pair, auto e) {
+            return LetStatement{pair.first, pair.second, e};
+          });
+
+  
+}
+
+inline std::unique_ptr<BaseNode> Parser::parse_expression() {
   // TODO
 }
 

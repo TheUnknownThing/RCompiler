@@ -2,8 +2,11 @@
 
 #include "base.hpp"
 #include "../../lexer/lexer.hpp"
+#include "../types.hpp"
+#include "expr.hpp"
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -25,11 +28,12 @@ public:
 
 class LetStatement : public Statement {
 public:
-  Token identifier;
-  BaseNode *initializer;
+  std::string identifier;
+  LiteralType type;
+  std::shared_ptr<Expression> expr;
 
-  LetStatement(const Token &id, BaseNode *init)
-      : identifier(id), initializer(init) {}
+  LetStatement(const std::string &id, LiteralType ty, std::shared_ptr<Expression> e)
+      : identifier(id), type(ty), expr(std::move(e)) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };

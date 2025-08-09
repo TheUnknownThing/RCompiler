@@ -8,43 +8,12 @@
 #include <utility>
 #include <vector>
 
+#include "../nodes/expr.hpp"
 #include "parsec.hpp"
 
 namespace pratt {
 
-struct Expr {
-  virtual ~Expr() = default;
-};
-using ExprPtr = std::shared_ptr<Expr>;
-
-struct NameExpr : Expr {
-  std::string name;
-  explicit NameExpr(std::string n) : name(std::move(n)) {}
-};
-struct IntExpr : Expr {
-  std::string value;
-  explicit IntExpr(std::string v) : value(std::move(v)) {}
-};
-
-struct PrefixExpr : Expr {
-  rc::Token op;
-  ExprPtr right;
-  PrefixExpr(rc::Token op, ExprPtr right)
-      : op(std::move(op)), right(std::move(right)) {}
-};
-
-struct BinaryExpr : Expr {
-  ExprPtr left;
-  rc::Token op;
-  ExprPtr right;
-  BinaryExpr(ExprPtr l, rc::Token op, ExprPtr r)
-      : left(std::move(l)), op(std::move(op)), right(std::move(r)) {}
-};
-
-struct GroupExpr : Expr {
-  ExprPtr inner;
-  explicit GroupExpr(ExprPtr e) : inner(std::move(e)) {}
-};
+using ExprPtr = std::shared_ptr<rc::Expression>;
 
 struct OpKey {
   rc::TokenType type;
@@ -176,12 +145,12 @@ inline PrattTable default_table() {
   tbl.prefix(rc::TokenType::NON_KEYWORD_IDENTIFIER,
              [](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
                const rc::Token &prev = toks[pos - 1];
-               return std::make_shared<NameExpr>(prev.lexeme);
+               return std::make_shared<rc::NameExpression>(prev.lexeme);
              });
   tbl.prefix(rc::TokenType::INTEGER_LITERAL,
              [](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
                const rc::Token &prev = toks[pos - 1];
-               return std::make_shared<IntExpr>(prev.lexeme);
+               return std::make_shared<rc::IntExpression>(prev.lexeme);
              });
 
   // ( expr )
@@ -194,7 +163,7 @@ inline PrattTable default_table() {
         if (pos >= toks.size() || toks[pos].type != rc::TokenType::R_PAREN)
           return nullptr;
         ++pos;
-        return std::make_shared<GroupExpr>(std::move(inner));
+        return std::make_shared<rc::GroupExpression>(std::move(inner));
       });
 
   // prefix ops: + - !
@@ -205,7 +174,7 @@ inline PrattTable default_table() {
         ExprPtr right = tbl.parse_expression(toks, pos, 100);
         if (!right)
           return nullptr;
-        return std::make_shared<PrefixExpr>(op, std::move(right));
+        return std::make_shared<rc::PrefixExpression>(op, std::move(right));
       });
   tbl.prefix(
       rc::TokenType::MINUS,
@@ -214,7 +183,7 @@ inline PrattTable default_table() {
         ExprPtr right = tbl.parse_expression(toks, pos, 100);
         if (!right)
           return nullptr;
-        return std::make_shared<PrefixExpr>(op, std::move(right));
+        return std::make_shared<rc::PrefixExpression>(op, std::move(right));
       });
   tbl.prefix(
       rc::TokenType::NOT,
@@ -223,12 +192,12 @@ inline PrattTable default_table() {
         ExprPtr right = tbl.parse_expression(toks, pos, 100);
         if (!right)
           return nullptr;
-        return std::make_shared<PrefixExpr>(op, std::move(right));
+        return std::make_shared<rc::PrefixExpression>(op, std::move(right));
       });
 
   auto bin = [](ExprPtr l, rc::Token op, ExprPtr r) {
-    return std::make_shared<BinaryExpr>(std::move(l), std::move(op),
-                                        std::move(r));
+    return std::make_shared<rc::BinaryExpression>(std::move(l), std::move(op),
+                                                  std::move(r));
   };
 
   // 70: * / %

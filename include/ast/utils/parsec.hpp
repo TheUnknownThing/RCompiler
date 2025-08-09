@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "../../lexer/lexer.hpp"
+#include "../types.hpp"
 
 namespace parsec {
 
@@ -246,10 +247,16 @@ inline Parser<std::string> int_literal =
       return std::nullopt;
     });
 
-struct TypeName {
-  std::string name;
-};
-inline Parser<TypeName> type_ =
-    identifier.map([](const std::string &s) { return TypeName{s}; });
+inline Parser<rc::LiteralType> typ =
+    Parser<rc::LiteralType>([](const std::vector<rc::Token> &toks,
+                               size_t &pos) -> ParseResult<rc::LiteralType> {
+      if (pos < toks.size() &&
+          toks[pos].type == rc::TokenType::NON_KEYWORD_IDENTIFIER &&
+          rc::valid_literal_types.find(toks[pos].lexeme) !=
+              rc::valid_literal_types.end()) {
+        return rc::literal_type_map[toks[pos++].lexeme];
+      }
+      return std::nullopt;
+    });
 
 } // namespace parsec
