@@ -41,19 +41,20 @@ inline std::unique_ptr<BaseNode> Parser::parse_statement() {
   auto tbl = pratt::default_table();
   auto expr = pratt::pratt_expr(tbl);
 
-  auto identifier_and_type =
-      identifier + tok(TokenType::COLON) + typ >> [](const auto &t) {
-        // t = ((std::string, TokenType::COLON), LiteralType)
-        const auto &name = std::get<0>(std::get<0>(t));
-        const auto &ty = std::get<1>(t);
-        return std::make_pair(name, ty);
-      };
+  auto identifier_and_type = identifier.combine(
+      optional(tok(TokenType::COLON).thenR(typ)),
+      [](const auto &id, const auto &t) {
+        const auto &ty =
+            t.value_or(LiteralType(PrimitiveLiteralType::TO_BE_INFERRED));
+        return std::make_pair(id, ty);
+      });
 
   auto return_type = tok(TokenType::ARROW).thenR(typ);
 
-  auto argument_list = tok(TokenType::L_PAREN)
-                           .thenR(many(identifier_and_type))
-                           .thenL(tok(TokenType::R_PAREN));
+  auto argument_list =
+      tok(TokenType::L_PAREN)
+          .thenR(many(identifier_and_type.thenL(tok(TokenType::COMMA))))
+          .thenL(tok(TokenType::R_PAREN));
 
   auto let_stmt = tok(TokenType::LET)
                       .thenR(identifier_and_type)
@@ -72,8 +73,6 @@ inline std::unique_ptr<BaseNode> Parser::parse_statement() {
           .combine(return_type, [](const auto &pm_list, const auto &ty) {
             return FunctionDecl(pm_list.first, pm_list.second, ty);
           });
-
-  
 }
 
 inline std::unique_ptr<BaseNode> Parser::parse_expression() {

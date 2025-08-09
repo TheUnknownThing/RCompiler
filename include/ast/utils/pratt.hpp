@@ -92,8 +92,7 @@ public:
     auto it_nud = prefix_.find(t.type);
     if (it_nud == prefix_.end())
       return nullptr;
-    ExprPtr left =
-        it_nud->second(toks, pos_for_nud_from_consumed(t, toks, pos));
+    ExprPtr left = it_nud->second(toks, pos);
     if (!left)
       return nullptr;
 
@@ -129,12 +128,6 @@ public:
   }
 
 private:
-  static size_t &pos_for_nud_from_consumed(const rc::Token &,
-                                           const std::vector<rc::Token> &,
-                                           size_t &pos) {
-    return pos;
-  }
-
   std::unordered_map<rc::TokenType, NudFn> prefix_;
   std::unordered_map<OpKey, LedEntry, OpKeyHash> infix_;
 };

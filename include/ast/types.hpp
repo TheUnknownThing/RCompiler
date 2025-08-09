@@ -17,10 +17,8 @@ enum class PrimitiveLiteralType {
   RAW_STRING,
   C_STRING,
   RAW_C_STRING,
-  BYTE_STRING,
-  RAW_BYTE_STRING,
   CHAR,
-  BYTE
+  TO_BE_INFERRED
 };
 
 struct LiteralType {
@@ -30,6 +28,10 @@ struct LiteralType {
   using Storage = std::variant<PrimitiveLiteralType, Tuple>;
 
   Storage storage;
+
+  LiteralType() = default;
+  explicit LiteralType(Storage s) : storage(std::move(s)) {}
+  LiteralType(PrimitiveLiteralType b) : storage(b) {}
 
   static LiteralType base(PrimitiveLiteralType b) {
     return LiteralType{Storage{b}};
@@ -89,10 +91,8 @@ inline const std::map<std::string, PrimitiveLiteralType> base_literal_type_map =
      {"raw_string", PrimitiveLiteralType::RAW_STRING},
      {"c_string", PrimitiveLiteralType::C_STRING},
      {"raw_c_string", PrimitiveLiteralType::RAW_C_STRING},
-     {"byte_string", PrimitiveLiteralType::BYTE_STRING},
-     {"raw_byte_string", PrimitiveLiteralType::RAW_BYTE_STRING},
      {"char", PrimitiveLiteralType::CHAR},
-     {"byte", PrimitiveLiteralType::BYTE}};
+     {"to_be_inferred", PrimitiveLiteralType::TO_BE_INFERRED}};
 
 inline const std::map<PrimitiveLiteralType, std::string>
     literal_type_reverse_map = {
@@ -104,10 +104,9 @@ inline const std::map<PrimitiveLiteralType, std::string>
         {PrimitiveLiteralType::RAW_STRING, "raw_string"},
         {PrimitiveLiteralType::C_STRING, "c_string"},
         {PrimitiveLiteralType::RAW_C_STRING, "raw_c_string"},
-        {PrimitiveLiteralType::BYTE_STRING, "byte_string"},
-        {PrimitiveLiteralType::RAW_BYTE_STRING, "raw_byte_string"},
         {PrimitiveLiteralType::CHAR, "char"},
-        {PrimitiveLiteralType::BYTE, "byte"}};
+        {PrimitiveLiteralType::TO_BE_INFERRED, "to_be_inferred"}};
+;
 
 inline const std::map<std::string, LiteralType> literal_type_map = {
     {"i32", LiteralType::base(PrimitiveLiteralType::I32)},
@@ -118,16 +117,13 @@ inline const std::map<std::string, LiteralType> literal_type_map = {
     {"raw_string", LiteralType::base(PrimitiveLiteralType::RAW_STRING)},
     {"c_string", LiteralType::base(PrimitiveLiteralType::C_STRING)},
     {"raw_c_string", LiteralType::base(PrimitiveLiteralType::RAW_C_STRING)},
-    {"byte_string", LiteralType::base(PrimitiveLiteralType::BYTE_STRING)},
-    {"raw_byte_string",
-     LiteralType::base(PrimitiveLiteralType::RAW_BYTE_STRING)},
     {"char", LiteralType::base(PrimitiveLiteralType::CHAR)},
-    {"byte", LiteralType::base(PrimitiveLiteralType::BYTE)}};
+    {"to_be_inferred",
+     LiteralType::base(PrimitiveLiteralType::TO_BE_INFERRED)}};
 
 inline const std::set<std::string> valid_literal_types = {
-    "i32",        "u32",      "isize",        "usize",       "string",
-    "raw_string", "c_string", "raw_c_string", "byte_string", "raw_byte_string",
-    "char",       "byte"};
+    "i32",        "u32",      "isize",        "usize", "string",
+    "raw_string", "c_string", "raw_c_string", "char",  "to_be_inferred"};
 
 inline std::string to_string(const LiteralType &t) {
   if (t.is_base()) {
