@@ -21,3 +21,7 @@ RCompiler/
 ## Original Repo
 
 This project implements [RCompiler-Spec](https://github.com/peterzheng98/RCompiler-Spec/) as homework of [Compilers 2025](https://ipads.se.sjtu.edu.cn/courses/compilers/index.shtml) at Shanghai Jiao Tong University.
+
+## Implemented Features
+
+See [whitelist.md](whitelist.md) for the concrete, implementable subset of the Rust language that the RCompiler parser and type checker will support. This subset is derived from the current Rust specification, excluding features that are explicitly removed or marked as undefined behavior.
