@@ -1,28 +1,25 @@
 #pragma once
 
-#include "../types.hpp"
 #include "../../lexer/lexer.hpp"
+#include "../types.hpp"
 #include "base.hpp"
 #include "stmt.hpp"
 
 #include <memory>
 #include <vector>
+#include <optional>
 
 namespace rc {
 class FunctionDecl : public BaseNode {
 public:
-  Token name;
-  std::vector<Token> parameters;
-  std::vector<LiteralType> paramers_types;
-  std::vector<LiteralType> return_types;
-  BlockStatement *body;
+  std::string name;
+  std::optional<std::vector<std::pair<std::string, LiteralType>>> params;
+  LiteralType return_type;
 
-  FunctionDecl(const Token &nameTok, const std::vector<Token> &params,
-               const std::vector<LiteralType> &param_types,
-               const std::vector<LiteralType> &return_types,
-               BlockStatement *body)
-      : name(nameTok), parameters(params), paramers_types(param_types),
-        return_types(return_types), body(body) {}
+  FunctionDecl(const std::string &nameTok,
+               const std::optional<std::vector<std::pair<std::string, LiteralType>>> &params,
+               LiteralType return_type)
+      : name(nameTok), params(params), return_type(return_type) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
