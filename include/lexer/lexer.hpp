@@ -26,6 +26,19 @@ inline const char *toString(TokenType type) {
 }
 #undef X
 
+#define X(name, str) {str, TokenType::name},
+inline TokenType fromString(const std::string &str) {
+  static const std::map<std::string, TokenType> tokenMap = {
+#include "token_defs.def"
+  };
+  auto it = tokenMap.find(str);
+  if (it != tokenMap.end()) {
+    return it->second;
+  }
+  return TokenType::UNKNOWN;
+}
+#undef X
+
 inline std::ostream &operator<<(std::ostream &os, const TokenType &type) {
   os << toString(type);
   return os;
