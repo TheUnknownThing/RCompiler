@@ -114,7 +114,7 @@ static std::map<std::string, TokenType> operatorToTokenType = {
     {"^", TokenType::CARET},
     {"!", TokenType::NOT},
     {"?", TokenType::QUESTION},
-    {"=", TokenType::EQ},
+    {"=", TokenType::ASSIGN},
     {"<", TokenType::LT},
     {">", TokenType::GT},
     {"<<", TokenType::SHL},

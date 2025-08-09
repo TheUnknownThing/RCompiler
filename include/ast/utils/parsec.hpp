@@ -226,16 +226,6 @@ inline Parser<rc::Token> tok(rc::TokenType t) {
   });
 }
 
-inline Parser<rc::Token> tok_lex(rc::TokenType t, std::string lex) {
-  return Parser<rc::Token>(
-      [t, lex = std::move(lex)](const std::vector<rc::Token> &toks,
-                                size_t &pos) -> ParseResult<rc::Token> {
-        if (pos < toks.size() && toks[pos].type == t && toks[pos].lexeme == lex)
-          return toks[pos++];
-        return std::nullopt;
-      });
-}
-
 inline Parser<std::string> identifier =
     Parser<std::string>([](const std::vector<rc::Token> &toks,
                            size_t &pos) -> ParseResult<std::string> {
