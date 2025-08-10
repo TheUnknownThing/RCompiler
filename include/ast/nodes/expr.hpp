@@ -156,4 +156,24 @@ public:
   }
 };
 
+class LoopExpression : public Expression {
+public:
+  std::shared_ptr<Expression> body; // BlockExpression
+
+  explicit LoopExpression(std::shared_ptr<Expression> b) : body(std::move(b)) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class WhileExpression : public Expression {
+public:
+  std::shared_ptr<Expression> condition;
+  std::shared_ptr<Expression> body; // BlockExpression
+
+  WhileExpression(std::shared_ptr<Expression> cond, std::shared_ptr<Expression> b)
+      : condition(std::move(cond)), body(std::move(b)) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
 } // namespace rc

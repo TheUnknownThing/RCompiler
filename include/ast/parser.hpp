@@ -42,6 +42,8 @@ private:
   parsec::Parser<std::shared_ptr<Expression>> parse_if_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_return_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_call_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_loop_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_while_expression();
   parsec::Parser<std::shared_ptr<Expression>> any_expression();
   parsec::Parser<std::shared_ptr<Expression>>
   parse_primary_literal_expression();
@@ -568,6 +570,62 @@ Parser::parse_if_expression() {
       });
 }
 
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_loop_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        size_t saved = pos;
+        LOG_DEBUG("Attempting to parse loop expression at position " +
+                  std::to_string(pos));
+        if (!tok(TokenType::LOOP).parse(toks, pos)) {
+          pos = saved;
+          return std::nullopt;
+        }
+        auto body = parse_block_expression().parse(toks, pos);
+        if (!body) {
+          pos = saved;
+          LOG_ERROR("Failed to parse loop body block");
+          return std::nullopt;
+        }
+        LOG_DEBUG("Successfully parsed loop expression");
+        return std::shared_ptr<Expression>(
+            std::make_shared<LoopExpression>(*body));
+      });
+}
+
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_while_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        size_t saved = pos;
+        LOG_DEBUG("Attempting to parse while expression at position " +
+                  std::to_string(pos));
+        if (!tok(TokenType::WHILE).parse(toks, pos)) {
+          pos = saved;
+          return std::nullopt;
+        }
+        LOG_DEBUG("Parsing while condition");
+        auto cond = pratt_expression().parse(toks, pos);
+        if (!cond) {
+          pos = saved;
+          LOG_ERROR("Failed to parse while condition");
+          return std::nullopt;
+        }
+        LOG_DEBUG("Parsing while body block");
+        auto body = parse_block_expression().parse(toks, pos);
+        if (!body) {
+          pos = saved;
+          LOG_ERROR("Failed to parse while body block");
+          return std::nullopt;
+        }
+        LOG_DEBUG("Successfully parsed while expression");
+        return std::shared_ptr<Expression>(
+            std::make_shared<WhileExpression>(*cond, *body));
+      });
+}
+
 inline parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
   // try parse it sequentially
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -588,6 +646,16 @@ inline parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
         pos = saved;
         if (auto e = parse_call_expression().parse(toks, pos)) {
           LOG_DEBUG("Parsed call expression");
+          return *e;
+        }
+        pos = saved;
+        if (auto e = parse_loop_expression().parse(toks, pos)) {
+          LOG_DEBUG("Parsed loop expression");
+          return *e;
+        }
+        pos = saved;
+        if (auto e = parse_while_expression().parse(toks, pos)) {
+          LOG_DEBUG("Parsed while expression");
           return *e;
         }
         pos = saved;

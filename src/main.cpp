@@ -12,7 +12,7 @@
 
 int main() {
   try {
-    rc::Preprocessor preprocessor("../examples/ast/5.rs");
+    rc::Preprocessor preprocessor("../examples/ast/20.rs");
     auto preprocessed_code = preprocessor.preprocess();
 
     rc::Lexer lexer(preprocessed_code);

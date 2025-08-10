@@ -11,8 +11,11 @@ class GroupExpression;
 class IfExpression;
 class MatchExpression;
 class ReturnExpression;
+class CallExpression;
 class UnderscoreExpression;
 class BlockExpression;
+class LoopExpression;
+class WhileExpression;
 class BlockStatement;
 class LetStatement;
 class ExpressionStatement;
@@ -49,8 +52,11 @@ public:
   virtual void visit(IfExpression &) {}
   virtual void visit(MatchExpression &) {}
   virtual void visit(ReturnExpression &) {}
+  virtual void visit(CallExpression &) {}
   virtual void visit(UnderscoreExpression &) {}
   virtual void visit(BlockExpression &) {}
+  virtual void visit(LoopExpression &) {}
+  virtual void visit(WhileExpression &) {}
 
   // Statement visitors
   virtual void visit(BlockStatement &) {}

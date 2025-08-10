@@ -44,6 +44,10 @@ void PrettyPrintVisitor::visit(BaseNode &node) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
     visit(*expr);
+  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
+    visit(*expr);
   } else if (auto *stmt = dynamic_cast<BlockStatement *>(&node)) {
     visit(*stmt);
   } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
@@ -214,6 +218,34 @@ void PrettyPrintVisitor::visit(BlockExpression &node) {
     output_ << std::endl;
   }
 
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(LoopExpression &node) {
+  print_line("LoopExpr {");
+  increase_indent();
+  print_indent();
+  print_inline("body: ");
+  node.body->accept(*this);
+  output_ << std::endl;
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(WhileExpression &node) {
+  print_line("WhileExpr {");
+  increase_indent();
+  print_indent();
+  print_inline("condition: ");
+  node.condition->accept(*this);
+  output_ << std::endl;
+  print_indent();
+  print_inline("body: ");
+  node.body->accept(*this);
+  output_ << std::endl;
   decrease_indent();
   print_indent();
   print_inline("}");

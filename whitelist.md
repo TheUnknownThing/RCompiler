@@ -147,7 +147,6 @@ Allowed expressions
 - [x] Paths (no turbofish), grouped, arrays/indexing, tuples/tuple indexing, structs/functional update, field access
 - [x] Calls and method calls
 - [x] Operators: borrow/raw borrow, deref, `-`/`!`, integer-only arithmetic/bit ops, comparisons, `&&`/`||`, `as` casts (no floats), assignment and compound assignment
-- [x] Ranges
 - [x] Blocks, const blocks
 - [x] Loops: `loop`, `while` (+ `while let`); `break`/`continue`; `break expr` from `loop`
 - [x] `if`/`else` (incl. `if let`, condition chains); `match`; `return`; underscore expr
@@ -157,6 +156,7 @@ Excluded
 - [ ] Async/await; `async` blocks/closures/fns; `await`
 - [ ] Closures
 - [ ] Try (`?`)
+- [ ] Ranges
 - [ ] `for` loops
 - [ ] Floating-point literals/ops; byte/byte-string literals
 - [ ] Doc comments; turbofish `::<…>`; `pub`; `extern`

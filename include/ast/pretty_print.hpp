@@ -24,33 +24,35 @@ public:
   void visit(BaseNode &node) override;
 
   // Expression visitors
-  void visit(NameExpression &node);
-  void visit(IntExpression &node);
-  void visit(PrefixExpression &node);
-  void visit(BinaryExpression &node);
-  void visit(GroupExpression &node);
-  void visit(IfExpression &node);
-  void visit(MatchExpression &node);
-  void visit(ReturnExpression &node);
-  void visit(CallExpression &node);
-  void visit(UnderscoreExpression &node);
-  void visit(BlockExpression &node);
+  void visit(NameExpression &node) override;
+  void visit(IntExpression &node) override;
+  void visit(PrefixExpression &node) override;
+  void visit(BinaryExpression &node) override;
+  void visit(GroupExpression &node) override;
+  void visit(IfExpression &node) override;
+  void visit(MatchExpression &node) override;
+  void visit(ReturnExpression &node) override;
+  void visit(CallExpression &node) override;
+  void visit(UnderscoreExpression &node) override;
+  void visit(BlockExpression &node) override;
+  void visit(LoopExpression &node) override;
+  void visit(WhileExpression &node) override;
 
   // Statement visitors
-  void visit(BlockStatement &node);
-  void visit(LetStatement &node);
-  void visit(ExpressionStatement &node);
-  void visit(EmptyStatement &node);
+  void visit(BlockStatement &node) override;
+  void visit(LetStatement &node) override;
+  void visit(ExpressionStatement &node) override;
+  void visit(EmptyStatement &node) override;
 
   // Top-level declaration visitors
-  void visit(FunctionDecl &node);
-  void visit(ConstantItem &node);
-  void visit(ModuleDecl &node);
-  void visit(StructDecl &node);
-  void visit(EnumDecl &node);
-  void visit(TraitDecl &node);
-  void visit(ImplDecl &node);
-  void visit(RootNode &node);
+  void visit(FunctionDecl &node) override;
+  void visit(ConstantItem &node) override;
+  void visit(ModuleDecl &node) override;
+  void visit(StructDecl &node) override;
+  void visit(EnumDecl &node) override;
+  void visit(TraitDecl &node) override;
+  void visit(ImplDecl &node) override;
+  void visit(RootNode &node) override;
 
 private:
   std::ostringstream output_;
