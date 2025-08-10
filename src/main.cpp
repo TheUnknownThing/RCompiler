@@ -9,7 +9,7 @@
 
 int main() {
   try {
-    rc::Preprocessor preprocessor("../examples/hello_world.rs");
+    rc::Preprocessor preprocessor("../examples/ast/1rs");
     auto preprocessed_code = preprocessor.preprocess();
 
     rc::Lexer lexer(preprocessed_code);
