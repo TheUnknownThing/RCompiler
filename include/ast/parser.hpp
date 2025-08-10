@@ -27,13 +27,46 @@ public:
 private:
   std::vector<Token> tokens;
 
+  std::unique_ptr<BaseNode> parse_item();
   std::unique_ptr<BaseNode> parse_statement();
   std::unique_ptr<BaseNode> parse_expression();
+
+  parsec::Parser<std::unique_ptr<FunctionDecl>> parse_function();
+
+  // Helper
+  parsec::Parser<std::pair<std::string, LiteralType>>
+  identifier_and_type_parser();
+  parsec::Parser<std::vector<std::pair<std::string, LiteralType>>>
+  argument_list_parser();
 };
 
 inline Parser::Parser(std::vector<Token> tokens) : tokens(std::move(tokens)) {}
 
 inline std::unique_ptr<RootNode> Parser::parse() {
+  auto root = std::make_unique<RootNode>();
+  auto tbl = pratt::default_table();
+  auto expr = pratt::pratt_expr(tbl);
+
+  size_t pos = 0;
+  while (pos < tokens.size() && tokens[pos].type != TokenType::TOK_EOF) {
+    std::vector<Token> sub_tokens(tokens.begin() + pos, tokens.end());
+    Parser sub_parser(sub_tokens);
+    if (auto item = sub_parser.parse_item()) {
+      root->children.push_back(std::move(item));
+      // Advance position - this is simplified, in real implementation we'd
+      // track how many tokens were consumed
+      pos++;
+      continue;
+    }
+  }
+
+  return root;
+}
+
+inline std::unique_ptr<BaseNode> Parser::parse_item() {
+  if (tokens.empty())
+    return nullptr;
+
   // TODO
 }
 
@@ -41,164 +74,70 @@ inline std::unique_ptr<BaseNode> Parser::parse_statement() {
   auto tbl = pratt::default_table();
   auto expr = pratt::pratt_expr(tbl);
 
-  auto identifier_and_type = identifier.combine(
-      optional(tok(TokenType::COLON).thenR(typ)),
-      [](const auto &id, const auto &t) {
-        const auto &ty =
-            t.value_or(LiteralType(PrimitiveLiteralType::TO_BE_INFERRED));
-        return std::make_pair(id, ty);
-      });
-
-  auto return_type = tok(TokenType::ARROW).thenR(typ);
-
-  auto argument_list =
-      tok(TokenType::L_PAREN)
-          .thenR(many(identifier_and_type.thenL(tok(TokenType::COMMA))))
-          .thenL(tok(TokenType::R_PAREN));
-
-  auto let_stmt = tok(TokenType::LET)
-                      .thenR(identifier_and_type)
-                      .thenL(tok(TokenType::EQ))
-                      .combine(expr, [](auto pair, auto e) {
-                        return LetStatement{pair.first, pair.second, e};
-                      });
-
-  auto func_decl =
-      tok(TokenType::FN)
-          .thenR(identifier)
-          .combine(optional(argument_list),
-                   [](const auto &name, const auto &params) {
-                     return std::make_pair(name, params);
-                   })
-          .combine(return_type, [](const auto &pm_list, const auto &ty) {
-            return FunctionDecl(pm_list.first, pm_list.second, ty);
-          });
-}
-
-inline std::unique_ptr<BaseNode> Parser::parse_expression() {
-  // TODO
-}
-
-/*
-
-Deprecated Parser Class
-
-class Parser {
-public:
-  Parser(std::vector<Token> tokens);
-  std::unique_ptr<RootNode> parse();
-
-private:
-  std::vector<Token> tokens;
   size_t pos = 0;
+  if (pos < tokens.size()) {
+    if (tokens[pos].type == TokenType::SEMICOLON) {
+      pos++;
+      return std::make_unique<EmptyStatement>();
+    }
 
-  std::unique_ptr<BaseNode> parse_statement();
-  std::unique_ptr<BaseNode> parse_expression();
-
-  std::unique_ptr<FunctionDecl> parse_function_declaration();
-  std::unique_ptr<StructDecl> parse_struct_declaration();
-  std::unique_ptr<BlockStatement> parse_block_statement();
-  std::unique_ptr<LetStatement> parse_let_statement();
-
-  Token &peek();
-  Token &previous();
-  Token &advance();
-  bool is_at_end();
-
-  bool check(TokenType type);
-
-  bool match(TokenType type);
-
-  bool matchLiteralType(LiteralType type);
-};
-
-inline Parser::Parser(std::vector<Token> tokens) : tokens(std::move(tokens)) {}
-
-inline std::unique_ptr<RootNode> Parser::parse() {
-  auto root = std::make_unique<RootNode>();
-  while (!is_at_end()) {
-    auto stmt = parse_statement();
-    if (stmt) {
-      root->children.push_back(std::move(stmt));
+    // expression statement
+    if (auto e = expr.parse(tokens, pos)) {
+      bool has_semicolon = false;
+      if (pos < tokens.size() && tokens[pos].type == TokenType::SEMICOLON) {
+        pos++;
+        has_semicolon = true;
+      }
+      return std::make_unique<ExpressionStatement>(*e, has_semicolon);
     }
   }
-  return root;
-}
-
-inline Token &Parser::peek() { return tokens[pos]; }
-
-inline Token &Parser::previous() { return tokens[pos - 1]; }
-
-inline Token &Parser::advance() {
-  if (!is_at_end()) {
-    pos++;
-  }
-  return previous();
-}
-
-inline bool Parser::is_at_end() {
-  return pos >= tokens.size() || tokens[pos].type == TokenType::TOK_EOF;
-}
-
-inline bool Parser::check(TokenType type) {
-  return !is_at_end() && peek().type == type;
-}
-
-inline bool Parser::match(TokenType type) {
-  if (check(type)) {
-    advance();
-    return true;
-  }
-  return false;
-}
-
-inline std::unique_ptr<BaseNode> Parser::parse_statement() {
-  if (match(TokenType::LET)) {
-    return parse_let_statement();
-  } else if (match(TokenType::FN)) {
-    return parse_function_declaration();
-  } else if (match(TokenType::STRUCT)) {
-    return parse_struct_declaration();
-  } else if (match(TokenType::L_BRACE)) {
-    return parse_block_statement();
-  } // TODO Here
 
   return nullptr;
 }
 
-inline std::unique_ptr<FunctionDecl> Parser::parse_function_declaration() {
-  Token name;
-  std::vector<Token> parameters;
-  BlockStatement *body = nullptr;
-
-  if (match(TokenType::NON_KEYWORD_IDENTIFIER)) {
-    name = previous();
-  } else {
-    throw std::runtime_error("Expected function name");
-  }
-
-  if (match(TokenType::L_PAREN)) {
-    while (!check(TokenType::R_PAREN) && !is_at_end()) {
-      if (match(TokenType::NON_KEYWORD_IDENTIFIER)) {
-        parameters.push_back(previous());
-      } else {
-        throw std::runtime_error("Expected parameter name");
-      }
-      if (!match(TokenType::COMMA)) {
-        break;
-      }
-    }
-    advance(); // Consume R_PAREN
-  }
-
-  if (match(TokenType::L_BRACE)) {
-    // function body
-    body = dynamic_cast<BlockStatement *>(parse_block_statement().release());
-  } else if (match(TokenType::ARROW)) {
-    // return type
-    // TODO
-  }
+inline std::unique_ptr<BaseNode> Parser::parse_expression() {
+  // TODO
+  return nullptr;
 }
-*/
+
+inline parsec::Parser<std::unique_ptr<FunctionDecl>> Parser::parse_function() {
+  auto identifier_and_type = identifier_and_type_parser();
+  auto argument_list = argument_list_parser();
+  auto return_type = tok(TokenType::ARROW).thenR(typ);
+
+  return tok(TokenType::FN)
+      .thenR(identifier)
+      .combine(optional(argument_list),
+               [](const auto &name, const auto &params) {
+                 return std::make_pair(name, params);
+               })
+      .combine(optional(return_type), [](const auto &pm_list, const auto &ty) {
+        auto ret_ty =
+            ty.value_or(LiteralType(PrimitiveLiteralType::TO_BE_INFERRED));
+        return std::make_unique<FunctionDecl>(pm_list.first, pm_list.second,
+                                              ret_ty);
+      });
+}
+
+inline parsec::Parser<std::pair<std::string, LiteralType>>
+Parser::identifier_and_type_parser() {
+  using namespace parsec;
+  return identifier.combine(optional(tok(TokenType::COLON).thenR(typ)),
+                            [](const auto &id, const auto &t) {
+                              const auto &ty = t.value_or(LiteralType(
+                                  PrimitiveLiteralType::TO_BE_INFERRED));
+                              return std::make_pair(id, ty);
+                            });
+}
+
+inline parsec::Parser<std::vector<std::pair<std::string, LiteralType>>>
+Parser::argument_list_parser() {
+  using namespace parsec;
+  auto identifier_and_type = identifier_and_type_parser();
+
+  return tok(TokenType::L_PAREN)
+      .thenR(many(identifier_and_type.thenL(optional(tok(TokenType::COMMA)))))
+      .thenL(tok(TokenType::R_PAREN));
+}
 
 } // namespace rc
