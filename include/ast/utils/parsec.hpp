@@ -251,6 +251,8 @@ inline Parser<rc::LiteralType> typ =
     Parser<rc::LiteralType>([](const std::vector<rc::Token> &toks,
                                size_t &pos) -> ParseResult<rc::LiteralType> {
       size_t saved_pos = pos;
+
+      // tuple type
       if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
         pos++; // consume '('
         std::vector<rc::LiteralType> elements;
@@ -264,16 +266,6 @@ inline Parser<rc::LiteralType> typ =
             auto next = typ.parse(toks, pos);
             if (!next) {
               pos = saved_pos;
-              if (pos < toks.size() &&
-                  toks[pos].type == rc::TokenType::NON_KEYWORD_IDENTIFIER) {
-                const std::string &name = toks[pos].lexeme;
-                auto it = rc::literal_type_map.find(name);
-                if (it != rc::literal_type_map.end()) {
-                  pos++; // consume identifier
-                  return it->second;
-                }
-              }
-
               return std::nullopt;
             }
             elements.push_back(*next);
@@ -286,6 +278,18 @@ inline Parser<rc::LiteralType> typ =
         }
         pos = saved_pos;
       }
+
+      // regular type
+      if (pos < toks.size() &&
+          toks[pos].type == rc::TokenType::NON_KEYWORD_IDENTIFIER) {
+        const std::string &name = toks[pos].lexeme;
+        auto it = rc::literal_type_map.find(name);
+        if (it != rc::literal_type_map.end()) {
+          pos++;
+          return it->second;
+        }
+      }
+
       return std::nullopt;
     });
 

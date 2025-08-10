@@ -1,7 +1,10 @@
+#define LOGGING_LEVEL_DEBUG
+
 #include <iostream>
 #include <string>
 #include <vector>
 
+#include "utils/logger.hpp"
 #include "ast/parser.hpp"
 #include "ast/pretty_print.hpp"
 #include "lexer/lexer.hpp"
@@ -9,7 +12,7 @@
 
 int main() {
   try {
-    rc::Preprocessor preprocessor("../examples/ast/1rs");
+    rc::Preprocessor preprocessor("../examples/ast/3.rs");
     auto preprocessed_code = preprocessor.preprocess();
 
     rc::Lexer lexer(preprocessed_code);
