@@ -40,6 +40,8 @@ private:
   parsec::Parser<std::shared_ptr<Expression>> pratt_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_block_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_if_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_return_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_call_expression();
   parsec::Parser<std::shared_ptr<Expression>> any_expression();
   parsec::Parser<std::shared_ptr<Expression>>
   parse_primary_literal_expression();
@@ -48,6 +50,8 @@ private:
   identifier_and_type_parser();
   parsec::Parser<std::vector<std::pair<std::string, LiteralType>>>
   argument_list_parser();
+  parsec::Parser<std::vector<std::shared_ptr<Expression>>>
+  expression_list_parser();
 };
 
 inline Parser::Parser(std::vector<Token> tokens) : tokens(std::move(tokens)) {
@@ -344,6 +348,65 @@ inline parsec::Parser<std::shared_ptr<Expression>> Parser::pratt_expression() {
 }
 
 inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_return_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        LOG_DEBUG("Attempting to parse return expression at position " +
+                  std::to_string(pos));
+        size_t saved = pos;
+
+        auto ret_parse =
+            tok(TokenType::RETURN)
+                .thenR(optional(any_expression()))
+                .map([](auto val) {
+                  LOG_DEBUG("Parsed return expression");
+                  return std::make_shared<ReturnExpression>(std::move(val));
+                });
+
+        auto result = ret_parse.parse(toks, pos);
+        if (!result) {
+          LOG_ERROR("Failed to parse return expression at position " +
+                    std::to_string(pos));
+          pos = saved;
+          return std::nullopt;
+        }
+
+        LOG_DEBUG("Successfully parsed return expression");
+        return *result;
+      });
+}
+
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_call_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        LOG_DEBUG("Attempting to parse function call at position " +
+                  std::to_string(pos));
+        size_t saved = pos;
+
+        auto func_parse = identifier.combine(
+            expression_list_parser(), [](const auto &name, const auto &args) {
+              LOG_DEBUG("Parsed function call: " + name + " with " +
+                        std::to_string(args.size()) + " arguments");
+              return std::make_shared<CallExpression>(name, args);
+            });
+
+        auto result = func_parse.parse(toks, pos);
+        if (!result) {
+          LOG_ERROR("Failed to parse function call at position " +
+                    std::to_string(pos));
+          pos = saved;
+          return std::nullopt;
+        }
+
+        LOG_DEBUG("Successfully parsed function call");
+        return *result;
+      });
+}
+
+inline parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_block_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
       [this](const std::vector<rc::Token> &toks,
@@ -518,6 +581,16 @@ inline parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
           return *e;
         }
         pos = saved;
+        if (auto e = parse_return_expression().parse(toks, pos)) {
+          LOG_DEBUG("Parsed return expression");
+          return *e;
+        }
+        pos = saved;
+        if (auto e = parse_call_expression().parse(toks, pos)) {
+          LOG_DEBUG("Parsed call expression");
+          return *e;
+        }
+        pos = saved;
         if (auto e = parse_block_expression().parse(toks, pos)) {
           LOG_DEBUG("Parsed block expression");
           return *e;
@@ -632,6 +705,21 @@ Parser::argument_list_parser() {
         LOG_DEBUG("Parsed argument list with " + std::to_string(args.size()) +
                   " arguments");
         return args;
+      });
+}
+
+inline parsec::Parser<std::vector<std::shared_ptr<Expression>>>
+Parser::expression_list_parser() {
+  using namespace parsec;
+  auto expr = any_expression();
+
+  return tok(TokenType::L_PAREN)
+      .thenR(many(expr.thenL(optional(tok(TokenType::COMMA)))))
+      .thenL(tok(TokenType::R_PAREN))
+      .map([](auto exprs) {
+        LOG_DEBUG("Parsed expression list with " +
+                  std::to_string(exprs.size()) + " expressions");
+        return exprs;
       });
 }
 

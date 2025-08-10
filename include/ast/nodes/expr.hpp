@@ -120,6 +120,19 @@ public:
   }
 };
 
+class CallExpression : public Expression {
+public:
+  std::string function_name;
+  std::vector<std::shared_ptr<Expression>> arguments;
+
+  CallExpression(std::string name, std::vector<std::shared_ptr<Expression>> args)
+      : function_name(std::move(name)), arguments(std::move(args)) {}
+
+  void accept(BaseVisitor &visitor) override {
+    visitor.visit(*this);
+  }
+};
+
 class UnderscoreExpression : public Expression {
 public:
   UnderscoreExpression() {}

@@ -47,7 +47,6 @@ inline std::string Preprocessor::preprocess() {
 
   for (size_t line_idx = 0; line_idx < file_lines.size(); ++line_idx) {
     const std::string &line = file_lines[line_idx];
-    bool line_start = true;
 
     for (size_t i = 0; i < line.length(); ++i) {
       char c = line[i];
@@ -108,7 +107,6 @@ inline std::string Preprocessor::preprocess() {
           } else {
             result += c;
           }
-          line_start = false;
         }
       }
     }

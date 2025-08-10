@@ -12,7 +12,7 @@
 
 int main() {
   try {
-    rc::Preprocessor preprocessor("../examples/ast/3.rs");
+    rc::Preprocessor preprocessor("../examples/ast/5.rs");
     auto preprocessed_code = preprocessor.preprocess();
 
     rc::Lexer lexer(preprocessed_code);
@@ -20,8 +20,9 @@ int main() {
 
     std::cout << "Tokens:" << std::endl;
 
+    size_t pos = 0;
     for (const auto &token : tks) {
-      std::cout << "Token Type: " << token.type << ", Lexeme: " << token.lexeme
+      std::cout << "Pos:" << pos++ << "\t Type: " << token.type << "\t\t Lexeme: " << token.lexeme
                 << "\n";
     }
 

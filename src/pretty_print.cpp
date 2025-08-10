@@ -1,5 +1,6 @@
 #include "../include/ast/pretty_print.hpp"
 #include "../include/lexer/lexer.hpp"
+#include "ast/nodes/expr.hpp"
 #include <typeinfo>
 
 /**
@@ -36,6 +37,8 @@ void PrettyPrintVisitor::visit(BaseNode &node) {
   } else if (auto *expr = dynamic_cast<MatchExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<UnderscoreExpression *>(&node)) {
     visit(*expr);
@@ -124,6 +127,17 @@ void PrettyPrintVisitor::visit(IfExpression &node) {
   decrease_indent();
   print_indent();
   print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(CallExpression &node) {
+  print_inline("CallExpr(" + node.function_name + ", [");
+  for (size_t i = 0; i < node.arguments.size(); ++i) {
+    node.arguments[i]->accept(*this);
+    if (i < node.arguments.size() - 1) {
+      print_inline(", ");
+    }
+  }
+  print_inline("])");
 }
 
 void PrettyPrintVisitor::visit(MatchExpression &node) {

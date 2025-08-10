@@ -32,6 +32,7 @@ public:
   void visit(IfExpression &node);
   void visit(MatchExpression &node);
   void visit(ReturnExpression &node);
+  void visit(CallExpression &node);
   void visit(UnderscoreExpression &node);
   void visit(BlockExpression &node);
 
