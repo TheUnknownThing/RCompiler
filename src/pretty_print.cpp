@@ -1,0 +1,519 @@
+#include "../include/ast/pretty_print.hpp"
+#include "../include/lexer/lexer.hpp"
+#include <typeinfo>
+
+namespace rc {
+
+PrettyPrintVisitor::PrettyPrintVisitor(int indent_level)
+    : indent_level_(indent_level) {}
+
+std::string PrettyPrintVisitor::get_result() const { return output_.str(); }
+
+void PrettyPrintVisitor::reset() {
+  output_.str("");
+  output_.clear();
+  indent_level_ = 0;
+}
+
+void PrettyPrintVisitor::visit(BaseNode &node) {
+  // Try to cast to specific node types
+  if (auto *expr = dynamic_cast<NameExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<IntExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<GroupExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<MatchExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<UnderscoreExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *stmt = dynamic_cast<BlockStatement *>(&node)) {
+    visit(*stmt);
+  } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
+    visit(*stmt);
+  } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
+    visit(*stmt);
+  } else if (auto *stmt = dynamic_cast<EmptyStatement *>(&node)) {
+    visit(*stmt);
+  } else if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<ConstantItem *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<ModuleDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *root = dynamic_cast<RootNode *>(&node)) {
+    visit(*root);
+  } else {
+    print_line("UnknownNode");
+  }
+}
+
+// Expression visitors
+void PrettyPrintVisitor::visit(NameExpression &node) {
+  print_inline("NameExpr(" + node.name + ")");
+}
+
+void PrettyPrintVisitor::visit(IntExpression &node) {
+  print_inline("IntExpr(" + node.value + ")");
+}
+
+void PrettyPrintVisitor::visit(PrefixExpression &node) {
+  print_inline("PrefixExpr(");
+  print_inline(format_token(node.op) + ", ");
+  node.right->accept(*this);
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(BinaryExpression &node) {
+  print_inline("BinaryExpr(");
+  node.left->accept(*this);
+  print_inline(", " + format_token(node.op) + ", ");
+  node.right->accept(*this);
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(GroupExpression &node) {
+  print_inline("GroupExpr(");
+  node.inner->accept(*this);
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(IfExpression &node) {
+  print_line("IfExpr {");
+  increase_indent();
+
+  print_indent();
+  print_inline("condition: ");
+  node.condition->accept(*this);
+  output_ << std::endl;
+
+  print_indent();
+  print_inline("then_block: ");
+  node.then_block->accept(*this);
+  output_ << std::endl;
+
+  if (node.else_block.has_value()) {
+    print_indent();
+    print_inline("else_block: ");
+    node.else_block.value()->accept(*this);
+    output_ << std::endl;
+  }
+
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(MatchExpression &node) {
+  print_line("MatchExpr {");
+  increase_indent();
+
+  print_indent();
+  print_inline("scrutinee: ");
+  node.scrutinee->accept(*this);
+  output_ << std::endl;
+
+  print_line("arms: [");
+  increase_indent();
+  for (const auto &arm : node.arms) {
+    print_line("MatchArm {");
+    increase_indent();
+    print_line("pattern: " + arm.pattern);
+    if (arm.guard.has_value()) {
+      print_indent();
+      print_inline("guard: ");
+      arm.guard.value()->accept(*this);
+      output_ << std::endl;
+    }
+    print_indent();
+    print_inline("body: ");
+    arm.body->accept(*this);
+    output_ << std::endl;
+    decrease_indent();
+    print_line("}");
+  }
+  decrease_indent();
+  print_line("]");
+
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(ReturnExpression &node) {
+  print_inline("ReturnExpr(");
+  if (node.value.has_value()) {
+    node.value.value()->accept(*this);
+  } else {
+    print_inline("None");
+  }
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(UnderscoreExpression &node) {
+  (void)node; // Suppress unused parameter warning
+  print_inline("UnderscoreExpr");
+}
+
+void PrettyPrintVisitor::visit(BlockExpression &node) {
+  print_line("BlockExpr {");
+  increase_indent();
+
+  if (!node.statements.empty()) {
+    print_line("statements: [");
+    increase_indent();
+    for (const auto &stmt : node.statements) {
+      print_indent();
+      stmt->accept(*this);
+      output_ << std::endl;
+    }
+    decrease_indent();
+    print_line("]");
+  }
+
+  if (node.final_expr.has_value()) {
+    print_indent();
+    print_inline("final_expr: ");
+    node.final_expr.value()->accept(*this);
+    output_ << std::endl;
+  }
+
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+// Statement visitors
+void PrettyPrintVisitor::visit(BlockStatement &node) {
+  print_line("BlockStmt {");
+  increase_indent();
+  print_line("statements: [");
+  increase_indent();
+  for (auto *stmt : node.statements) {
+    print_indent();
+    // Cast away const since the visitor pattern expects non-const
+    const_cast<Statement *>(stmt)->accept(*this);
+    output_ << std::endl;
+  }
+  decrease_indent();
+  print_line("]");
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(LetStatement &node) {
+  print_inline("LetStmt {");
+  print_inline(" identifier: " + node.identifier);
+  print_inline(", type: " + format_type(node.type));
+  print_inline(", expr: ");
+  node.expr->accept(*this);
+  print_inline(" }");
+}
+
+void PrettyPrintVisitor::visit(ExpressionStatement &node) {
+  print_inline("ExprStmt {");
+  print_inline(" expr: ");
+  node.expression->accept(*this);
+  print_inline(", semicolon: " +
+               std::string(node.has_semicolon ? "true" : "false"));
+  print_inline(" }");
+}
+
+void PrettyPrintVisitor::visit(EmptyStatement &node) {
+  (void)node; // Suppress unused parameter warning
+  print_inline("EmptyStmt");
+}
+
+// Top-level declaration visitors
+void PrettyPrintVisitor::visit(FunctionDecl &node) {
+  print_line("FunctionDecl {");
+  increase_indent();
+  print_line("name: " + node.name);
+
+  if (node.params.has_value()) {
+    print_line("params: [");
+    increase_indent();
+    for (const auto &param : node.params.value()) {
+      print_line("(" + param.first + ": " + format_type(param.second) + ")");
+    }
+    decrease_indent();
+    print_line("]");
+  } else {
+    print_line("params: None");
+  }
+
+  print_line("return_type: " + format_type(node.return_type));
+
+  if (node.body.has_value()) {
+    print_indent();
+    print_inline("body: ");
+    node.body.value()->accept(*this);
+    output_ << std::endl;
+  } else {
+    print_line("body: None");
+  }
+
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(ConstantItem &node) {
+  print_line("ConstantItem {");
+  increase_indent();
+  print_line("name: " + node.name);
+  print_line("type: " + format_type(node.type));
+
+  if (node.value.has_value()) {
+    print_indent();
+    print_inline("value: ");
+    node.value.value()->accept(*this);
+    output_ << std::endl;
+  } else {
+    print_line("value: None");
+  }
+
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(ModuleDecl &node) {
+  print_line("ModuleDecl {");
+  increase_indent();
+  print_line("name: " + node.name);
+
+  if (node.items.has_value()) {
+    print_line("items: [");
+    increase_indent();
+    for (const auto &item : node.items.value()) {
+      print_indent();
+      item->accept(*this);
+      output_ << std::endl;
+    }
+    decrease_indent();
+    print_line("]");
+  } else {
+    print_line("items: None (semicolon form)");
+  }
+
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(StructDecl &node) {
+  print_line("StructDecl {");
+  increase_indent();
+  print_line("name: " + node.name);
+  print_line("type: " +
+             std::string(node.struct_type == StructDecl::StructType::Struct
+                             ? "Struct"
+                             : "Tuple"));
+
+  if (node.struct_type == StructDecl::StructType::Struct &&
+      !node.fields.empty()) {
+    print_line("fields: [");
+    increase_indent();
+    for (const auto &field : node.fields) {
+      print_line("(" + field.first + ": " + format_type(field.second) + ")");
+    }
+    decrease_indent();
+    print_line("]");
+  } else if (node.struct_type == StructDecl::StructType::Tuple &&
+             !node.tuple_fields.empty()) {
+    print_line("tuple_fields: [");
+    increase_indent();
+    for (const auto &field : node.tuple_fields) {
+      print_line(format_type(field));
+    }
+    decrease_indent();
+    print_line("]");
+  }
+
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(EnumDecl &node) {
+  print_line("EnumDecl {");
+  increase_indent();
+  print_line("name: " + node.name);
+  print_line("variants: [");
+  increase_indent();
+
+  for (const auto &variant : node.variants) {
+    print_line("EnumVariant {");
+    increase_indent();
+    print_line("name: " + variant.name);
+
+    if (variant.tuple_fields.has_value()) {
+      print_line("tuple_fields: [");
+      increase_indent();
+      for (const auto &field : variant.tuple_fields.value()) {
+        print_line(format_type(field));
+      }
+      decrease_indent();
+      print_line("]");
+    }
+
+    if (variant.struct_fields.has_value()) {
+      print_line("struct_fields: [");
+      increase_indent();
+      for (const auto &field : variant.struct_fields.value()) {
+        print_line("(" + field.first + ": " + format_type(field.second) + ")");
+      }
+      decrease_indent();
+      print_line("]");
+    }
+
+    if (variant.discriminant.has_value()) {
+      print_indent();
+      print_inline("discriminant: ");
+      variant.discriminant.value()->accept(*this);
+      output_ << std::endl;
+    }
+
+    decrease_indent();
+    print_line("}");
+  }
+
+  decrease_indent();
+  print_line("]");
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(TraitDecl &node) {
+  print_line("TraitDecl {");
+  increase_indent();
+  print_line("name: " + node.name);
+  print_line("associated_items: [");
+  increase_indent();
+
+  for (const auto &item : node.associated_items) {
+    print_indent();
+    item->accept(*this);
+    output_ << std::endl;
+  }
+
+  decrease_indent();
+  print_line("]");
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(ImplDecl &node) {
+  print_line("ImplDecl {");
+  increase_indent();
+  print_line("impl_type: " +
+             std::string(node.impl_type == ImplDecl::ImplType::Inherent
+                             ? "Inherent"
+                             : "Trait"));
+  print_line("target_type: " + format_type(node.target_type));
+
+  if (node.trait_name.has_value()) {
+    print_line("trait_name: " + node.trait_name.value());
+  }
+
+  print_line("associated_items: [");
+  increase_indent();
+
+  for (const auto &item : node.associated_items) {
+    print_indent();
+    item->accept(*this);
+    output_ << std::endl;
+  }
+
+  decrease_indent();
+  print_line("]");
+  decrease_indent();
+  print_indent();
+  print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(RootNode &node) {
+  print_line("RootNode {");
+  increase_indent();
+  print_line("children: [");
+  increase_indent();
+
+  for (const auto &child : node.children) {
+    print_indent();
+    child->accept(*this);
+    output_ << std::endl;
+  }
+
+  decrease_indent();
+  print_line("]");
+  decrease_indent();
+  print_line("}");
+}
+
+// Private helper methods
+void PrettyPrintVisitor::print_indent() {
+  for (int i = 0; i < indent_level_; ++i) {
+    output_ << "  ";
+  }
+}
+
+void PrettyPrintVisitor::increase_indent() { indent_level_++; }
+
+void PrettyPrintVisitor::decrease_indent() {
+  if (indent_level_ > 0) {
+    indent_level_--;
+  }
+}
+
+void PrettyPrintVisitor::print_line(const std::string &text) {
+  print_indent();
+  output_ << text << std::endl;
+}
+
+void PrettyPrintVisitor::print_inline(const std::string &text) {
+  output_ << text;
+}
+
+std::string PrettyPrintVisitor::format_type(const LiteralType &type) {
+  return to_string(type);
+}
+
+std::string PrettyPrintVisitor::format_token(const Token &token) {
+  // Format token based on its type and lexeme
+  std::string result = toString(token.type);
+  if (!token.lexeme.empty() && token.lexeme != result) {
+    result += "(" + token.lexeme + ")";
+  }
+  return result;
+}
+
+// Utility function
+std::string pretty_print(BaseNode &node, int indent_level) {
+  PrettyPrintVisitor visitor(indent_level);
+  node.accept(visitor);
+  return visitor.get_result();
+}
+
+} // namespace rc

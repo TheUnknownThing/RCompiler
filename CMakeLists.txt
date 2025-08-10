@@ -8,7 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include_directories(include)
 
 # Source files
-set(SOURCES src/main.cpp)
+set(SOURCES 
+    src/main.cpp
+    src/pretty_print.cpp
+)
 
 # Header files
 file(GLOB_RECURSE HEADERS "include/*.hpp")

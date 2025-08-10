@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "ast/parser.hpp"
+#include "ast/pretty_print.hpp"
 #include "lexer/lexer.hpp"
 #include "preprocessor/preprocessor.hpp"
 
@@ -25,7 +26,10 @@ int main() {
     auto ast = parser.parse();
 
     if (ast) {
-      std::cout << ast->children.size() << " top-level items." << std::endl;
+      std::cout << "\nParsed" << ast->children.size() << " top-level items."
+                << std::endl;
+      std::cout << "\nAST Pretty Print:" << std::endl;
+      std::cout << rc::pretty_print(*ast) << std::endl;
     } else {
       std::cout << "Failed!" << std::endl;
     }
