@@ -1,5 +1,4 @@
 #pragma once
-#include "../../lexer/lexer.hpp"
 #include <functional>
 #include <memory>
 #include <optional>
@@ -8,8 +7,13 @@
 #include <utility>
 #include <vector>
 
-#include "../nodes/expr.hpp"
-#include "parsec.hpp"
+#include "ast/nodes/expr.hpp"
+#include "ast/utils/parsec.hpp"
+#include "lexer/lexer.hpp"
+
+namespace rc {
+class Parser;
+}
 
 namespace pratt {
 
@@ -117,110 +121,7 @@ private:
   std::unordered_map<OpKey, LedEntry, OpKeyHash> infix_;
 };
 
-inline PrattTable default_table() {
-  PrattTable tbl;
-
-  tbl.prefix(rc::TokenType::NON_KEYWORD_IDENTIFIER,
-             [](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-               const rc::Token &prev = toks[pos - 1];
-               return std::make_shared<rc::NameExpression>(prev.lexeme);
-             });
-  tbl.prefix(rc::TokenType::INTEGER_LITERAL,
-             [](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-               const rc::Token &prev = toks[pos - 1];
-               return std::make_shared<rc::IntExpression>(prev.lexeme);
-             });
-
-  // ( expr )
-  tbl.prefix(
-      rc::TokenType::L_PAREN,
-      [&tbl](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-        ExprPtr inner = tbl.parse_expression(toks, pos, 0);
-        if (!inner)
-          return nullptr;
-        if (pos >= toks.size() || toks[pos].type != rc::TokenType::R_PAREN)
-          return nullptr;
-        ++pos;
-        return std::make_shared<rc::GroupExpression>(std::move(inner));
-      });
-
-  // prefix ops: + - !
-  tbl.prefix(
-      rc::TokenType::PLUS,
-      [&tbl](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-        rc::Token op = toks[pos - 1];
-        ExprPtr right = tbl.parse_expression(toks, pos, 100);
-        if (!right)
-          return nullptr;
-        return std::make_shared<rc::PrefixExpression>(op, std::move(right));
-      });
-  tbl.prefix(
-      rc::TokenType::MINUS,
-      [&tbl](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-        rc::Token op = toks[pos - 1];
-        ExprPtr right = tbl.parse_expression(toks, pos, 100);
-        if (!right)
-          return nullptr;
-        return std::make_shared<rc::PrefixExpression>(op, std::move(right));
-      });
-  tbl.prefix(
-      rc::TokenType::NOT,
-      [&tbl](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-        rc::Token op = toks[pos - 1];
-        ExprPtr right = tbl.parse_expression(toks, pos, 100);
-        if (!right)
-          return nullptr;
-        return std::make_shared<rc::PrefixExpression>(op, std::move(right));
-      });
-
-  auto bin = [](ExprPtr l, rc::Token op, ExprPtr r) {
-    return std::make_shared<rc::BinaryExpression>(std::move(l), std::move(op),
-                                                  std::move(r));
-  };
-
-  // 70: * / %
-  tbl.infix_left(rc::TokenType::STAR, 70, bin);
-  tbl.infix_left(rc::TokenType::SLASH, 70, bin);
-  tbl.infix_left(rc::TokenType::PERCENT, 70, bin);
-  // 60: + -
-  tbl.infix_left(rc::TokenType::PLUS, 60, bin);
-  tbl.infix_left(rc::TokenType::MINUS, 60, bin);
-  // 50: << >>
-  tbl.infix_left(rc::TokenType::SHL, 50, bin);
-  tbl.infix_left(rc::TokenType::SHR, 50, bin);
-  // 40: & (bitwise)
-  tbl.infix_left(rc::TokenType::AMPERSAND, 40, bin);
-  // 35: ^
-  tbl.infix_left(rc::TokenType::CARET, 35, bin);
-  // 30: |
-  tbl.infix_left(rc::TokenType::PIPE, 30, bin);
-  // 20: < > <= >=
-  tbl.infix_left(rc::TokenType::LT, 20, bin);
-  tbl.infix_left(rc::TokenType::GT, 20, bin);
-  tbl.infix_left(rc::TokenType::LE, 20, bin);
-  tbl.infix_left(rc::TokenType::GE, 20, bin);
-  // 15: == !=
-  tbl.infix_left(rc::TokenType::NE, 15, bin);
-  tbl.infix_left(rc::TokenType::EQ, 15, bin);
-  // 10: &&
-  tbl.infix_left(rc::TokenType::AND, 10, bin);
-  // 9: ||
-  tbl.infix_left(rc::TokenType::OR, 9, bin);
-  // 5: assignments
-  tbl.infix_right(rc::TokenType::ASSIGN, 5, bin);
-  tbl.infix_right(rc::TokenType::PLUS_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::MINUS_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::STAR_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::SLASH_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::PERCENT_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::AMPERSAND_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::PIPE_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::CARET_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::SHL_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::SHR_EQ, 5, bin);
-
-  return tbl;
-}
+PrattTable default_table(rc::Parser *p);
 
 inline parsec::Parser<ExprPtr> pratt_expr(const PrattTable &tbl,
                                           int min_bp = 0) {

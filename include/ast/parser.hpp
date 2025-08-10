@@ -6,9 +6,9 @@
 #include <variant>
 #include <vector>
 
-#include "../lexer/lexer.hpp"
-#include "../utils/logger.hpp"
+#include "lexer/lexer.hpp"
 #include "types.hpp"
+#include "utils/logger.hpp"
 #include "utils/parsec.hpp"
 #include "utils/pratt.hpp"
 
@@ -26,8 +26,18 @@ public:
   Parser(std::vector<Token> tokens);
   std::unique_ptr<RootNode> parse();
 
+  inline parsec::Parser<std::shared_ptr<Expression>> any_expression();
+
+  parsec::Parser<std::shared_ptr<Expression>> parse_block_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_if_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_return_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_call_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_loop_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_while_expression();
+
 private:
   std::vector<Token> tokens;
+  pratt::PrattTable pratt_table_;
 
   std::unique_ptr<BaseNode> parse_item();
 
@@ -37,17 +47,6 @@ private:
   parsec::Parser<std::unique_ptr<FunctionDecl>> parse_function();
   parsec::Parser<std::unique_ptr<StructDecl>> parse_struct();
 
-  parsec::Parser<std::shared_ptr<Expression>> pratt_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_block_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_if_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_return_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_call_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_loop_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_while_expression();
-  parsec::Parser<std::shared_ptr<Expression>> any_expression();
-  parsec::Parser<std::shared_ptr<Expression>>
-  parse_primary_literal_expression();
-
   parsec::Parser<std::pair<std::string, LiteralType>>
   identifier_and_type_parser();
   parsec::Parser<std::vector<std::pair<std::string, LiteralType>>>
@@ -56,7 +55,8 @@ private:
   expression_list_parser();
 };
 
-inline Parser::Parser(std::vector<Token> tokens) : tokens(std::move(tokens)) {
+inline Parser::Parser(std::vector<Token> tokens)
+    : tokens(std::move(tokens)), pratt_table_(pratt::default_table(this)) {
   LOG_DEBUG("Parser initialized with " + std::to_string(this->tokens.size()) +
             " tokens");
 }
@@ -343,12 +343,6 @@ inline parsec::Parser<std::unique_ptr<StructDecl>> Parser::parse_struct() {
   return parser;
 }
 
-inline parsec::Parser<std::shared_ptr<Expression>> Parser::pratt_expression() {
-  LOG_DEBUG("Parsing Pratt expression");
-  auto tbl = pratt::default_table();
-  return pratt::pratt_expr(tbl);
-}
-
 inline parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_return_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -524,7 +518,7 @@ Parser::parse_if_expression() {
 
         // Condition uses Pratt expressions
         LOG_DEBUG("Parsing if condition");
-        auto cond = pratt_expression().parse(toks, pos);
+        auto cond = any_expression().parse(toks, pos);
         if (!cond) {
           pos = saved;
           LOG_ERROR("Failed to parse if condition");
@@ -625,123 +619,21 @@ Parser::parse_while_expression() {
 }
 
 inline parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
-  // try parse it sequentially
   return parsec::Parser<std::shared_ptr<Expression>>(
       [this](const std::vector<rc::Token> &toks,
              size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
         size_t saved = pos;
-        LOG_DEBUG("Attempting to parse any expression at position " +
+        LOG_DEBUG("Attempting to parse any expression via Pratt at position " +
                   std::to_string(pos));
-        if (auto e = parse_if_expression().parse(toks, pos)) {
-          LOG_DEBUG("Parsed if expression");
-          return *e;
-        }
-        pos = saved;
-        if (auto e = parse_return_expression().parse(toks, pos)) {
-          LOG_DEBUG("Parsed return expression");
-          return *e;
-        }
-        pos = saved;
-        if (auto e = parse_call_expression().parse(toks, pos)) {
-          LOG_DEBUG("Parsed call expression");
-          return *e;
-        }
-        pos = saved;
-        if (auto e = parse_loop_expression().parse(toks, pos)) {
-          LOG_DEBUG("Parsed loop expression");
-          return *e;
-        }
-        pos = saved;
-        if (auto e = parse_while_expression().parse(toks, pos)) {
-          LOG_DEBUG("Parsed while expression");
-          return *e;
-        }
-        pos = saved;
-        if (auto e = parse_block_expression().parse(toks, pos)) {
-          LOG_DEBUG("Parsed block expression");
-          return *e;
-        }
-        pos = saved;
-        if (auto e = parse_primary_literal_expression().parse(toks, pos)) {
-          LOG_DEBUG("Parsed primary literal expression");
-          return *e;
-        }
-        pos = saved;
-        LOG_DEBUG("Falling back to Pratt expression parser");
-        return pratt_expression().parse(toks, pos);
-      });
-}
 
-inline parsec::Parser<std::shared_ptr<Expression>>
-Parser::parse_primary_literal_expression() {
-  auto as_expr = [](const rc::Token &t) {
-    LOG_DEBUG("Creating name expression from token: " + t.lexeme);
-    return std::shared_ptr<Expression>(
-        std::make_shared<NameExpression>(t.lexeme));
-  };
-  auto p = tok(TokenType::STRING_LITERAL).map([&](const rc::Token &t) {
-    return as_expr(t);
-  });
-  auto p2 = tok(TokenType::CHAR_LITERAL).map([&](const rc::Token &t) {
-    return as_expr(t);
-  });
-  auto p3 = tok(TokenType::C_STRING_LITERAL).map([&](const rc::Token &t) {
-    return as_expr(t);
-  });
-  auto p4 = tok(TokenType::BYTE_STRING_LITERAL).map([&](const rc::Token &t) {
-    return as_expr(t);
-  });
-  auto p5 = tok(TokenType::BYTE_LITERAL).map([&](const rc::Token &t) {
-    return as_expr(t);
-  });
-  auto p6 =
-      tok(TokenType::TRUE).map([&](const rc::Token &t) { return as_expr(t); });
-  auto p7 =
-      tok(TokenType::FALSE).map([&](const rc::Token &t) { return as_expr(t); });
+        // Use the PrattTable member of our class to parse.
+        if (auto e = pratt_table_.parse_expression(toks, pos)) {
+          LOG_DEBUG("Pratt parser succeeded.");
+          return e;
+        }
 
-  return parsec::Parser<std::shared_ptr<Expression>>(
-      [p, p2, p3, p4, p5, p6,
-       p7](const std::vector<rc::Token> &toks,
-           size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
-        size_t saved = pos;
-        LOG_DEBUG("Attempting to parse primary literal at position " +
-                  std::to_string(pos));
-        if (auto r = p.parse(toks, pos)) {
-          LOG_DEBUG("Parsed string literal");
-          return *r;
-        }
         pos = saved;
-        if (auto r = p2.parse(toks, pos)) {
-          LOG_DEBUG("Parsed char literal");
-          return *r;
-        }
-        pos = saved;
-        if (auto r = p3.parse(toks, pos)) {
-          LOG_DEBUG("Parsed C string literal");
-          return *r;
-        }
-        pos = saved;
-        if (auto r = p4.parse(toks, pos)) {
-          LOG_DEBUG("Parsed byte string literal");
-          return *r;
-        }
-        pos = saved;
-        if (auto r = p5.parse(toks, pos)) {
-          LOG_DEBUG("Parsed byte literal");
-          return *r;
-        }
-        pos = saved;
-        if (auto r = p6.parse(toks, pos)) {
-          LOG_DEBUG("Parsed true literal");
-          return *r;
-        }
-        pos = saved;
-        if (auto r = p7.parse(toks, pos)) {
-          LOG_DEBUG("Parsed false literal");
-          return *r;
-        }
-        pos = saved;
-        LOG_DEBUG("No primary literal found");
+        LOG_DEBUG("Pratt parser failed to parse an expression.");
         return std::nullopt;
       });
 }
@@ -790,3 +682,135 @@ Parser::expression_list_parser() {
 }
 
 } // namespace rc
+
+namespace pratt {
+
+inline PrattTable default_table(rc::Parser *p) {
+  PrattTable tbl;
+
+  auto delegate_to_parsec =
+      [p](parsec::Parser<ExprPtr> (rc::Parser::*parser_method)()) {
+        return [p, parser_method](const std::vector<rc::Token> &toks,
+                                  size_t &pos) -> ExprPtr {
+          size_t start_pos = pos - 1;
+          if (auto result = (p->*parser_method)().parse(toks, start_pos)) {
+            pos = start_pos;
+            return *result;
+          }
+          return nullptr;
+        };
+      };
+
+  tbl.prefix(rc::TokenType::IF,
+             delegate_to_parsec(&rc::Parser::parse_if_expression));
+  tbl.prefix(rc::TokenType::LOOP,
+             delegate_to_parsec(&rc::Parser::parse_loop_expression));
+  tbl.prefix(rc::TokenType::WHILE,
+             delegate_to_parsec(&rc::Parser::parse_while_expression));
+  tbl.prefix(rc::TokenType::L_BRACE,
+             delegate_to_parsec(&rc::Parser::parse_block_expression));
+  tbl.prefix(rc::TokenType::RETURN,
+             delegate_to_parsec(&rc::Parser::parse_return_expression));
+
+  // Literals
+  tbl.prefix(rc::TokenType::INTEGER_LITERAL,
+             [](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
+               const rc::Token &prev = toks[pos - 1];
+               return std::make_shared<rc::IntExpression>(prev.lexeme);
+             });
+
+  // Handles both variables and function calls
+  tbl.prefix(
+      rc::TokenType::NON_KEYWORD_IDENTIFIER,
+      [p](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
+        // Look ahead to see if this is a function call
+        if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
+          size_t start_pos = pos - 1;
+          if (auto result = p->parse_call_expression().parse(toks, start_pos)) {
+            pos = start_pos;
+            return *result;
+          }
+          return nullptr;
+        } else {
+          const rc::Token &prev = toks[pos - 1];
+          return std::make_shared<rc::NameExpression>(prev.lexeme);
+        }
+      });
+
+  // ( expr ) -- Grouping
+  tbl.prefix(
+      rc::TokenType::L_PAREN,
+      [&tbl](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
+        ExprPtr inner = tbl.parse_expression(toks, pos, 0);
+        if (!inner)
+          return nullptr;
+        if (pos >= toks.size() || toks[pos].type != rc::TokenType::R_PAREN)
+          return nullptr;
+        ++pos;
+        return std::make_shared<rc::GroupExpression>(std::move(inner));
+      });
+
+  // Prefix ops: + - !
+  auto prefix_op = [&tbl](const std::vector<rc::Token> &toks,
+                          size_t &pos) -> ExprPtr {
+    rc::Token op = toks[pos - 1];
+    ExprPtr right = tbl.parse_expression(toks, pos, 100);
+    if (!right)
+      return nullptr;
+    return std::make_shared<rc::PrefixExpression>(op, std::move(right));
+  };
+  tbl.prefix(rc::TokenType::PLUS, prefix_op);
+  tbl.prefix(rc::TokenType::MINUS, prefix_op);
+  tbl.prefix(rc::TokenType::NOT, prefix_op);
+
+  // --- Infix and Binary Operators ---
+  auto bin = [](ExprPtr l, rc::Token op, ExprPtr r) {
+    return std::make_shared<rc::BinaryExpression>(std::move(l), std::move(op),
+                                                  std::move(r));
+  };
+
+  // 70: * / %
+  tbl.infix_left(rc::TokenType::STAR, 70, bin);
+  tbl.infix_left(rc::TokenType::SLASH, 70, bin);
+  tbl.infix_left(rc::TokenType::PERCENT, 70, bin);
+  // 60: + -
+  tbl.infix_left(rc::TokenType::PLUS, 60, bin);
+  tbl.infix_left(rc::TokenType::MINUS, 60, bin);
+  // 50: << >>
+  tbl.infix_left(rc::TokenType::SHL, 50, bin);
+  tbl.infix_left(rc::TokenType::SHR, 50, bin);
+  // 40: & (bitwise)
+  tbl.infix_left(rc::TokenType::AMPERSAND, 40, bin);
+  // 35: ^
+  tbl.infix_left(rc::TokenType::CARET, 35, bin);
+  // 30: |
+  tbl.infix_left(rc::TokenType::PIPE, 30, bin);
+  // 20: < > <= >=
+  tbl.infix_left(rc::TokenType::LT, 20, bin);
+  tbl.infix_left(rc::TokenType::GT, 20, bin);
+  tbl.infix_left(rc::TokenType::LE, 20, bin);
+  tbl.infix_left(rc::TokenType::GE, 20, bin);
+  // 15: == !=
+  tbl.infix_left(rc::TokenType::NE, 15, bin);
+  tbl.infix_left(rc::TokenType::EQ, 15, bin);
+  // 10: &&
+  tbl.infix_left(rc::TokenType::AND, 10, bin);
+  // 9: ||
+  tbl.infix_left(rc::TokenType::OR, 9, bin);
+  // 5: assignments
+  tbl.infix_right(rc::TokenType::ASSIGN, 5, bin);
+  tbl.infix_right(rc::TokenType::PLUS_EQ, 5, bin);
+  tbl.infix_right(rc::TokenType::MINUS_EQ, 5, bin);
+  tbl.infix_right(rc::TokenType::STAR_EQ, 5, bin);
+  tbl.infix_right(rc::TokenType::SLASH_EQ, 5, bin);
+  tbl.infix_right(rc::TokenType::PERCENT_EQ, 5, bin);
+  tbl.infix_right(rc::TokenType::AMPERSAND_EQ, 5, bin);
+  tbl.infix_right(rc::TokenType::PIPE_EQ, 5, bin);
+  tbl.infix_right(rc::TokenType::CARET_EQ, 5, bin);
+  tbl.infix_right(rc::TokenType::SHL_EQ, 5, bin);
+  tbl.infix_right(rc::TokenType::SHR_EQ, 5, bin);
+
+  return tbl;
+}
+
+} // namespace pratt
