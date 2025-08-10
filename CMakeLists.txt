@@ -11,10 +11,10 @@ include_directories(include)
 set(SOURCES src/main.cpp)
 
 # Header files
-set(HEADERS include/*)
+file(GLOB_RECURSE HEADERS "include/*.hpp")
 
 # Create executable
-add_executable(rcompiler ${SOURCES} ${HEADERS})
+add_executable(rcompiler ${SOURCES})
 
 # Compiler flags
 target_compile_options(rcompiler PRIVATE -Wall -Wextra -std=c++20)
