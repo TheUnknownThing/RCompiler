@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace rc {
 
@@ -34,6 +35,24 @@ public:
 
   LetStatement(const std::string &id, LiteralType ty, std::shared_ptr<Expression> e)
       : identifier(id), type(ty), expr(std::move(e)) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class ExpressionStatement : public Statement {
+public:
+  std::shared_ptr<Expression> expression;
+  bool has_semicolon;
+
+  ExpressionStatement(std::shared_ptr<Expression> expr, bool semicolon = true)
+      : expression(std::move(expr)), has_semicolon(semicolon) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class EmptyStatement : public Statement {
+public:
+  EmptyStatement() {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
