@@ -25,7 +25,7 @@ public:
 
   // Expression visitors
   void visit(NameExpression &node) override;
-  void visit(IntExpression &node) override;
+  void visit(LiteralExpression &node) override;
   void visit(PrefixExpression &node) override;
   void visit(BinaryExpression &node) override;
   void visit(GroupExpression &node) override;

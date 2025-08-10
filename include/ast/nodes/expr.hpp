@@ -1,8 +1,8 @@
 #pragma once
 
 #include "base.hpp"
-#include "../types.hpp"
-#include "../../lexer/lexer.hpp"
+#include "ast/types.hpp"
+#include "lexer/lexer.hpp"
 
 #include <map>
 #include <string>
@@ -27,11 +27,12 @@ public:
   }
 };
 
-class IntExpression : public Expression {
+class LiteralExpression : public Expression {
 public:
   std::string value;
+  LiteralType type;
 
-  IntExpression(std::string v) : value(std::move(v)) {}
+  LiteralExpression(std::string v, LiteralType t) : value(std::move(v)), type(t) {}
 
   void accept(BaseVisitor &visitor) override {
     visitor.visit(*this);

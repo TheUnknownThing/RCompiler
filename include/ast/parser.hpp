@@ -684,7 +684,6 @@ Parser::expression_list_parser() {
 } // namespace rc
 
 namespace pratt {
-
 inline PrattTable default_table(rc::Parser *p) {
   PrattTable tbl;
 
@@ -713,17 +712,36 @@ inline PrattTable default_table(rc::Parser *p) {
              delegate_to_parsec(&rc::Parser::parse_return_expression));
 
   // Literals
-  tbl.prefix(rc::TokenType::INTEGER_LITERAL,
-             [](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-               const rc::Token &prev = toks[pos - 1];
-               return std::make_shared<rc::IntExpression>(prev.lexeme);
-             });
+  auto add_simple_literal = [&tbl](rc::TokenType tt,
+                                   rc::PrimitiveLiteralType plt) {
+    tbl.prefix(
+        tt, [plt](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
+          const rc::Token &prev = toks[pos - 1];
+          return std::make_shared<rc::LiteralExpression>(prev.lexeme,
+                                                         rc::LiteralType(plt));
+        });
+  };
+
+  // FIX: NOW ALL THE LITERALS ARE I32
+  add_simple_literal(rc::TokenType::INTEGER_LITERAL,
+                     rc::PrimitiveLiteralType::I32);
+
+  // FIX: HANDLE RAW STRINGS
+  add_simple_literal(rc::TokenType::STRING_LITERAL,
+                     rc::PrimitiveLiteralType::STRING);
+  add_simple_literal(rc::TokenType::C_STRING_LITERAL,
+                     rc::PrimitiveLiteralType::C_STRING);
+
+  add_simple_literal(rc::TokenType::CHAR_LITERAL,
+                     rc::PrimitiveLiteralType::CHAR);
+
+  add_simple_literal(rc::TokenType::TRUE, rc::PrimitiveLiteralType::BOOL);
+  add_simple_literal(rc::TokenType::FALSE, rc::PrimitiveLiteralType::BOOL);
 
   // Handles both variables and function calls
   tbl.prefix(
       rc::TokenType::NON_KEYWORD_IDENTIFIER,
       [p](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-        // Look ahead to see if this is a function call
         if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
           size_t start_pos = pos - 1;
           if (auto result = p->parse_call_expression().parse(toks, start_pos)) {

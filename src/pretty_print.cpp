@@ -24,7 +24,7 @@ void PrettyPrintVisitor::visit(BaseNode &node) {
   // Try to cast to specific node types
   if (auto *expr = dynamic_cast<NameExpression *>(&node)) {
     visit(*expr);
-  } else if (auto *expr = dynamic_cast<IntExpression *>(&node)) {
+  } else if (auto *expr = dynamic_cast<LiteralExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
     visit(*expr);
@@ -82,8 +82,8 @@ void PrettyPrintVisitor::visit(NameExpression &node) {
   print_inline("NameExpr(" + node.name + ")");
 }
 
-void PrettyPrintVisitor::visit(IntExpression &node) {
-  print_inline("IntExpr(" + node.value + ")");
+void PrettyPrintVisitor::visit(LiteralExpression &node) {
+  print_inline("LiteralExpr(" + node.value + ", " + format_type(node.type) + ")");
 }
 
 void PrettyPrintVisitor::visit(PrefixExpression &node) {

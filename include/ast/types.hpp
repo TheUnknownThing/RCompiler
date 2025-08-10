@@ -18,6 +18,7 @@ enum class PrimitiveLiteralType {
   C_STRING,
   RAW_C_STRING,
   CHAR,
+  BOOL,
   TO_BE_INFERRED
 };
 

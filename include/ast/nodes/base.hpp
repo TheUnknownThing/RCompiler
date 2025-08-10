@@ -4,7 +4,7 @@ namespace rc {
 
 // Forward declarations
 class NameExpression;
-class IntExpression;
+class LiteralExpression;
 class PrefixExpression;
 class BinaryExpression;
 class GroupExpression;
@@ -45,7 +45,7 @@ public:
 
   // Expression visitors
   virtual void visit(NameExpression &) {}
-  virtual void visit(IntExpression &) {}
+  virtual void visit(LiteralExpression &) {}
   virtual void visit(PrefixExpression &) {}
   virtual void visit(BinaryExpression &) {}
   virtual void visit(GroupExpression &) {}
