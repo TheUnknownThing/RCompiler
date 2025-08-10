@@ -578,16 +578,16 @@ Parser::parse_loop_expression() {
         size_t saved = pos;
         LOG_DEBUG("Attempting to parse loop expression at position " +
                   std::to_string(pos));
-        if (!tok(TokenType::LOOP).parse(toks, pos)) {
-          pos = saved;
-          return std::nullopt;
-        }
-        auto body = parse_block_expression().parse(toks, pos);
+
+        auto loop_parser = tok(TokenType::LOOP).thenR(parse_block_expression());
+
+        auto body = loop_parser.parse(toks, pos);
         if (!body) {
           pos = saved;
-          LOG_ERROR("Failed to parse loop body block");
+          LOG_ERROR("Failed to parse loop body");
           return std::nullopt;
         }
+
         LOG_DEBUG("Successfully parsed loop expression");
         return std::shared_ptr<Expression>(
             std::make_shared<LoopExpression>(*body));
@@ -602,27 +602,25 @@ Parser::parse_while_expression() {
         size_t saved = pos;
         LOG_DEBUG("Attempting to parse while expression at position " +
                   std::to_string(pos));
-        if (!tok(TokenType::WHILE).parse(toks, pos)) {
+
+        auto while_parser =
+            tok(TokenType::WHILE)
+                .thenR(any_expression())
+                .combine(parse_block_expression(),
+                         [](const auto &cond, const auto &body) {
+                           return std::make_shared<WhileExpression>(cond, body);
+                         });
+
+        auto result = while_parser.parse(toks, pos);
+        if (!result) {
           pos = saved;
+          LOG_ERROR("Failed to parse while expression at position " +
+                    std::to_string(pos));
           return std::nullopt;
         }
-        LOG_DEBUG("Parsing while condition");
-        auto cond = pratt_expression().parse(toks, pos);
-        if (!cond) {
-          pos = saved;
-          LOG_ERROR("Failed to parse while condition");
-          return std::nullopt;
-        }
-        LOG_DEBUG("Parsing while body block");
-        auto body = parse_block_expression().parse(toks, pos);
-        if (!body) {
-          pos = saved;
-          LOG_ERROR("Failed to parse while body block");
-          return std::nullopt;
-        }
+
         LOG_DEBUG("Successfully parsed while expression");
-        return std::shared_ptr<Expression>(
-            std::make_shared<WhileExpression>(*cond, *body));
+        return *result;
       });
 }
 
