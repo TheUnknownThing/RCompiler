@@ -17,16 +17,12 @@ using ExprPtr = std::shared_ptr<rc::Expression>;
 
 struct OpKey {
   rc::TokenType type;
-  std::string lex;
-  bool operator==(const OpKey &o) const noexcept {
-    return type == o.type && lex == o.lex;
-  }
+  bool operator==(const OpKey &o) const noexcept { return type == o.type; }
 };
 
 struct OpKeyHash {
   size_t operator()(const OpKey &k) const noexcept {
-    return std::hash<int>()(static_cast<int>(k.type)) ^
-           (std::hash<std::string>()(k.lex) << 1);
+    return std::hash<int>()(static_cast<int>(k.type));
   }
 };
 
@@ -46,13 +42,9 @@ public:
 
   void infix_left(rc::TokenType t, int precedence,
                   std::function<ExprPtr(ExprPtr, rc::Token, ExprPtr)> build) {
-    infix_left(t, std::string{}, precedence, std::move(build));
-  }
-  void infix_left(rc::TokenType t, std::string lex, int precedence,
-                  std::function<ExprPtr(ExprPtr, rc::Token, ExprPtr)> build) {
     LedEntry e;
     e.bp = {precedence, precedence + 1};
-    infix_[OpKey{t, std::move(lex)}] =
+    infix_[OpKey{t}] =
         LedEntry{e.bp,
                  [this, build, &e](ExprPtr left, const rc::Token &op,
                                    const std::vector<rc::Token> &toks,
@@ -66,13 +58,9 @@ public:
 
   void infix_right(rc::TokenType t, int precedence,
                    std::function<ExprPtr(ExprPtr, rc::Token, ExprPtr)> build) {
-    infix_right(t, std::string{}, precedence, std::move(build));
-  }
-  void infix_right(rc::TokenType t, std::string lex, int precedence,
-                   std::function<ExprPtr(ExprPtr, rc::Token, ExprPtr)> build) {
     LedEntry e;
     e.bp = {precedence, precedence};
-    infix_[OpKey{t, std::move(lex)}] =
+    infix_[OpKey{t}] =
         LedEntry{e.bp,
                  [this, build, &e](ExprPtr left, const rc::Token &op,
                                    const std::vector<rc::Token> &toks,
@@ -102,14 +90,11 @@ public:
       const rc::Token &look = toks[pos];
 
       const LedEntry *led = nullptr;
-      auto it_exact = infix_.find(OpKey{look.type, look.lexeme});
-      if (it_exact != infix_.end())
-        led = &it_exact->second;
-      else {
-        auto it_any = infix_.find(OpKey{look.type, std::string{}});
-        if (it_any != infix_.end())
-          led = &it_any->second;
-      }
+
+      auto it = infix_.find(OpKey{look.type});
+      if (it != infix_.end())
+        led = &it->second;
+
       if (!led)
         break;
 
@@ -216,13 +201,13 @@ inline PrattTable default_table() {
   tbl.infix_left(rc::TokenType::GE, 20, bin);
   // 15: == !=
   tbl.infix_left(rc::TokenType::NE, 15, bin);
-  tbl.infix_left(rc::TokenType::EQ, "==", 15, bin);
+  tbl.infix_left(rc::TokenType::EQ, 15, bin);
   // 10: &&
   tbl.infix_left(rc::TokenType::AND, 10, bin);
   // 9: ||
   tbl.infix_left(rc::TokenType::OR, 9, bin);
   // 5: assignments
-  tbl.infix_right(rc::TokenType::EQ, "=", 5, bin);
+  tbl.infix_right(rc::TokenType::ASSIGN, 5, bin);
   tbl.infix_right(rc::TokenType::PLUS_EQ, 5, bin);
   tbl.infix_right(rc::TokenType::MINUS_EQ, 5, bin);
   tbl.infix_right(rc::TokenType::STAR_EQ, 5, bin);
