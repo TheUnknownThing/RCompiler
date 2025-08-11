@@ -947,28 +947,41 @@ inline PrattTable default_table(rc::Parser *p) {
       rc::TokenType::DOT, POSTFIX_PRECEDENCE, POSTFIX_PRECEDENCE + 1,
       [p, &tbl](ExprPtr left, const rc::Token &,
                 const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-        if (pos >= toks.size() ||
-            toks[pos].type != rc::TokenType::NON_KEYWORD_IDENTIFIER) {
+        if (pos >= toks.size()) {
           return nullptr;
         }
-        rc::Token field_or_method = toks[pos++];
 
-        // Look ahead for a '('.
-        if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
-          size_t start_pos = pos;
-          auto args_result = p->expression_list_parser().parse(toks, start_pos);
-          if (!args_result) {
-            return nullptr;
-          }
-          pos = start_pos;
-          auto segment = rc::MethodCallExpression::PathExprSegment{
-              field_or_method.lexeme, std::nullopt};
-          return std::make_shared<rc::MethodCallExpression>(left, segment,
-                                                            *args_result);
-        } else {
+        const rc::Token &field_token = toks[pos];
+
+        // tuple field access
+        if (field_token.type == rc::TokenType::INTEGER_LITERAL) {
+          pos++;
           return std::make_shared<rc::FieldAccessExpression>(
-              left, field_or_method.lexeme);
+              left, field_token.lexeme);
         }
+
+        // struct field access or method calls
+        if (field_token.type == rc::TokenType::NON_KEYWORD_IDENTIFIER) {
+          pos++;
+          if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
+            size_t start_pos = pos;
+            auto args_result =
+                p->expression_list_parser().parse(toks, start_pos);
+            if (!args_result) {
+              return nullptr;
+            }
+            pos = start_pos;
+            auto segment = rc::MethodCallExpression::PathExprSegment{
+                field_token.lexeme, std::nullopt};
+            return std::make_shared<rc::MethodCallExpression>(left, segment,
+                                                              *args_result);
+          } else {
+            return std::make_shared<rc::FieldAccessExpression>(
+                left, field_token.lexeme);
+          }
+        }
+
+        return nullptr;
       });
 
   // 80: index expression
