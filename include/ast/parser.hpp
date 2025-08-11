@@ -31,23 +31,11 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_block_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_if_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_return_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_call_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_method_call_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_field_access_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_match_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_loop_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_while_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_array_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_tuple_or_group_expression();
-
-private:
-  std::vector<Token> tokens;
-  pratt::PrattTable pratt_table_;
-
-  std::unique_ptr<BaseNode> parse_item();
-
-  std::unique_ptr<BaseNode> parse_statement();
-  std::unique_ptr<BaseNode> parse_expression();
 
   parsec::Parser<std::unique_ptr<FunctionDecl>> parse_function();
   parsec::Parser<std::unique_ptr<StructDecl>> parse_struct();
@@ -58,6 +46,15 @@ private:
   argument_list_parser();
   parsec::Parser<std::vector<std::shared_ptr<Expression>>>
   expression_list_parser();
+
+private:
+  std::vector<Token> tokens;
+  pratt::PrattTable pratt_table_;
+
+  std::unique_ptr<BaseNode> parse_item();
+
+  std::unique_ptr<BaseNode> parse_statement();
+  std::unique_ptr<BaseNode> parse_expression();
 };
 
 inline Parser::Parser(std::vector<Token> tokens)
@@ -379,109 +376,6 @@ Parser::parse_return_expression() {
 }
 
 inline parsec::Parser<std::shared_ptr<Expression>>
-Parser::parse_call_expression() {
-  return parsec::Parser<std::shared_ptr<Expression>>(
-      [this](const std::vector<rc::Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
-        LOG_DEBUG("Attempting to parse function call at position " +
-                  std::to_string(pos));
-        size_t saved = pos;
-
-        auto func_parse = any_expression().combine(
-            expression_list_parser(), [](const auto &name, const auto &args) {
-              LOG_DEBUG("Parsed function call with " +
-                        std::to_string(args.size()) + " arguments");
-              return std::make_shared<CallExpression>(name, args);
-            });
-
-        auto result = func_parse.parse(toks, pos);
-        if (!result) {
-          LOG_ERROR("Failed to parse function call at position " +
-                    std::to_string(pos));
-          pos = saved;
-          return std::nullopt;
-        }
-
-        LOG_DEBUG("Successfully parsed function call");
-        return *result;
-      });
-}
-
-inline parsec::Parser<std::shared_ptr<Expression>>
-Parser::parse_method_call_expression() {
-  return parsec::Parser<std::shared_ptr<Expression>>(
-      [this](const std::vector<rc::Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
-        LOG_DEBUG("Attempting to parse method call at position " +
-                  std::to_string(pos));
-        size_t saved = pos;
-
-        auto path_segment = parsec::identifier.combine(
-            optional(expression_list_parser()),
-            [](const auto &name, const auto &args) {
-              return MethodCallExpression::PathExprSegment{name, args};
-            });
-
-        auto method_call_parse =
-            any_expression()
-                .thenL(tok(TokenType::DOT))
-                .combine(path_segment,
-                         [](const auto &recv, const auto &meth) {
-                           return std::make_pair(recv, meth);
-                         })
-                .combine(expression_list_parser(), [](const auto &rm,
-                                                      const auto &args) {
-                  LOG_DEBUG("Parsed method call: " + rm.second.name + " with " +
-                            std::to_string(args.size()) + " arguments");
-                  return std::make_shared<MethodCallExpression>(
-                      rm.first, rm.second, args);
-                });
-
-        auto result = method_call_parse.parse(toks, pos);
-        if (!result) {
-          LOG_ERROR("Failed to parse method call at position " +
-                    std::to_string(pos));
-          pos = saved;
-          return std::nullopt;
-        }
-
-        LOG_DEBUG("Successfully parsed method call");
-        return *result;
-      });
-}
-
-inline parsec::Parser<std::shared_ptr<Expression>>
-Parser::parse_field_access_expression() {
-  return parsec::Parser<std::shared_ptr<Expression>>(
-      [this](const std::vector<rc::Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
-        LOG_DEBUG("Attempting to parse field access at position " +
-                  std::to_string(pos));
-        size_t saved = pos;
-
-        auto field_access_parse =
-            any_expression()
-                .thenL(tok(TokenType::DOT))
-                .combine(parsec::identifier, [](const auto &target,
-                                                const auto &field) {
-                  LOG_DEBUG("Parsed field access: " + field);
-                  return std::make_shared<FieldAccessExpression>(target, field);
-                });
-
-        auto result = field_access_parse.parse(toks, pos);
-        if (!result) {
-          LOG_ERROR("Failed to parse field access at position " +
-                    std::to_string(pos));
-          pos = saved;
-          return std::nullopt;
-        }
-
-        LOG_DEBUG("Successfully parsed field access");
-        return *result;
-      });
-}
-
-inline parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_block_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
       [this](const std::vector<rc::Token> &toks,
@@ -724,7 +618,7 @@ Parser::parse_match_expression() {
         }
 
         std::vector<MatchExpression::MatchArm> arms;
-        
+
         // TODO: Implement MatchArms parsing
 
         return std::make_shared<MatchExpression>(*scrutinee, std::move(arms));
@@ -994,48 +888,30 @@ inline PrattTable default_table(rc::Parser *p) {
         });
   };
 
-  // FIX: NOW ALL THE LITERALS ARE I32
   add_simple_literal(rc::TokenType::INTEGER_LITERAL,
                      rc::PrimitiveLiteralType::I32);
-
-  // FIX: HANDLE RAW STRINGS
   add_simple_literal(rc::TokenType::STRING_LITERAL,
                      rc::PrimitiveLiteralType::STRING);
   add_simple_literal(rc::TokenType::C_STRING_LITERAL,
                      rc::PrimitiveLiteralType::C_STRING);
-
   add_simple_literal(rc::TokenType::CHAR_LITERAL,
                      rc::PrimitiveLiteralType::CHAR);
-
   add_simple_literal(rc::TokenType::TRUE, rc::PrimitiveLiteralType::BOOL);
   add_simple_literal(rc::TokenType::FALSE, rc::PrimitiveLiteralType::BOOL);
 
-  // Handles both variables and function calls
-  tbl.prefix(
-      rc::TokenType::NON_KEYWORD_IDENTIFIER,
-      [p](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-        if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
-          size_t start_pos = pos - 1;
-          if (auto result = p->parse_call_expression().parse(toks, start_pos)) {
-            pos = start_pos;
-            return *result;
-          }
-          return nullptr;
-        } else {
-          const rc::Token &prev = toks[pos - 1];
-          return std::make_shared<rc::NameExpression>(prev.lexeme);
-        }
-      });
+  tbl.prefix(rc::TokenType::NON_KEYWORD_IDENTIFIER,
+             [](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
+               const rc::Token &prev = toks[pos - 1];
+               return std::make_shared<rc::NameExpression>(prev.lexeme);
+             });
 
-  // ( ... ) or tuple expression
   tbl.prefix(rc::TokenType::L_PAREN,
              delegate_to_parsec(&rc::Parser::parse_tuple_or_group_expression));
 
-  // Prefix ops: + - !
   auto prefix_op = [&tbl](const std::vector<rc::Token> &toks,
                           size_t &pos) -> ExprPtr {
     rc::Token op = toks[pos - 1];
-    ExprPtr right = tbl.parse_expression(toks, pos, 100);
+    ExprPtr right = tbl.parse_expression(toks, pos, 100); // Unary precedence
     if (!right)
       return nullptr;
     return std::make_shared<rc::PrefixExpression>(op, std::move(right));
@@ -1044,11 +920,56 @@ inline PrattTable default_table(rc::Parser *p) {
   tbl.prefix(rc::TokenType::MINUS, prefix_op);
   tbl.prefix(rc::TokenType::NOT, prefix_op);
 
-  // --- Infix and Binary Operators ---
   auto bin = [](ExprPtr l, rc::Token op, ExprPtr r) {
     return std::make_shared<rc::BinaryExpression>(std::move(l), std::move(op),
                                                   std::move(r));
   };
+
+  const int POSTFIX_PRECEDENCE = 90;
+
+  // Expression list
+  tbl.infix_custom(
+      rc::TokenType::L_PAREN, POSTFIX_PRECEDENCE, POSTFIX_PRECEDENCE + 1,
+      [p](ExprPtr left, const rc::Token &, const std::vector<rc::Token> &toks,
+          size_t &pos) -> ExprPtr {
+        size_t start_pos = pos - 1;
+        auto args_result = p->expression_list_parser().parse(toks, start_pos);
+        if (!args_result) {
+          return nullptr;
+        }
+        pos = start_pos;
+        return std::make_shared<rc::CallExpression>(std::move(left),
+                                                    *args_result);
+      });
+
+  // Field access and Method call
+  tbl.infix_custom(
+      rc::TokenType::DOT, POSTFIX_PRECEDENCE, POSTFIX_PRECEDENCE + 1,
+      [p, &tbl](ExprPtr left, const rc::Token &,
+                const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
+        if (pos >= toks.size() ||
+            toks[pos].type != rc::TokenType::NON_KEYWORD_IDENTIFIER) {
+          return nullptr;
+        }
+        rc::Token field_or_method = toks[pos++];
+
+        // Look ahead for a '('.
+        if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
+          size_t start_pos = pos;
+          auto args_result = p->expression_list_parser().parse(toks, start_pos);
+          if (!args_result) {
+            return nullptr;
+          }
+          pos = start_pos;
+          auto segment = rc::MethodCallExpression::PathExprSegment{
+              field_or_method.lexeme, std::nullopt};
+          return std::make_shared<rc::MethodCallExpression>(left, segment,
+                                                            *args_result);
+        } else {
+          return std::make_shared<rc::FieldAccessExpression>(
+              left, field_or_method.lexeme);
+        }
+      });
 
   // 80: index expression
   tbl.infix_custom(
