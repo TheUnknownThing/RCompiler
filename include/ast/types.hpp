@@ -93,6 +93,7 @@ inline const std::map<std::string, PrimitiveLiteralType> base_literal_type_map =
      {"c_string", PrimitiveLiteralType::C_STRING},
      {"raw_c_string", PrimitiveLiteralType::RAW_C_STRING},
      {"char", PrimitiveLiteralType::CHAR},
+     {"bool", PrimitiveLiteralType::BOOL},
      {"to_be_inferred", PrimitiveLiteralType::TO_BE_INFERRED}};
 
 inline const std::map<PrimitiveLiteralType, std::string>
@@ -106,8 +107,8 @@ inline const std::map<PrimitiveLiteralType, std::string>
         {PrimitiveLiteralType::C_STRING, "c_string"},
         {PrimitiveLiteralType::RAW_C_STRING, "raw_c_string"},
         {PrimitiveLiteralType::CHAR, "char"},
+        {PrimitiveLiteralType::BOOL, "bool"},
         {PrimitiveLiteralType::TO_BE_INFERRED, "to_be_inferred"}};
-;
 
 inline const std::map<std::string, LiteralType> literal_type_map = {
     {"i32", LiteralType::base(PrimitiveLiteralType::I32)},
@@ -119,12 +120,13 @@ inline const std::map<std::string, LiteralType> literal_type_map = {
     {"c_string", LiteralType::base(PrimitiveLiteralType::C_STRING)},
     {"raw_c_string", LiteralType::base(PrimitiveLiteralType::RAW_C_STRING)},
     {"char", LiteralType::base(PrimitiveLiteralType::CHAR)},
+    {"bool", LiteralType::base(PrimitiveLiteralType::BOOL)},
     {"to_be_inferred",
      LiteralType::base(PrimitiveLiteralType::TO_BE_INFERRED)}};
 
 inline const std::set<std::string> valid_literal_types = {
-    "i32",        "u32",      "isize",        "usize", "string",
-    "raw_string", "c_string", "raw_c_string", "char",  "to_be_inferred"};
+    "i32",      "u32",          "isize", "usize", "string",        "raw_string",
+    "c_string", "raw_c_string", "char",  "bool",  "to_be_inferred"};
 
 inline std::string to_string(const LiteralType &t) {
   if (t.is_base()) {
