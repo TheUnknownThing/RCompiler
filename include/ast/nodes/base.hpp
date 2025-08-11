@@ -18,6 +18,9 @@ class UnderscoreExpression;
 class BlockExpression;
 class LoopExpression;
 class WhileExpression;
+class ArrayExpression;
+class IndexExpression;
+class TupleExpression;
 class BlockStatement;
 class LetStatement;
 class ExpressionStatement;
@@ -61,6 +64,9 @@ public:
   virtual void visit(BlockExpression &) {}
   virtual void visit(LoopExpression &) {}
   virtual void visit(WhileExpression &) {}
+  virtual void visit(ArrayExpression &) {}
+  virtual void visit(IndexExpression &) {}
+  virtual void visit(TupleExpression &) {}
 
   // Statement visitors
   virtual void visit(BlockStatement &) {}

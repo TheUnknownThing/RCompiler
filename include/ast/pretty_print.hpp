@@ -39,6 +39,9 @@ public:
   void visit(BlockExpression &node) override;
   void visit(LoopExpression &node) override;
   void visit(WhileExpression &node) override;
+  void visit(ArrayExpression &node) override;
+  void visit(IndexExpression &node) override;
+  void visit(TupleExpression &node) override;
 
   // Statement visitors
   void visit(BlockStatement &node) override;

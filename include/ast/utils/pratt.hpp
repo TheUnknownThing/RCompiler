@@ -77,6 +77,14 @@ public:
                  }};
   }
 
+  // Custom infix w/ explicit lbp/rbp
+  void infix_custom(rc::TokenType t, int lbp, int rbp,
+                    std::function<ExprPtr(ExprPtr, const rc::Token &,
+                                           const std::vector<rc::Token> &,
+                                           size_t &)> led) {
+    infix_[OpKey{t}] = LedEntry{Bp{lbp, rbp}, std::move(led)};
+  }
+
   ExprPtr parse_expression(const std::vector<rc::Token> &toks, size_t &pos,
                            int min_bp = 0) const {
     if (pos >= toks.size())

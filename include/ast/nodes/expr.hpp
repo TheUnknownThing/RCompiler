@@ -168,6 +168,39 @@ public:
   }
 };
 
+class ArrayExpression : public Expression {
+public:
+  // Two forms: [e1, e2, ...] or [expr ; size]
+  std::vector<std::shared_ptr<Expression>> elements; // when not repeated
+  std::optional<std::pair<std::shared_ptr<Expression>, std::shared_ptr<Expression>>> repeat; // (expr ; count)
+
+  ArrayExpression(std::vector<std::shared_ptr<Expression>> elems)
+      : elements(std::move(elems)), repeat(std::nullopt) {}
+  ArrayExpression(std::shared_ptr<Expression> value, std::shared_ptr<Expression> size)
+      : elements(), repeat(std::make_pair(std::move(value), std::move(size))) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class IndexExpression : public Expression {
+public:
+  std::shared_ptr<Expression> target;
+  std::shared_ptr<Expression> index;
+
+  IndexExpression(std::shared_ptr<Expression> t, std::shared_ptr<Expression> i)
+      : target(std::move(t)), index(std::move(i)) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class TupleExpression : public Expression {
+public:
+  std::vector<std::shared_ptr<Expression>> elements;
+  explicit TupleExpression(std::vector<std::shared_ptr<Expression>> elems)
+      : elements(std::move(elems)) {}
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
 class UnderscoreExpression : public Expression {
 public:
   UnderscoreExpression() {}

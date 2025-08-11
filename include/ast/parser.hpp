@@ -37,6 +37,8 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_match_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_loop_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_while_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_array_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_tuple_or_group_expression();
 
 private:
   std::vector<Token> tokens;
@@ -695,6 +697,195 @@ Parser::parse_while_expression() {
       });
 }
 
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_match_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        size_t saved = pos;
+        LOG_DEBUG("Attempting to parse match expression at position " +
+                  std::to_string(pos));
+        if (!tok(TokenType::MATCH).parse(toks, pos)) {
+          pos = saved;
+          return std::nullopt;
+        }
+
+        auto scrutinee = any_expression().parse(toks, pos);
+        if (!scrutinee) {
+          pos = saved;
+          LOG_ERROR("Failed to parse match scrutinee");
+          return std::nullopt;
+        }
+
+        if (!tok(TokenType::L_BRACE).parse(toks, pos)) {
+          pos = saved;
+          LOG_ERROR("Expected '{' after match scrutinee");
+          return std::nullopt;
+        }
+
+        std::vector<MatchExpression::MatchArm> arms;
+        
+        // TODO: Implement MatchArms parsing
+
+        return std::make_shared<MatchExpression>(*scrutinee, std::move(arms));
+      });
+}
+
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_array_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        size_t saved = pos;
+        if (!tok(TokenType::L_BRACKET).parse(toks, pos)) {
+          pos = saved;
+          return std::nullopt;
+        }
+
+        // [] empty array
+        if (tok(TokenType::R_BRACKET).parse(toks, pos)) {
+          LOG_DEBUG("Parsed empty array literal");
+          return std::make_shared<ArrayExpression>(
+              std::vector<std::shared_ptr<Expression>>{});
+        }
+
+        auto first = any_expression().parse(toks, pos);
+        if (!first) {
+          pos = saved;
+          LOG_ERROR("Expected expression in array literal");
+          return std::nullopt;
+        }
+
+        // repeat: expr ; expr ]
+        size_t after_first = pos;
+        if (tok(TokenType::SEMICOLON).parse(toks, pos)) {
+          auto count = any_expression().parse(toks, pos);
+          if (!count) {
+            pos = saved;
+            LOG_ERROR(
+                "Expected size expression after ';' in array repeat literal");
+            return std::nullopt;
+          }
+          if (!tok(TokenType::R_BRACKET).parse(toks, pos)) {
+            pos = saved;
+            LOG_ERROR("Expected ']' to close array repeat literal");
+            return std::nullopt;
+          }
+          LOG_DEBUG("Parsed repeat array literal");
+          return std::make_shared<ArrayExpression>(*first, *count);
+        }
+        pos = after_first;
+
+        // elements list: e1 (, eN)* ,? ]
+        std::vector<std::shared_ptr<Expression>> elems;
+        elems.push_back(*first);
+        for (;;) {
+          size_t before = pos;
+          if (!tok(TokenType::COMMA).parse(toks, pos)) {
+            pos = before;
+            break;
+          }
+          // trailing comma
+          size_t before_elem = pos;
+          if (tok(TokenType::R_BRACKET).parse(toks, pos)) {
+            LOG_DEBUG("Parsed array literal with trailing comma");
+            return std::make_shared<ArrayExpression>(std::move(elems));
+          }
+          pos = before_elem;
+          auto next = any_expression().parse(toks, pos);
+          if (!next) {
+            pos = saved;
+            LOG_ERROR("Expected expression after ',' in array literal");
+            return std::nullopt;
+          }
+          elems.push_back(*next);
+        }
+
+        if (!tok(TokenType::R_BRACKET).parse(toks, pos)) {
+          pos = saved;
+          LOG_ERROR("Expected ']' to close array literal");
+          return std::nullopt;
+        }
+
+        LOG_DEBUG("Parsed array literal with " + std::to_string(elems.size()) +
+                  " elements");
+        return std::make_shared<ArrayExpression>(std::move(elems));
+      });
+}
+
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_tuple_or_group_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        size_t saved = pos;
+        if (!tok(TokenType::L_PAREN).parse(toks, pos)) {
+          pos = saved;
+          return std::nullopt;
+        }
+
+        if (tok(TokenType::R_PAREN).parse(toks, pos)) {
+          LOG_DEBUG("Parsed unit tuple expression");
+          return std::make_shared<TupleExpression>(
+              std::vector<std::shared_ptr<Expression>>{});
+        }
+
+        auto first = any_expression().parse(toks, pos);
+        if (!first) {
+          pos = saved;
+          LOG_ERROR("Expected expression inside parentheses");
+          return std::nullopt;
+        }
+
+        // it's a tuple
+        if (tok(TokenType::COMMA).parse(toks, pos)) {
+          std::vector<std::shared_ptr<Expression>> elems;
+          elems.push_back(*first);
+
+          for (;;) {
+            size_t before = pos;
+            if (tok(TokenType::R_PAREN).parse(toks, pos)) {
+              LOG_DEBUG("Parsed tuple expression with trailing comma");
+              return std::make_shared<TupleExpression>(std::move(elems));
+            }
+            pos = before;
+
+            auto next = any_expression().parse(toks, pos);
+            if (!next) {
+              pos = saved;
+              LOG_ERROR("Expected expression after ',' in tuple");
+              return std::nullopt;
+            }
+            elems.push_back(*next);
+
+            if (!tok(TokenType::COMMA).parse(toks, pos)) {
+              break;
+            }
+          }
+
+          if (!tok(TokenType::R_PAREN).parse(toks, pos)) {
+            pos = saved;
+            LOG_ERROR("Expected ')' to close tuple expression");
+            return std::nullopt;
+          }
+
+          LOG_DEBUG("Parsed tuple expression with " +
+                    std::to_string(elems.size()) + " elements");
+          return std::make_shared<TupleExpression>(std::move(elems));
+        }
+
+        // group expression
+        if (!tok(TokenType::R_PAREN).parse(toks, pos)) {
+          pos = saved;
+          LOG_ERROR("Expected ')' to close parenthesized expression");
+          return std::nullopt;
+        }
+
+        LOG_DEBUG("Parsed parenthesized expression (group)");
+        return std::make_shared<GroupExpression>(*first);
+      });
+}
+
 inline parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
       [this](const std::vector<rc::Token> &toks,
@@ -787,6 +978,10 @@ inline PrattTable default_table(rc::Parser *p) {
              delegate_to_parsec(&rc::Parser::parse_block_expression));
   tbl.prefix(rc::TokenType::RETURN,
              delegate_to_parsec(&rc::Parser::parse_return_expression));
+  tbl.prefix(rc::TokenType::MATCH,
+             delegate_to_parsec(&rc::Parser::parse_match_expression));
+  tbl.prefix(rc::TokenType::L_BRACKET,
+             delegate_to_parsec(&rc::Parser::parse_array_expression));
 
   // Literals
   auto add_simple_literal = [&tbl](rc::TokenType tt,
@@ -832,18 +1027,9 @@ inline PrattTable default_table(rc::Parser *p) {
         }
       });
 
-  // ( expr ) -- Grouping
-  tbl.prefix(
-      rc::TokenType::L_PAREN,
-      [&tbl](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
-        ExprPtr inner = tbl.parse_expression(toks, pos, 0);
-        if (!inner)
-          return nullptr;
-        if (pos >= toks.size() || toks[pos].type != rc::TokenType::R_PAREN)
-          return nullptr;
-        ++pos;
-        return std::make_shared<rc::GroupExpression>(std::move(inner));
-      });
+  // ( ... ) or tuple expression
+  tbl.prefix(rc::TokenType::L_PAREN,
+             delegate_to_parsec(&rc::Parser::parse_tuple_or_group_expression));
 
   // Prefix ops: + - !
   auto prefix_op = [&tbl](const std::vector<rc::Token> &toks,
@@ -863,6 +1049,20 @@ inline PrattTable default_table(rc::Parser *p) {
     return std::make_shared<rc::BinaryExpression>(std::move(l), std::move(op),
                                                   std::move(r));
   };
+
+  // 80: index expression
+  tbl.infix_custom(
+      rc::TokenType::L_BRACKET, 80, 81,
+      [&tbl](ExprPtr left, const rc::Token &,
+             const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
+        ExprPtr index = tbl.parse_expression(toks, pos, 0);
+        if (!index)
+          return nullptr;
+        if (pos >= toks.size() || toks[pos].type != rc::TokenType::R_BRACKET)
+          return nullptr;
+        ++pos; // consume ']'
+        return std::make_shared<rc::IndexExpression>(left, index);
+      });
 
   // 70: * / %
   tbl.infix_left(rc::TokenType::STAR, 70, bin);

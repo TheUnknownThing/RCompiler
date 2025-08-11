@@ -52,6 +52,12 @@ void PrettyPrintVisitor::visit(BaseNode &node) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
     visit(*expr);
+  } else if (auto *expr = dynamic_cast<ArrayExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<IndexExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<TupleExpression *>(&node)) {
+    visit(*expr);
   } else if (auto *stmt = dynamic_cast<BlockStatement *>(&node)) {
     visit(*stmt);
   } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
@@ -273,6 +279,47 @@ void PrettyPrintVisitor::visit(WhileExpression &node) {
   decrease_indent();
   print_indent();
   print_inline("}");
+}
+
+void PrettyPrintVisitor::visit(ArrayExpression &node) {
+  print_inline("ArrayExpr(");
+  if (node.repeat.has_value()) {
+    // Repeat form: [expr ; size]
+    print_inline("repeat: ");
+    node.repeat.value().first->accept(*this);
+    print_inline(" ; ");
+    node.repeat.value().second->accept(*this);
+  } else {
+    // Element list form: [e1, e2, ...]
+    print_inline("elements: [");
+    for (size_t i = 0; i < node.elements.size(); ++i) {
+      node.elements[i]->accept(*this);
+      if (i < node.elements.size() - 1) {
+        print_inline(", ");
+      }
+    }
+    print_inline("]");
+  }
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(IndexExpression &node) {
+  print_inline("IndexExpr(");
+  node.target->accept(*this);
+  print_inline("[");
+  node.index->accept(*this);
+  print_inline("])");
+}
+
+void PrettyPrintVisitor::visit(TupleExpression &node) {
+  print_inline("TupleExpr(");
+  for (size_t i = 0; i < node.elements.size(); ++i) {
+    node.elements[i]->accept(*this);
+    if (i < node.elements.size() - 1) {
+      print_inline(", ");
+    }
+  }
+  print_inline(")");
 }
 
 // Statement visitors
