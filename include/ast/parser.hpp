@@ -32,6 +32,9 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_if_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_return_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_call_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_method_call_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_field_access_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_match_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_loop_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_while_expression();
 
@@ -382,9 +385,9 @@ Parser::parse_call_expression() {
                   std::to_string(pos));
         size_t saved = pos;
 
-        auto func_parse = identifier.combine(
+        auto func_parse = any_expression().combine(
             expression_list_parser(), [](const auto &name, const auto &args) {
-              LOG_DEBUG("Parsed function call: " + name + " with " +
+              LOG_DEBUG("Parsed function call with " +
                         std::to_string(args.size()) + " arguments");
               return std::make_shared<CallExpression>(name, args);
             });
@@ -398,6 +401,80 @@ Parser::parse_call_expression() {
         }
 
         LOG_DEBUG("Successfully parsed function call");
+        return *result;
+      });
+}
+
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_method_call_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        LOG_DEBUG("Attempting to parse method call at position " +
+                  std::to_string(pos));
+        size_t saved = pos;
+
+        auto path_segment = parsec::identifier.combine(
+            optional(expression_list_parser()),
+            [](const auto &name, const auto &args) {
+              return MethodCallExpression::PathExprSegment{name, args};
+            });
+
+        auto method_call_parse =
+            any_expression()
+                .thenL(tok(TokenType::DOT))
+                .combine(path_segment,
+                         [](const auto &recv, const auto &meth) {
+                           return std::make_pair(recv, meth);
+                         })
+                .combine(expression_list_parser(), [](const auto &rm,
+                                                      const auto &args) {
+                  LOG_DEBUG("Parsed method call: " + rm.second.name + " with " +
+                            std::to_string(args.size()) + " arguments");
+                  return std::make_shared<MethodCallExpression>(
+                      rm.first, rm.second, args);
+                });
+
+        auto result = method_call_parse.parse(toks, pos);
+        if (!result) {
+          LOG_ERROR("Failed to parse method call at position " +
+                    std::to_string(pos));
+          pos = saved;
+          return std::nullopt;
+        }
+
+        LOG_DEBUG("Successfully parsed method call");
+        return *result;
+      });
+}
+
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_field_access_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        LOG_DEBUG("Attempting to parse field access at position " +
+                  std::to_string(pos));
+        size_t saved = pos;
+
+        auto field_access_parse =
+            any_expression()
+                .thenL(tok(TokenType::DOT))
+                .combine(parsec::identifier, [](const auto &target,
+                                                const auto &field) {
+                  LOG_DEBUG("Parsed field access: " + field);
+                  return std::make_shared<FieldAccessExpression>(target, field);
+                });
+
+        auto result = field_access_parse.parse(toks, pos);
+        if (!result) {
+          LOG_ERROR("Failed to parse field access at position " +
+                    std::to_string(pos));
+          pos = saved;
+          return std::nullopt;
+        }
+
+        LOG_DEBUG("Successfully parsed field access");
         return *result;
       });
 }

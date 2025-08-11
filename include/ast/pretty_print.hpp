@@ -33,6 +33,8 @@ public:
   void visit(MatchExpression &node) override;
   void visit(ReturnExpression &node) override;
   void visit(CallExpression &node) override;
+  void visit(MethodCallExpression &node) override;
+  void visit(FieldAccessExpression &node) override;
   void visit(UnderscoreExpression &node) override;
   void visit(BlockExpression &node) override;
   void visit(LoopExpression &node) override;

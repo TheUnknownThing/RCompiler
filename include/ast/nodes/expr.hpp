@@ -123,11 +123,45 @@ public:
 
 class CallExpression : public Expression {
 public:
-  std::string function_name;
+  std::shared_ptr<Expression> function_name;
   std::vector<std::shared_ptr<Expression>> arguments;
 
-  CallExpression(std::string name, std::vector<std::shared_ptr<Expression>> args)
-      : function_name(std::move(name)), arguments(std::move(args)) {}
+  CallExpression(std::shared_ptr<Expression> fname, std::vector<std::shared_ptr<Expression>> args)
+      : function_name(std::move(fname)), arguments(std::move(args)) {}
+
+  void accept(BaseVisitor &visitor) override {
+    visitor.visit(*this);
+  }
+};
+
+class MethodCallExpression : public Expression {
+public:
+  struct PathExprSegment {
+    std::string name;
+    std::optional<std::vector<std::shared_ptr<Expression>>> args;
+  };
+
+  std::shared_ptr<Expression> receiver;
+  PathExprSegment method_name;
+  std::vector<std::shared_ptr<Expression>> arguments;
+
+  MethodCallExpression(std::shared_ptr<Expression> recv, PathExprSegment method,
+                       std::vector<std::shared_ptr<Expression>> args)
+      : receiver(std::move(recv)), method_name(std::move(method)),
+        arguments(std::move(args)) {}
+
+  void accept(BaseVisitor &visitor) override {
+    visitor.visit(*this);
+  }
+};
+
+class FieldAccessExpression : public Expression {
+public:
+  std::shared_ptr<Expression> target;
+  std::string field_name;
+
+  FieldAccessExpression(std::shared_ptr<Expression> t, std::string f)
+      : target(std::move(t)), field_name(std::move(f)) {}
 
   void accept(BaseVisitor &visitor) override {
     visitor.visit(*this);

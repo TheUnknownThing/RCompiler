@@ -34,6 +34,7 @@ class PrattTable {
 public:
   using NudFn =
       std::function<ExprPtr(const std::vector<rc::Token> &, size_t &)>;
+    
   using Bp = std::pair<int, int>;
   struct LedEntry {
     Bp bp;

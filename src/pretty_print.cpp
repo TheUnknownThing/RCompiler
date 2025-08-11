@@ -40,6 +40,10 @@ void PrettyPrintVisitor::visit(BaseNode &node) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
     visit(*expr);
+  } else if (auto *expr = dynamic_cast<MethodCallExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<FieldAccessExpression *>(&node)) {
+    visit(*expr);
   } else if (auto *expr = dynamic_cast<UnderscoreExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
@@ -83,7 +87,8 @@ void PrettyPrintVisitor::visit(NameExpression &node) {
 }
 
 void PrettyPrintVisitor::visit(LiteralExpression &node) {
-  print_inline("LiteralExpr(" + node.value + ", " + format_type(node.type) + ")");
+  print_inline("LiteralExpr(" + node.value + ", " + format_type(node.type) +
+               ")");
 }
 
 void PrettyPrintVisitor::visit(PrefixExpression &node) {
@@ -134,7 +139,7 @@ void PrettyPrintVisitor::visit(IfExpression &node) {
 }
 
 void PrettyPrintVisitor::visit(CallExpression &node) {
-  print_inline("CallExpr(" + node.function_name + ", [");
+  print_inline("CallExpr( function name, [");
   for (size_t i = 0; i < node.arguments.size(); ++i) {
     node.arguments[i]->accept(*this);
     if (i < node.arguments.size() - 1) {
@@ -142,6 +147,25 @@ void PrettyPrintVisitor::visit(CallExpression &node) {
     }
   }
   print_inline("])");
+}
+
+void PrettyPrintVisitor::visit(MethodCallExpression &node) {
+  print_inline("MethodCallExpr(");
+  node.receiver->accept(*this);
+  print_inline(", " + node.method_name.name + ", [");
+  for (size_t i = 0; i < node.arguments.size(); ++i) {
+    node.arguments[i]->accept(*this);
+    if (i < node.arguments.size() - 1) {
+      print_inline(", ");
+    }
+  }
+  print_inline("])");
+}
+
+void PrettyPrintVisitor::visit(FieldAccessExpression &node) {
+  print_inline("FieldAccessExpr(");
+  node.target->accept(*this);
+  print_inline(", " + node.field_name + ")");
 }
 
 void PrettyPrintVisitor::visit(MatchExpression &node) {

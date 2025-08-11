@@ -12,6 +12,8 @@ class IfExpression;
 class MatchExpression;
 class ReturnExpression;
 class CallExpression;
+class FieldAccessExpression;
+class MethodCallExpression;
 class UnderscoreExpression;
 class BlockExpression;
 class LoopExpression;
@@ -53,6 +55,8 @@ public:
   virtual void visit(MatchExpression &) {}
   virtual void visit(ReturnExpression &) {}
   virtual void visit(CallExpression &) {}
+  virtual void visit(FieldAccessExpression &) {}
+  virtual void visit(MethodCallExpression &) {}
   virtual void visit(UnderscoreExpression &) {}
   virtual void visit(BlockExpression &) {}
   virtual void visit(LoopExpression &) {}
