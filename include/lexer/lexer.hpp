@@ -140,13 +140,13 @@ static std::map<std::string, TokenType> operatorToTokenType = {
 };
 
 static std::map<std::string, TokenType> punctuationToTokenType = {
-    {"::", TokenType::COLON_COLON}, {"(", TokenType::L_PAREN},
-    {")", TokenType::R_PAREN},      {"{", TokenType::L_BRACE},
-    {"}", TokenType::R_BRACE},      {"[", TokenType::L_BRACKET},
-    {"]", TokenType::R_BRACKET},    {",", TokenType::COMMA},
-    {".", TokenType::DOT},          {":", TokenType::COLON},
-    {";", TokenType::SEMICOLON},
-};
+    {"::", TokenType::COLON_COLON}, {"..", TokenType::DOT_DOT},
+    {"(", TokenType::L_PAREN},      {")", TokenType::R_PAREN},
+    {"{", TokenType::L_BRACE},      {"}", TokenType::R_BRACE},
+    {"[", TokenType::L_BRACKET},    {"]", TokenType::R_BRACKET},
+    {",", TokenType::COMMA},        {".", TokenType::DOT},
+    {":", TokenType::COLON},        {";", TokenType::SEMICOLON},
+    {"@", TokenType::AT}};
 
 struct Token {
   TokenType type;
@@ -186,7 +186,7 @@ inline bool Lexer::checkWordBoundary(char c) {
 
 inline bool Lexer::isPunctuation(char c) {
   return c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']' ||
-         c == ',' || c == '.' || c == ':' || c == ';';
+         c == ',' || c == '.' || c == ':' || c == ';' || c == '@';
 }
 
 inline void Lexer::firstPass() {

@@ -113,7 +113,9 @@ X(L_BRACKET, "L_BRACKET")   // [
 X(R_BRACKET, "R_BRACKET")   // ]
 X(COMMA, "COMMA")         // ,
 X(DOT, "DOT")           // .
+X(DOT_DOT, "DOT_DOT") // ..
 X(COLON, "COLON")         // :
 X(SEMICOLON, "SEMICOLON")   // ;
+X(AT, "AT") // @
 
 X(UNKNOWN, "UNKNOWN") // unknown
