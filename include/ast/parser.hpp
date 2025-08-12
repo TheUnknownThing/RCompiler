@@ -39,6 +39,9 @@ public:
 
   parsec::Parser<std::unique_ptr<FunctionDecl>> parse_function();
   parsec::Parser<std::unique_ptr<StructDecl>> parse_struct();
+  parsec::Parser<std::unique_ptr<ModuleDecl>> parse_module();
+  parsec::Parser<std::unique_ptr<EnumDecl>> parse_enum();
+  parsec::Parser<std::unique_ptr<ConstantItem>> parse_const_item();
 
   parsec::Parser<std::pair<std::string, LiteralType>>
   identifier_and_type_parser();
@@ -86,6 +89,27 @@ inline std::unique_ptr<RootNode> Parser::parse() {
           return std::unique_ptr<BaseNode>(s->release());
         }
         pos = saved;
+        LOG_DEBUG("Struct parsing failed, attempting module at position " +
+                  std::to_string(pos));
+        if (auto m = parse_module().parse(toks, pos)) {
+          LOG_DEBUG("Successfully parsed module");
+          return std::unique_ptr<BaseNode>(m->release());
+        }
+        pos = saved;
+        LOG_DEBUG("Module parsing failed, attempting enum at position " +
+                  std::to_string(pos));
+        if (auto e = parse_enum().parse(toks, pos)) {
+          LOG_DEBUG("Successfully parsed enum");
+          return std::unique_ptr<BaseNode>(e->release());
+        }
+        pos = saved;
+        LOG_DEBUG("Enum parsing failed, attempting const item at position " +
+                  std::to_string(pos));
+        if (auto c = parse_const_item().parse(toks, pos)) {
+          LOG_DEBUG("Successfully parsed const item");
+          return std::unique_ptr<BaseNode>(c->release());
+        }
+        pos = saved;
         LOG_DEBUG("No top-level item found at position " + std::to_string(pos));
         return std::nullopt;
       });
@@ -129,6 +153,21 @@ inline std::unique_ptr<BaseNode> Parser::parse_item() {
         if (auto s = parse_struct().parse(toks, pos)) {
           LOG_DEBUG("Single item parser: found struct");
           return std::unique_ptr<BaseNode>(s->release());
+        }
+        pos = saved;
+        if (auto m = parse_module().parse(toks, pos)) {
+          LOG_DEBUG("Single item parser: found module");
+          return std::unique_ptr<BaseNode>(m->release());
+        }
+        pos = saved;
+        if (auto e = parse_enum().parse(toks, pos)) {
+          LOG_DEBUG("Single item parser: found enum");
+          return std::unique_ptr<BaseNode>(e->release());
+        }
+        pos = saved;
+        if (auto c = parse_const_item().parse(toks, pos)) {
+          LOG_DEBUG("Single item parser: found const item");
+          return std::unique_ptr<BaseNode>(c->release());
         }
         pos = saved;
         LOG_DEBUG("Single item parser: no item found");
@@ -343,6 +382,260 @@ inline parsec::Parser<std::unique_ptr<StructDecl>> Parser::parse_struct() {
           });
 
   return parser;
+}
+
+inline parsec::Parser<std::unique_ptr<ModuleDecl>> Parser::parse_module() {
+  return parsec::Parser<std::unique_ptr<ModuleDecl>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::unique_ptr<ModuleDecl>> {
+        size_t saved = pos;
+        if (!tok(TokenType::MOD).parse(toks, pos)) {
+          pos = saved;
+          return std::nullopt;
+        }
+
+        auto maybe_name = parsec::identifier.parse(toks, pos);
+        if (!maybe_name) {
+          pos = saved;
+          return std::nullopt;
+        }
+        const std::string name = *maybe_name;
+
+        {
+          size_t sem_pos = pos;
+          if (tok(TokenType::SEMICOLON).parse(toks, sem_pos)) {
+            pos = sem_pos;
+            LOG_DEBUG("Parsed module decl (semicolon form): " + name);
+            return std::make_unique<ModuleDecl>(name, std::nullopt);
+          }
+        }
+
+        if (!tok(TokenType::L_BRACE).parse(toks, pos)) {
+          pos = saved;
+          return std::nullopt;
+        }
+
+        std::vector<std::unique_ptr<BaseNode>> items;
+
+        // Local item parser
+        auto item_parser = parsec::Parser<std::unique_ptr<BaseNode>>(
+            [this](const std::vector<rc::Token> &toks, size_t &pos)
+                -> parsec::ParseResult<std::unique_ptr<BaseNode>> {
+              size_t saved = pos;
+              if (auto f = parse_function().parse(toks, pos))
+                return std::unique_ptr<BaseNode>(f->release());
+              pos = saved;
+              if (auto s = parse_struct().parse(toks, pos))
+                return std::unique_ptr<BaseNode>(s->release());
+              pos = saved;
+              if (auto m = parse_module().parse(toks, pos))
+                return std::unique_ptr<BaseNode>(m->release());
+              pos = saved;
+              if (auto e = parse_enum().parse(toks, pos))
+                return std::unique_ptr<BaseNode>(e->release());
+              pos = saved;
+              if (auto c = parse_const_item().parse(toks, pos))
+                return std::unique_ptr<BaseNode>(c->release());
+              pos = saved;
+              return std::nullopt;
+            });
+
+        int count = 0;
+        for (;;) {
+          size_t before = pos;
+          if (tok(TokenType::R_BRACE).parse(toks, pos)) {
+            LOG_DEBUG("Parsed module decl with " + std::to_string(count) +
+                      " items: " + name);
+            return std::make_unique<ModuleDecl>(name, std::move(items));
+          }
+          pos = before;
+
+          if (auto item = item_parser.parse(toks, pos)) {
+            items.push_back(std::move(*item));
+            ++count;
+            continue;
+          }
+
+          pos = saved;
+          LOG_ERROR("Failed parsing item in module '" + name + "'");
+          return std::nullopt;
+        }
+      });
+}
+
+inline parsec::Parser<std::unique_ptr<EnumDecl>> Parser::parse_enum() {
+  using EV = EnumDecl::EnumVariant;
+
+  // tuple fields: ( T, T, ... )
+  auto tuple_fields =
+      tok(TokenType::L_PAREN)
+          .thenR(many(typ.thenL(optional(tok(TokenType::COMMA)))))
+          .thenL(tok(TokenType::R_PAREN));
+
+  // struct fields: { name : T, ... }
+  auto field = parsec::identifier.thenL(tok(TokenType::COLON))
+                   .combine(typ, [](const auto &id, const auto &t) {
+                     return std::make_pair(id, t);
+                   });
+  auto struct_fields =
+      tok(TokenType::L_BRACE)
+          .thenR(many(field.thenL(optional(tok(TokenType::COMMA)))))
+          .thenL(tok(TokenType::R_BRACE));
+
+  // body: either tuple fields or struct fields
+  auto variant_body = parsec::Parser<std::tuple<
+      std::optional<std::vector<LiteralType>>,
+      std::optional<std::vector<std::pair<std::string, LiteralType>>>>>(
+      [tuple_fields, struct_fields](const std::vector<rc::Token> &toks,
+                                    size_t &pos)
+          -> parsec::ParseResult<
+              std::tuple<std::optional<std::vector<LiteralType>>,
+                         std::optional<std::vector<
+                             std::pair<std::string, LiteralType>>>>> {
+        size_t saved = pos;
+        if (auto tf = tuple_fields.parse(toks, pos)) {
+          return std::make_tuple(
+              std::optional<std::vector<LiteralType>>(*tf),
+              std::optional<std::vector<std::pair<std::string, LiteralType>>>(
+                  std::nullopt));
+        }
+        pos = saved;
+        if (auto sf = struct_fields.parse(toks, pos)) {
+          return std::make_tuple(
+              std::optional<std::vector<LiteralType>>(std::nullopt),
+              std::optional<std::vector<std::pair<std::string, LiteralType>>>(
+                  *sf));
+        }
+        pos = saved;
+        // No body
+        return std::make_tuple(
+            std::optional<std::vector<LiteralType>>(std::nullopt),
+            std::optional<std::vector<std::pair<std::string, LiteralType>>>(
+                std::nullopt));
+      });
+
+  auto variant = parsec::identifier.combine(
+      variant_body, [](const auto &name, const auto &body) {
+        EV v;
+        v.name = name;
+        v.tuple_fields = std::get<0>(body);
+        v.struct_fields = std::get<1>(body);
+        return v;
+      });
+
+  // optional discriminant: = expr
+  auto variant_with_discriminant =
+      variant.combine(optional(tok(TokenType::ASSIGN).thenR(any_expression())),
+                      [](auto v, auto disc) {
+                        v.discriminant = disc;
+                        return v;
+                      });
+
+  return parsec::Parser<std::unique_ptr<EnumDecl>>(
+      [variant_with_discriminant](
+          const std::vector<rc::Token> &toks,
+          size_t &pos) -> parsec::ParseResult<std::unique_ptr<EnumDecl>> {
+        size_t saved = pos;
+        if (!tok(TokenType::ENUM).parse(toks, pos)) {
+          pos = saved;
+          return std::nullopt;
+        }
+
+        auto maybe_name = parsec::identifier.parse(toks, pos);
+        if (!maybe_name) {
+          pos = saved;
+          return std::nullopt;
+        }
+        std::string name = *maybe_name;
+
+        if (!tok(TokenType::L_BRACE).parse(toks, pos)) {
+          pos = saved;
+          return std::nullopt;
+        }
+
+        std::vector<EV> variants;
+
+        // empty enum
+        {
+          size_t before = pos;
+          if (tok(TokenType::R_BRACE).parse(toks, pos)) {
+            LOG_DEBUG("Parsed empty enum: " + name);
+            return std::make_unique<EnumDecl>(name, std::move(variants));
+          }
+          pos = before;
+        }
+
+        // First variant
+        auto first = variant_with_discriminant.parse(toks, pos);
+        if (!first) {
+          pos = saved;
+          LOG_ERROR("Expected enum variant after '{' in enum '" + name + "'");
+          return std::nullopt;
+        }
+        variants.push_back(*first);
+
+        for (;;) {
+          size_t before = pos;
+          if (!tok(TokenType::COMMA).parse(toks, pos)) {
+            pos = before;
+            break;
+          }
+          // trailing comma
+          size_t before_next = pos;
+          if (tok(TokenType::R_BRACE).parse(toks, pos)) {
+            LOG_DEBUG("Parsed enum '" + name + "' with " +
+                      std::to_string(variants.size()) +
+                      " variants (trailing comma)");
+            return std::make_unique<EnumDecl>(name, std::move(variants));
+          }
+          pos = before_next;
+
+          auto next = variant_with_discriminant.parse(toks, pos);
+          if (!next) {
+            pos = saved;
+            LOG_ERROR("Expected enum variant after ',' in enum '" + name + "'");
+            return std::nullopt;
+          }
+          variants.push_back(*next);
+        }
+
+        if (!tok(TokenType::R_BRACE).parse(toks, pos)) {
+          pos = saved;
+          LOG_ERROR("Expected '}' to close enum '" + name + "'");
+          return std::nullopt;
+        }
+
+        LOG_DEBUG("Parsed enum '" + name + "' with " +
+                  std::to_string(variants.size()) + " variants");
+        return std::make_unique<EnumDecl>(name, std::move(variants));
+      });
+}
+
+inline parsec::Parser<std::unique_ptr<ConstantItem>>
+Parser::parse_const_item() {
+  // const name : Type ( = expr )? ;
+  auto header = tok(TokenType::CONST)
+                    .thenR(parsec::identifier)
+                    .thenL(tok(TokenType::COLON))
+                    .combine(typ, [](const auto &name, const auto &ty) {
+                      return std::make_pair(name, ty);
+                    });
+
+  auto init_opt = optional(tok(TokenType::ASSIGN).thenR(any_expression()));
+
+  return header
+      .combine(init_opt,
+               [](auto h, auto init) {
+                 return std::make_tuple(h.first, h.second, init);
+               })
+      .thenL(tok(TokenType::SEMICOLON))
+      .map([](auto t) {
+        const std::string &name = std::get<0>(t);
+        const LiteralType &ty = std::get<1>(t);
+        const auto &init = std::get<2>(t);
+        LOG_DEBUG("Parsed const item: " + name);
+        return std::make_unique<ConstantItem>(name, ty, init);
+      });
 }
 
 inline parsec::Parser<std::shared_ptr<Expression>>
@@ -945,8 +1238,8 @@ inline PrattTable default_table(rc::Parser *p) {
   // Field access and Method call
   tbl.infix_custom(
       rc::TokenType::DOT, POSTFIX_PRECEDENCE, POSTFIX_PRECEDENCE + 1,
-      [p](ExprPtr left, const rc::Token &,
-                const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
+      [p](ExprPtr left, const rc::Token &, const std::vector<rc::Token> &toks,
+          size_t &pos) -> ExprPtr {
         if (pos >= toks.size()) {
           return nullptr;
         }
