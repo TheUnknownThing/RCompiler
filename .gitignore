@@ -54,3 +54,5 @@ coverage/
 
 # Dependencies
 third_party/llvm/ 
+
+examples/
