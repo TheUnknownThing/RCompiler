@@ -22,9 +22,13 @@ public:
   std::string name;
   bool is_mutable;
   bool is_ref;
+  std::optional<std::shared_ptr<BasePattern>> subpattern;
 
-  IdentifierPattern(std::string n, bool mutable_ = false, bool ref = false)
-      : name(std::move(n)), is_mutable(mutable_), is_ref(ref) {}
+  IdentifierPattern(
+      std::string n, bool mutable_ = false, bool ref = false,
+      std::optional<std::shared_ptr<BasePattern>> sub = std::nullopt)
+      : name(std::move(n)), is_mutable(mutable_), is_ref(ref), subpattern(sub) {
+  }
 
   void accept(class BaseVisitor &visitor) override { visitor.visit(*this); }
 };
@@ -32,8 +36,10 @@ public:
 class LiteralPattern : public BasePattern {
 public:
   std::string value;
+  bool is_negative = false;
 
-  explicit LiteralPattern(std::string v) : value(std::move(v)) {}
+  explicit LiteralPattern(std::string v, bool negative = false)
+      : value(std::move(v)), is_negative(negative) {}
 
   void accept(class BaseVisitor &visitor) override { visitor.visit(*this); }
 };
@@ -63,20 +69,21 @@ public:
   void accept(class BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
-class StructPattern : public BasePattern {
-public:
-  struct StructPattenField {
+struct StructPatternField {
     std::string name;
     std::shared_ptr<BasePattern> pattern;
-
-    StructPattenField(std::string n, std::shared_ptr<BasePattern> p)
+  
+    StructPatternField(std::string n, std::shared_ptr<BasePattern> p)
         : name(std::move(n)), pattern(std::move(p)) {}
   };
+
+class StructPattern : public BasePattern {
+public:
   Path path;
-  std::vector<StructPattenField> fields;
+  std::vector<StructPatternField> fields;
   bool has_rest;
 
-  StructPattern(Path p, std::vector<StructPattenField> f, bool rest = false)
+  StructPattern(Path p, std::vector<StructPatternField> f, bool rest = false)
       : path(std::move(p)), fields(std::move(f)), has_rest(rest) {}
   void accept(class BaseVisitor &visitor) override { visitor.visit(*this); }
 };
@@ -116,6 +123,15 @@ public:
 
   SlicePattern(std::vector<std::shared_ptr<BasePattern>> elems)
       : elements(std::move(elems)) {}
+
+  void accept(class BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class OrPattern : public BasePattern {
+public:
+  std::vector<std::shared_ptr<BasePattern>> alternatives;
+  OrPattern(std::vector<std::shared_ptr<BasePattern>> alts)
+      : alternatives(std::move(alts)) {}
 
   void accept(class BaseVisitor &visitor) override { visitor.visit(*this); }
 };
