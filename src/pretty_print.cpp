@@ -1,5 +1,5 @@
-#include "../include/ast/pretty_print.hpp"
-#include "../include/lexer/lexer.hpp"
+#include "ast/visitors/pretty_print.hpp"
+#include "lexer/lexer.hpp"
 #include "ast/nodes/expr.hpp"
 #include <typeinfo>
 

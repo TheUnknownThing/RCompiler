@@ -3,12 +3,12 @@
 #include "../../lexer/lexer.hpp"
 #include "../types.hpp"
 #include "base.hpp"
-#include "stmt.hpp"
 #include "expr.hpp"
+#include "stmt.hpp"
 
 #include <memory>
-#include <vector>
 #include <optional>
+#include <vector>
 
 namespace rc {
 class FunctionDecl : public BaseNode {
@@ -16,13 +16,17 @@ public:
   std::string name;
   std::optional<std::vector<std::pair<std::string, LiteralType>>> params;
   LiteralType return_type;
-  std::optional<std::shared_ptr<Expression>> body;  // BlockExpression or semicolon
+  std::optional<std::shared_ptr<Expression>>
+      body; // BlockExpression or semicolon
 
-  FunctionDecl(const std::string &nameTok,
-               const std::optional<std::vector<std::pair<std::string, LiteralType>>> &params,
-               LiteralType return_type,
-               std::optional<std::shared_ptr<Expression>> body = std::nullopt)
-      : name(nameTok), params(params), return_type(return_type), body(std::move(body)) {}
+  FunctionDecl(
+      const std::string &nameTok,
+      const std::optional<std::vector<std::pair<std::string, LiteralType>>>
+          &params,
+      LiteralType return_type,
+      std::optional<std::shared_ptr<Expression>> body = std::nullopt)
+      : name(nameTok), params(params), return_type(return_type),
+        body(std::move(body)) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
@@ -33,7 +37,7 @@ public:
   LiteralType type;
   std::optional<std::shared_ptr<Expression>> value;
 
-  ConstantItem(const std::string &n, LiteralType t, 
+  ConstantItem(const std::string &n, LiteralType t,
                std::optional<std::shared_ptr<Expression>> val = std::nullopt)
       : name(n), type(t), value(std::move(val)) {}
 
@@ -43,10 +47,12 @@ public:
 class ModuleDecl : public BaseNode {
 public:
   std::string name;
-  std::optional<std::vector<std::unique_ptr<BaseNode>>> items;  // None means semicolon form
+  std::optional<std::vector<std::unique_ptr<BaseNode>>>
+      items; // None means semicolon form
 
-  ModuleDecl(const std::string &n, 
-             std::optional<std::vector<std::unique_ptr<BaseNode>>> items = std::nullopt)
+  ModuleDecl(const std::string &n,
+             std::optional<std::vector<std::unique_ptr<BaseNode>>> items =
+                 std::nullopt)
       : name(n), items(std::move(items)) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
@@ -55,16 +61,17 @@ public:
 class StructDecl : public BaseNode {
 public:
   enum class StructType { Struct, Tuple };
-  
+
   std::string name;
   StructType struct_type;
-  std::vector<std::pair<std::string, LiteralType>> fields;  // For regular struct
-  std::vector<LiteralType> tuple_fields;  // For tuple struct
+  std::vector<std::pair<std::string, LiteralType>> fields; // For regular struct
+  std::vector<LiteralType> tuple_fields;                   // For tuple struct
 
-  StructDecl(const std::string &n, StructType t, 
+  StructDecl(const std::string &n, StructType t,
              std::vector<std::pair<std::string, LiteralType>> f = {},
              std::vector<LiteralType> tf = {})
-      : name(n), struct_type(t), fields(std::move(f)), tuple_fields(std::move(tf)) {}
+      : name(n), struct_type(t), fields(std::move(f)),
+        tuple_fields(std::move(tf)) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
@@ -74,7 +81,8 @@ public:
   struct EnumVariant {
     std::string name;
     std::optional<std::vector<LiteralType>> tuple_fields;
-    std::optional<std::vector<std::pair<std::string, LiteralType>>> struct_fields;
+    std::optional<std::vector<std::pair<std::string, LiteralType>>>
+        struct_fields;
     std::optional<std::shared_ptr<Expression>> discriminant;
   };
 
@@ -101,15 +109,16 @@ public:
 class ImplDecl : public BaseNode {
 public:
   enum class ImplType { Inherent, Trait };
-  
+
   ImplType impl_type;
   LiteralType target_type;
-  std::optional<std::string> trait_name;  // For trait impl
+  std::optional<std::string> trait_name; // For trait impl
   std::vector<std::unique_ptr<BaseNode>> associated_items;
 
-  ImplDecl(ImplType t, LiteralType target, std::vector<std::unique_ptr<BaseNode>> items,
+  ImplDecl(ImplType t, LiteralType target,
+           std::vector<std::unique_ptr<BaseNode>> items,
            std::optional<std::string> trait = std::nullopt)
-      : impl_type(t), target_type(target), trait_name(std::move(trait)), 
+      : impl_type(t), target_type(target), trait_name(std::move(trait)),
         associated_items(std::move(items)) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }

@@ -37,6 +37,8 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_array_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_tuple_or_group_expression();
 
+  inline parsec::Parser<std::unique_ptr<BaseNode>> any_top_level_item();
+
   parsec::Parser<std::unique_ptr<FunctionDecl>> parse_function();
   parsec::Parser<std::unique_ptr<StructDecl>> parse_struct();
   parsec::Parser<std::unique_ptr<ModuleDecl>> parse_module();
@@ -54,10 +56,7 @@ private:
   std::vector<Token> tokens;
   pratt::PrattTable pratt_table_;
 
-  std::unique_ptr<BaseNode> parse_item();
-
   std::unique_ptr<BaseNode> parse_statement();
-  std::unique_ptr<BaseNode> parse_expression();
 };
 
 inline Parser::Parser(std::vector<Token> tokens)
@@ -66,53 +65,51 @@ inline Parser::Parser(std::vector<Token> tokens)
             " tokens");
 }
 
+inline parsec::Parser<std::unique_ptr<BaseNode>> Parser::any_top_level_item() {
+  LOG_DEBUG("Creating parser for any top-level item");
+  return parsec::Parser<std::unique_ptr<BaseNode>>(
+      [this](const std::vector<Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::unique_ptr<BaseNode>> {
+        size_t saved_pos = pos;
+
+        if (auto func = parse_function().parse(toks, pos)) {
+          LOG_DEBUG("Parsed function at position " + std::to_string(saved_pos));
+          return func;
+        }
+        pos = saved_pos;
+        if (auto strct = parse_struct().parse(toks, pos)) {
+          LOG_DEBUG("Parsed struct at position " + std::to_string(saved_pos));
+          return strct;
+        }
+        pos = saved_pos;
+        if (auto mod = parse_module().parse(toks, pos)) {
+          LOG_DEBUG("Parsed module at position " + std::to_string(saved_pos));
+          return mod;
+        }
+        pos = saved_pos;
+        if (auto en = parse_enum().parse(toks, pos)) {
+          LOG_DEBUG("Parsed enum at position " + std::to_string(saved_pos));
+          return en;
+        }
+        pos = saved_pos;
+        if (auto const_item = parse_const_item().parse(toks, pos)) {
+          LOG_DEBUG("Parsed constant item at position " +
+                    std::to_string(saved_pos));
+          return const_item;
+        }
+        pos = saved_pos;
+        LOG_DEBUG("No top-level item found at position " +
+                  std::to_string(saved_pos));
+        return std::nullopt;
+      });
+}
+
 inline std::unique_ptr<RootNode> Parser::parse() {
   LOG_INFO("Starting parsing process");
   auto root = std::make_unique<RootNode>();
 
   // top level item parser
-  auto item_parser = parsec::Parser<std::unique_ptr<BaseNode>>(
-      [this](const std::vector<rc::Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::unique_ptr<BaseNode>> {
-        size_t saved = pos;
-        LOG_DEBUG("Attempting to parse function at position " +
-                  std::to_string(pos));
-        if (auto f = parse_function().parse(toks, pos)) {
-          LOG_DEBUG("Successfully parsed function");
-          return std::unique_ptr<BaseNode>(f->release());
-        }
-        pos = saved;
-        LOG_DEBUG("Function parsing failed, attempting struct at position " +
-                  std::to_string(pos));
-        if (auto s = parse_struct().parse(toks, pos)) {
-          LOG_DEBUG("Successfully parsed struct");
-          return std::unique_ptr<BaseNode>(s->release());
-        }
-        pos = saved;
-        LOG_DEBUG("Struct parsing failed, attempting module at position " +
-                  std::to_string(pos));
-        if (auto m = parse_module().parse(toks, pos)) {
-          LOG_DEBUG("Successfully parsed module");
-          return std::unique_ptr<BaseNode>(m->release());
-        }
-        pos = saved;
-        LOG_DEBUG("Module parsing failed, attempting enum at position " +
-                  std::to_string(pos));
-        if (auto e = parse_enum().parse(toks, pos)) {
-          LOG_DEBUG("Successfully parsed enum");
-          return std::unique_ptr<BaseNode>(e->release());
-        }
-        pos = saved;
-        LOG_DEBUG("Enum parsing failed, attempting const item at position " +
-                  std::to_string(pos));
-        if (auto c = parse_const_item().parse(toks, pos)) {
-          LOG_DEBUG("Successfully parsed const item");
-          return std::unique_ptr<BaseNode>(c->release());
-        }
-        pos = saved;
-        LOG_DEBUG("No top-level item found at position " + std::to_string(pos));
-        return std::nullopt;
-      });
+  auto item_parser = any_top_level_item();
 
   size_t pos = 0;
   int item_count = 0;
@@ -136,50 +133,6 @@ inline std::unique_ptr<RootNode> Parser::parse() {
   LOG_INFO("Parsing completed successfully. Parsed " +
            std::to_string(item_count) + " top-level items");
   return root;
-}
-
-inline std::unique_ptr<BaseNode> Parser::parse_item() {
-  LOG_DEBUG("Parsing single item");
-  // One-shot item parser
-  auto item_parser = parsec::Parser<std::unique_ptr<BaseNode>>(
-      [this](const std::vector<rc::Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::unique_ptr<BaseNode>> {
-        size_t saved = pos;
-        if (auto f = parse_function().parse(toks, pos)) {
-          LOG_DEBUG("Single item parser: found function");
-          return std::unique_ptr<BaseNode>(f->release());
-        }
-        pos = saved;
-        if (auto s = parse_struct().parse(toks, pos)) {
-          LOG_DEBUG("Single item parser: found struct");
-          return std::unique_ptr<BaseNode>(s->release());
-        }
-        pos = saved;
-        if (auto m = parse_module().parse(toks, pos)) {
-          LOG_DEBUG("Single item parser: found module");
-          return std::unique_ptr<BaseNode>(m->release());
-        }
-        pos = saved;
-        if (auto e = parse_enum().parse(toks, pos)) {
-          LOG_DEBUG("Single item parser: found enum");
-          return std::unique_ptr<BaseNode>(e->release());
-        }
-        pos = saved;
-        if (auto c = parse_const_item().parse(toks, pos)) {
-          LOG_DEBUG("Single item parser: found const item");
-          return std::unique_ptr<BaseNode>(c->release());
-        }
-        pos = saved;
-        LOG_DEBUG("Single item parser: no item found");
-        return std::nullopt;
-      });
-  size_t pos = 0;
-  if (auto r = item_parser.parse(tokens, pos)) {
-    LOG_DEBUG("Successfully parsed single item");
-    return std::move(*r);
-  }
-  LOG_WARN("Failed to parse single item");
-  return nullptr;
 }
 
 inline std::unique_ptr<BaseNode> Parser::parse_statement() {
@@ -245,12 +198,6 @@ inline std::unique_ptr<BaseNode> Parser::parse_statement() {
     return std::move(*r);
   }
   LOG_WARN("Failed to parse statement");
-  return nullptr;
-}
-
-inline std::unique_ptr<BaseNode> Parser::parse_expression() {
-  LOG_DEBUG("Expression parsing not implemented yet");
-  // TODO
   return nullptr;
 }
 
@@ -418,27 +365,7 @@ inline parsec::Parser<std::unique_ptr<ModuleDecl>> Parser::parse_module() {
         std::vector<std::unique_ptr<BaseNode>> items;
 
         // Local item parser
-        auto item_parser = parsec::Parser<std::unique_ptr<BaseNode>>(
-            [this](const std::vector<rc::Token> &toks, size_t &pos)
-                -> parsec::ParseResult<std::unique_ptr<BaseNode>> {
-              size_t saved = pos;
-              if (auto f = parse_function().parse(toks, pos))
-                return std::unique_ptr<BaseNode>(f->release());
-              pos = saved;
-              if (auto s = parse_struct().parse(toks, pos))
-                return std::unique_ptr<BaseNode>(s->release());
-              pos = saved;
-              if (auto m = parse_module().parse(toks, pos))
-                return std::unique_ptr<BaseNode>(m->release());
-              pos = saved;
-              if (auto e = parse_enum().parse(toks, pos))
-                return std::unique_ptr<BaseNode>(e->release());
-              pos = saved;
-              if (auto c = parse_const_item().parse(toks, pos))
-                return std::unique_ptr<BaseNode>(c->release());
-              pos = saved;
-              return std::nullopt;
-            });
+        auto item_parser = any_top_level_item();
 
         int count = 0;
         for (;;) {

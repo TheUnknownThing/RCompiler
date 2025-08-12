@@ -6,7 +6,7 @@
 
 #include "utils/logger.hpp"
 #include "ast/parser.hpp"
-#include "ast/pretty_print.hpp"
+#include "ast/visitors/pretty_print.hpp"
 #include "lexer/lexer.hpp"
 #include "preprocessor/preprocessor.hpp"
 

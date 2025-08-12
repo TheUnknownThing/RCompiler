@@ -4,11 +4,11 @@
 #include <sstream>
 #include <string>
 
-#include "nodes/base.hpp"
-#include "nodes/expr.hpp"
-#include "nodes/stmt.hpp"
-#include "nodes/topLevel.hpp"
-#include "types.hpp"
+#include "ast/nodes/base.hpp"
+#include "ast/nodes/expr.hpp"
+#include "ast/nodes/stmt.hpp"
+#include "ast/nodes/topLevel.hpp"
+#include "ast/types.hpp"
 
 namespace rc {
 
