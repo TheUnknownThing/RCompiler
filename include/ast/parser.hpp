@@ -35,6 +35,8 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_loop_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_while_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_array_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_break_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_continue_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_tuple_or_group_expression();
 
   inline parsec::Parser<std::unique_ptr<BaseItem>> any_top_level_item();
@@ -697,6 +699,60 @@ Parser::parse_block_expression() {
 }
 
 inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_break_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        LOG_DEBUG("Attempting to parse break expression at position " +
+                  std::to_string(pos));
+        size_t saved = pos;
+
+        auto break_parser = tok(TokenType::BREAK)
+                                .thenR(optional(any_expression()))
+                                .map([](auto t) {
+                                  LOG_DEBUG("Parsed break expression");
+                                  return std::make_shared<BreakExpression>(t);
+                                });
+
+        if (auto result = break_parser.parse(toks, pos)) {
+          LOG_DEBUG("Successfully parsed break expression");
+          return *result;
+        }
+
+        pos = saved;
+        LOG_ERROR("Failed to parse break expression at position " +
+                  std::to_string(pos));
+        return std::nullopt;
+      });
+}
+
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_continue_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        LOG_DEBUG("Attempting to parse continue expression at position " +
+                  std::to_string(pos));
+        size_t saved = pos;
+
+        auto continue_parser = tok(TokenType::CONTINUE).map([](auto) {
+          LOG_DEBUG("Parsed continue expression");
+          return std::make_shared<ContinueExpression>();
+        });
+
+        if (auto result = continue_parser.parse(toks, pos)) {
+          LOG_DEBUG("Successfully parsed continue expression");
+          return *result;
+        }
+
+        pos = saved;
+        LOG_ERROR("Failed to parse continue expression at position " +
+                  std::to_string(pos));
+        return std::nullopt;
+      });
+}
+
+inline parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_if_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
       [this](const std::vector<rc::Token> &toks,
@@ -1096,6 +1152,10 @@ inline PrattTable default_table(rc::Parser *p) {
              delegate_to_parsec(&rc::Parser::parse_match_expression));
   tbl.prefix(rc::TokenType::L_BRACKET,
              delegate_to_parsec(&rc::Parser::parse_array_expression));
+  tbl.prefix(rc::TokenType::BREAK,
+             delegate_to_parsec(&rc::Parser::parse_break_expression));
+  tbl.prefix(rc::TokenType::CONTINUE,
+             delegate_to_parsec(&rc::Parser::parse_continue_expression));
 
   // Literals
   auto add_simple_literal = [&tbl](rc::TokenType tt,

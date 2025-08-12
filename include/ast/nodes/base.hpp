@@ -18,6 +18,8 @@ class UnderscoreExpression;
 class BlockExpression;
 class LoopExpression;
 class WhileExpression;
+class BreakExpression;
+class ContinueExpression;
 class ArrayExpression;
 class IndexExpression;
 class TupleExpression;
