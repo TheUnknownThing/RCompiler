@@ -32,6 +32,17 @@ class StructDecl;
 class EnumDecl;
 class TraitDecl;
 class ImplDecl;
+class BasePattern;
+class IdentifierPattern;
+class LiteralPattern;
+class WildcardPattern;
+class RestPattern;
+class ReferencePattern;
+class StructPattern;
+class TuplePattern;
+class GroupedPattern;
+class PathPattern;
+class SlicePattern;
 class RootNode;
 
 class BaseVisitor;
@@ -73,6 +84,19 @@ public:
   virtual void visit(LetStatement &) {}
   virtual void visit(ExpressionStatement &) {}
   virtual void visit(EmptyStatement &) {}
+
+  // Pattern visitors
+  virtual void visit(BasePattern &) {}
+  virtual void visit(IdentifierPattern &) {}
+  virtual void visit(LiteralPattern &) {}
+  virtual void visit(WildcardPattern &) {}
+  virtual void visit(RestPattern &) {}
+  virtual void visit(ReferencePattern &) {}
+  virtual void visit(StructPattern &) {}
+  virtual void visit(TuplePattern &) {}
+  virtual void visit(GroupedPattern &) {}
+  virtual void visit(PathPattern &) {}
+  virtual void visit(SlicePattern &) {}
 
   // Top-level declaration visitors
   virtual void visit(FunctionDecl &) {}

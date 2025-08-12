@@ -11,7 +11,13 @@
 #include <vector>
 
 namespace rc {
-class FunctionDecl : public BaseNode {
+class BaseItem : public BaseNode {
+public:
+  virtual ~BaseItem() = default;
+  virtual void accept(class BaseVisitor &visitor) = 0;
+};
+
+class FunctionDecl : public BaseItem {
 public:
   std::string name;
   std::optional<std::vector<std::pair<std::string, LiteralType>>> params;
@@ -31,7 +37,7 @@ public:
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
-class ConstantItem : public BaseNode {
+class ConstantItem : public BaseItem {
 public:
   std::string name;
   LiteralType type;
@@ -44,11 +50,10 @@ public:
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
-class ModuleDecl : public BaseNode {
+class ModuleDecl : public BaseItem {
 public:
   std::string name;
-  std::optional<std::vector<std::unique_ptr<BaseNode>>>
-      items; // None means semicolon form
+  std::optional<std::vector<std::unique_ptr<BaseNode>>> items;
 
   ModuleDecl(const std::string &n,
              std::optional<std::vector<std::unique_ptr<BaseNode>>> items =
@@ -58,7 +63,7 @@ public:
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
-class StructDecl : public BaseNode {
+class StructDecl : public BaseItem {
 public:
   enum class StructType { Struct, Tuple };
 
@@ -76,7 +81,7 @@ public:
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
-class EnumDecl : public BaseNode {
+class EnumDecl : public BaseItem {
 public:
   struct EnumVariant {
     std::string name;
@@ -95,28 +100,28 @@ public:
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
-class TraitDecl : public BaseNode {
+class TraitDecl : public BaseItem {
 public:
   std::string name;
-  std::vector<std::unique_ptr<BaseNode>> associated_items;
+  std::vector<std::unique_ptr<BaseItem>> associated_items;
 
-  TraitDecl(const std::string &n, std::vector<std::unique_ptr<BaseNode>> items)
+  TraitDecl(const std::string &n, std::vector<std::unique_ptr<BaseItem>> items)
       : name(n), associated_items(std::move(items)) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
-class ImplDecl : public BaseNode {
+class ImplDecl : public BaseItem {
 public:
   enum class ImplType { Inherent, Trait };
 
   ImplType impl_type;
   LiteralType target_type;
   std::optional<std::string> trait_name; // For trait impl
-  std::vector<std::unique_ptr<BaseNode>> associated_items;
+  std::vector<std::unique_ptr<BaseItem>> associated_items;
 
   ImplDecl(ImplType t, LiteralType target,
-           std::vector<std::unique_ptr<BaseNode>> items,
+           std::vector<std::unique_ptr<BaseItem>> items,
            std::optional<std::string> trait = std::nullopt)
       : impl_type(t), target_type(target), trait_name(std::move(trait)),
         associated_items(std::move(items)) {}
@@ -124,9 +129,9 @@ public:
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
-class RootNode : public BaseNode {
+class RootNode : public BaseItem {
 public:
-  std::vector<std::unique_ptr<BaseNode>> children;
+  std::vector<std::unique_ptr<BaseItem>> children;
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };

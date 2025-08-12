@@ -37,7 +37,7 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_array_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_tuple_or_group_expression();
 
-  inline parsec::Parser<std::unique_ptr<BaseNode>> any_top_level_item();
+  inline parsec::Parser<std::unique_ptr<BaseItem>> any_top_level_item();
 
   parsec::Parser<std::unique_ptr<FunctionDecl>> parse_function();
   parsec::Parser<std::unique_ptr<StructDecl>> parse_struct();
@@ -65,11 +65,11 @@ inline Parser::Parser(std::vector<Token> tokens)
             " tokens");
 }
 
-inline parsec::Parser<std::unique_ptr<BaseNode>> Parser::any_top_level_item() {
+inline parsec::Parser<std::unique_ptr<BaseItem>> Parser::any_top_level_item() {
   LOG_DEBUG("Creating parser for any top-level item");
-  return parsec::Parser<std::unique_ptr<BaseNode>>(
+  return parsec::Parser<std::unique_ptr<BaseItem>>(
       [this](const std::vector<Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::unique_ptr<BaseNode>> {
+             size_t &pos) -> parsec::ParseResult<std::unique_ptr<BaseItem>> {
         size_t saved_pos = pos;
 
         if (auto func = parse_function().parse(toks, pos)) {
