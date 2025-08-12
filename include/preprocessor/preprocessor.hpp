@@ -25,13 +25,23 @@ private:
 
 inline Preprocessor::Preprocessor(const std::string &filename) {
   file_lines.clear();
-  std::ifstream file(filename);
-  if (!file.is_open()) {
-    throw std::runtime_error("Failed to open file: " + filename);
-  }
-  std::string line;
-  while (std::getline(file, line)) {
-    file_lines.push_back(line);
+
+  if (filename.empty()) {
+    // Read from stdin
+    std::string line;
+    while (std::getline(std::cin, line)) {
+      file_lines.push_back(line);
+    }
+  } else {
+    // Read from file
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+      throw std::runtime_error("Failed to open file: " + filename);
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+      file_lines.push_back(line);
+    }
   }
 }
 

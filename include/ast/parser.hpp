@@ -945,7 +945,7 @@ inline PrattTable default_table(rc::Parser *p) {
   // Field access and Method call
   tbl.infix_custom(
       rc::TokenType::DOT, POSTFIX_PRECEDENCE, POSTFIX_PRECEDENCE + 1,
-      [p, &tbl](ExprPtr left, const rc::Token &,
+      [p](ExprPtr left, const rc::Token &,
                 const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
         if (pos >= toks.size()) {
           return nullptr;
