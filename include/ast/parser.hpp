@@ -26,7 +26,7 @@ namespace rc {
 class Parser {
 public:
   Parser(std::vector<Token> tokens);
-  std::unique_ptr<RootNode> parse();
+  std::shared_ptr<RootNode> parse();
 
   inline parsec::Parser<std::shared_ptr<Expression>> any_expression();
 
@@ -43,15 +43,15 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_path_or_name_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_qualified_path_expression();
 
-  inline parsec::Parser<std::unique_ptr<BaseItem>> any_top_level_item();
+  inline parsec::Parser<std::shared_ptr<BaseItem>> any_top_level_item();
 
-  parsec::Parser<std::unique_ptr<FunctionDecl>> parse_function();
-  parsec::Parser<std::unique_ptr<StructDecl>> parse_struct();
-  parsec::Parser<std::unique_ptr<ModuleDecl>> parse_module();
-  parsec::Parser<std::unique_ptr<EnumDecl>> parse_enum();
-  parsec::Parser<std::unique_ptr<ConstantItem>> parse_const_item();
+  parsec::Parser<std::shared_ptr<FunctionDecl>> parse_function();
+  parsec::Parser<std::shared_ptr<StructDecl>> parse_struct();
+  parsec::Parser<std::shared_ptr<ModuleDecl>> parse_module();
+  parsec::Parser<std::shared_ptr<EnumDecl>> parse_enum();
+  parsec::Parser<std::shared_ptr<ConstantItem>> parse_const_item();
 
-  parsec::Parser<std::unique_ptr<BaseNode>> parse_let_statement();
+  parsec::Parser<std::shared_ptr<BaseNode>> parse_let_statement();
 
   parsec::Parser<std::pair<std::string, LiteralType>>
   identifier_and_type_parser();
@@ -64,7 +64,7 @@ private:
   std::vector<Token> tokens;
   pratt::PrattTable pratt_table_;
 
-  std::unique_ptr<BaseNode> parse_statement();
+  std::shared_ptr<BaseNode> parse_statement();
 };
 
 inline Parser::Parser(std::vector<Token> tokens)
@@ -73,11 +73,11 @@ inline Parser::Parser(std::vector<Token> tokens)
             " tokens");
 }
 
-inline parsec::Parser<std::unique_ptr<BaseItem>> Parser::any_top_level_item() {
+inline parsec::Parser<std::shared_ptr<BaseItem>> Parser::any_top_level_item() {
   LOG_DEBUG("Creating parser for any top-level item");
-  return parsec::Parser<std::unique_ptr<BaseItem>>(
+  return parsec::Parser<std::shared_ptr<BaseItem>>(
       [this](const std::vector<Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::unique_ptr<BaseItem>> {
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<BaseItem>> {
         size_t saved_pos = pos;
 
         if (auto func = parse_function().parse(toks, pos)) {
@@ -112,9 +112,9 @@ inline parsec::Parser<std::unique_ptr<BaseItem>> Parser::any_top_level_item() {
       });
 }
 
-inline std::unique_ptr<RootNode> Parser::parse() {
+inline std::shared_ptr<RootNode> Parser::parse() {
   LOG_INFO("Starting parsing process");
-  auto root = std::make_unique<RootNode>();
+  auto root = std::make_shared<RootNode>();
 
   // top level item parser
   auto item_parser = any_top_level_item();
@@ -143,37 +143,37 @@ inline std::unique_ptr<RootNode> Parser::parse() {
   return root;
 }
 
-inline std::unique_ptr<BaseNode> Parser::parse_statement() {
+inline std::shared_ptr<BaseNode> Parser::parse_statement() {
   LOG_DEBUG("Parsing statement");
 
   auto let_stmt = parse_let_statement();
 
   auto empty_stmt =
-      tok(TokenType::SEMICOLON).map([](auto) -> std::unique_ptr<BaseNode> {
+      tok(TokenType::SEMICOLON).map([](auto) -> std::shared_ptr<BaseNode> {
         LOG_DEBUG("Parsed empty statement");
-        return std::make_unique<EmptyStatement>();
+        return std::make_shared<EmptyStatement>();
       });
 
   // expr ; or expr (no semicolon)
   auto expr_stmt = any_expression().combine(
       optional(tok(TokenType::SEMICOLON)), [](auto e, const auto &semi) {
-        return std::unique_ptr<BaseNode>(
+        return std::shared_ptr<BaseNode>(
             new ExpressionStatement(e, semi.has_value()));
       });
 
-  auto stmt = parsec::Parser<std::unique_ptr<BaseNode>>(
+  auto stmt = parsec::Parser<std::shared_ptr<BaseNode>>(
       [let_stmt, empty_stmt, expr_stmt](
           const std::vector<rc::Token> &toks,
-          size_t &pos) -> parsec::ParseResult<std::unique_ptr<BaseNode>> {
+          size_t &pos) -> parsec::ParseResult<std::shared_ptr<BaseNode>> {
         size_t saved = pos;
         if (auto r = let_stmt.parse(toks, pos))
-          return std::move(*r);
+          return r;
         pos = saved;
         if (auto r = empty_stmt.parse(toks, pos))
-          return std::move(*r);
+          return r;
         pos = saved;
         if (auto r = expr_stmt.parse(toks, pos))
-          return std::move(*r);
+          return r;
         pos = saved;
         return std::nullopt;
       });
@@ -181,13 +181,13 @@ inline std::unique_ptr<BaseNode> Parser::parse_statement() {
   size_t pos = 0;
   if (auto r = stmt.parse(tokens, pos)) {
     LOG_DEBUG("Successfully parsed statement");
-    return std::move(*r);
+    return *r;
   }
   LOG_WARN("Failed to parse statement");
   return nullptr;
 }
 
-inline parsec::Parser<std::unique_ptr<FunctionDecl>> Parser::parse_function() {
+inline parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
   auto identifier_and_type = identifier_and_type_parser();
   auto argument_list = argument_list_parser();
   auto return_type = tok(TokenType::ARROW).thenR(typ);
@@ -235,12 +235,12 @@ inline parsec::Parser<std::unique_ptr<FunctionDecl>> Parser::parse_function() {
 
   return header.combine(body, [](auto h, auto b) {
     LOG_DEBUG("Successfully parsed function: " + std::get<0>(h));
-    return std::make_unique<FunctionDecl>(std::get<0>(h), std::get<1>(h),
+    return std::make_shared<FunctionDecl>(std::get<0>(h), std::get<1>(h),
                                           std::get<2>(h), b);
   });
 }
 
-inline parsec::Parser<std::unique_ptr<StructDecl>> Parser::parse_struct() {
+inline parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
   using SD = StructDecl;
 
   auto field = parsec::identifier.thenL(tok(TokenType::COLON))
@@ -290,7 +290,7 @@ inline parsec::Parser<std::unique_ptr<StructDecl>> Parser::parse_struct() {
             const auto &name = p.first;
             const auto &var = p.second;
             return std::visit(
-                [&](auto &&val) -> std::unique_ptr<StructDecl> {
+                [&](auto &&val) -> std::shared_ptr<StructDecl> {
                   using T = std::decay_t<decltype(val)>;
                   if constexpr (std::is_same_v<
                                     T, std::vector<std::pair<std::string,
@@ -298,14 +298,14 @@ inline parsec::Parser<std::unique_ptr<StructDecl>> Parser::parse_struct() {
                     LOG_DEBUG("Successfully parsed named struct: " + name +
                               " with " + std::to_string(val.size()) +
                               " fields");
-                    return std::make_unique<StructDecl>(
+                    return std::make_shared<StructDecl>(
                         name, SD::StructType::Struct, val,
                         std::vector<LiteralType>{});
                   } else {
                     LOG_DEBUG("Successfully parsed tuple struct: " + name +
                               " with " + std::to_string(val.size()) +
                               " fields");
-                    return std::make_unique<StructDecl>(
+                    return std::make_shared<StructDecl>(
                         name, SD::StructType::Tuple,
                         std::vector<std::pair<std::string, LiteralType>>{},
                         val);
@@ -317,10 +317,10 @@ inline parsec::Parser<std::unique_ptr<StructDecl>> Parser::parse_struct() {
   return parser;
 }
 
-inline parsec::Parser<std::unique_ptr<ModuleDecl>> Parser::parse_module() {
-  return parsec::Parser<std::unique_ptr<ModuleDecl>>(
+inline parsec::Parser<std::shared_ptr<ModuleDecl>> Parser::parse_module() {
+  return parsec::Parser<std::shared_ptr<ModuleDecl>>(
       [this](const std::vector<rc::Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::unique_ptr<ModuleDecl>> {
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<ModuleDecl>> {
         size_t saved = pos;
         if (!tok(TokenType::MOD).parse(toks, pos)) {
           pos = saved;
@@ -339,7 +339,7 @@ inline parsec::Parser<std::unique_ptr<ModuleDecl>> Parser::parse_module() {
           if (tok(TokenType::SEMICOLON).parse(toks, sem_pos)) {
             pos = sem_pos;
             LOG_DEBUG("Parsed module decl (semicolon form): " + name);
-            return std::make_unique<ModuleDecl>(name, std::nullopt);
+            return std::make_shared<ModuleDecl>(name, std::nullopt);
           }
         }
 
@@ -348,7 +348,7 @@ inline parsec::Parser<std::unique_ptr<ModuleDecl>> Parser::parse_module() {
           return std::nullopt;
         }
 
-        std::vector<std::unique_ptr<BaseNode>> items;
+        std::vector<std::shared_ptr<BaseNode>> items;
 
         // Local item parser
         auto item_parser = any_top_level_item();
@@ -359,7 +359,7 @@ inline parsec::Parser<std::unique_ptr<ModuleDecl>> Parser::parse_module() {
           if (tok(TokenType::R_BRACE).parse(toks, pos)) {
             LOG_DEBUG("Parsed module decl with " + std::to_string(count) +
                       " items: " + name);
-            return std::make_unique<ModuleDecl>(name, std::move(items));
+            return std::make_shared<ModuleDecl>(name, std::move(items));
           }
           pos = before;
 
@@ -376,7 +376,7 @@ inline parsec::Parser<std::unique_ptr<ModuleDecl>> Parser::parse_module() {
       });
 }
 
-inline parsec::Parser<std::unique_ptr<EnumDecl>> Parser::parse_enum() {
+inline parsec::Parser<std::shared_ptr<EnumDecl>> Parser::parse_enum() {
   using EV = EnumDecl::EnumVariant;
 
   // tuple fields: ( T, T, ... )
@@ -444,10 +444,10 @@ inline parsec::Parser<std::unique_ptr<EnumDecl>> Parser::parse_enum() {
                         return v;
                       });
 
-  return parsec::Parser<std::unique_ptr<EnumDecl>>(
+  return parsec::Parser<std::shared_ptr<EnumDecl>>(
       [variant_with_discriminant](
           const std::vector<rc::Token> &toks,
-          size_t &pos) -> parsec::ParseResult<std::unique_ptr<EnumDecl>> {
+          size_t &pos) -> parsec::ParseResult<std::shared_ptr<EnumDecl>> {
         size_t saved = pos;
         if (!tok(TokenType::ENUM).parse(toks, pos)) {
           pos = saved;
@@ -473,7 +473,7 @@ inline parsec::Parser<std::unique_ptr<EnumDecl>> Parser::parse_enum() {
           size_t before = pos;
           if (tok(TokenType::R_BRACE).parse(toks, pos)) {
             LOG_DEBUG("Parsed empty enum: " + name);
-            return std::make_unique<EnumDecl>(name, std::move(variants));
+            return std::make_shared<EnumDecl>(name, std::move(variants));
           }
           pos = before;
         }
@@ -499,7 +499,7 @@ inline parsec::Parser<std::unique_ptr<EnumDecl>> Parser::parse_enum() {
             LOG_DEBUG("Parsed enum '" + name + "' with " +
                       std::to_string(variants.size()) +
                       " variants (trailing comma)");
-            return std::make_unique<EnumDecl>(name, std::move(variants));
+            return std::make_shared<EnumDecl>(name, std::move(variants));
           }
           pos = before_next;
 
@@ -520,11 +520,11 @@ inline parsec::Parser<std::unique_ptr<EnumDecl>> Parser::parse_enum() {
 
         LOG_DEBUG("Parsed enum '" + name + "' with " +
                   std::to_string(variants.size()) + " variants");
-        return std::make_unique<EnumDecl>(name, std::move(variants));
+        return std::make_shared<EnumDecl>(name, std::move(variants));
       });
 }
 
-inline parsec::Parser<std::unique_ptr<ConstantItem>>
+inline parsec::Parser<std::shared_ptr<ConstantItem>>
 Parser::parse_const_item() {
   // const name : Type ( = expr )? ;
   auto header = tok(TokenType::CONST)
@@ -547,7 +547,7 @@ Parser::parse_const_item() {
         const LiteralType &ty = std::get<1>(t);
         const auto &init = std::get<2>(t);
         LOG_DEBUG("Parsed const item: " + name);
-        return std::make_unique<ConstantItem>(name, ty, init);
+        return std::make_shared<ConstantItem>(name, ty, init);
       });
 }
 
@@ -609,6 +609,7 @@ Parser::parse_block_expression() {
         });
 
         int stmt_count = 0;
+
         for (;;) {
           size_t before = pos;
           if (auto s = let_stmt.parse(toks, pos)) {
@@ -1274,8 +1275,7 @@ Parser::expression_list_parser() {
       });
 }
 
-inline parsec::Parser<std::unique_ptr<BaseNode>>
-Parser::parse_let_statement() {
+inline parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
   using namespace parsec;
   return tok(TokenType::LET)
       .thenR(parsec::identifier)
@@ -1293,9 +1293,9 @@ Parser::parse_let_statement() {
                      id_ty.first, id_ty.second, std::move(e)};
                })
       .thenL(tok(TokenType::SEMICOLON))
-      .map([](auto t) -> std::unique_ptr<BaseNode> {
+      .map([](auto t) -> std::shared_ptr<BaseNode> {
         LOG_DEBUG("Parsed let statement for variable: " + std::get<0>(t));
-        return std::make_unique<LetStatement>(std::get<0>(t), std::get<1>(t),
+        return std::make_shared<LetStatement>(std::get<0>(t), std::get<1>(t),
                                               std::get<2>(t));
       });
 }

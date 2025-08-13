@@ -28,17 +28,19 @@ public:
 
     p_wildcard_ =
         tok(rc::TokenType::NON_KEYWORD_IDENTIFIER) // '_' is an identifier
-            .map([](auto) {
-              return std::make_shared<BasePattern>(WildcardPattern{});
+            .map([](auto) -> std::shared_ptr<BasePattern> {
+              return std::make_shared<WildcardPattern>();
             });
 
-    p_rest_ = tok(rc::TokenType::DOT_DOT).map([](auto) {
-      return std::make_shared<BasePattern>(RestPattern{});
-    });
+    p_rest_ = tok(rc::TokenType::DOT_DOT)
+                  .map([](auto) -> std::shared_ptr<BasePattern> {
+                    return std::make_shared<RestPattern>();
+                  });
 
-    p_literal_ = int_literal.map([](const std::string &s) {
-      return std::make_shared<BasePattern>(LiteralPattern{s, false});
-    });
+    p_literal_ = int_literal.map(
+        [](const std::string &s) -> std::shared_ptr<BasePattern> {
+          return std::make_shared<LiteralPattern>(s, false);
+        });
 
     p_identifier_ =
         optional(tok(rc::TokenType::REF))
@@ -55,15 +57,18 @@ public:
                     tok(rc::TokenType::AT)
                         .thenR(parsec::Parser<std::shared_ptr<BasePattern>>(
                             lazy_pattern_no_top_alt))),
-                [](auto t, auto sub) {
-                  return std::make_shared<BasePattern>(IdentifierPattern{
-                      std::get<2>(t), std::get<0>(t), std::get<1>(t), sub});
+                [](auto t, auto sub) -> std::shared_ptr<BasePattern> {
+                  return std::make_shared<IdentifierPattern>(
+                      std::get<2>(t), std::get<0>(t), std::get<1>(t), sub);
                 });
 
     p_grouped_ = tok(rc::TokenType::L_PAREN)
                      .thenR(parsec::Parser<std::shared_ptr<BasePattern>>(
                          lazy_any_pattern))
-                     .thenL(tok(rc::TokenType::R_PAREN));
+                     .thenL(tok(rc::TokenType::R_PAREN))
+                     .map([](auto inner) -> std::shared_ptr<BasePattern> {
+                       return std::make_shared<GroupedPattern>(inner);
+                     });
 
     auto comma_separated_patterns =
         parsec::Parser<std::vector<std::shared_ptr<BasePattern>>>(
@@ -107,34 +112,33 @@ public:
     p_tuple_ = tok(rc::TokenType::L_PAREN)
                    .thenR(comma_separated_patterns)
                    .thenL(tok(rc::TokenType::R_PAREN))
-                   .map([](auto elems) {
-                     return std::make_shared<BasePattern>(
-                         TuplePattern{std::move(elems)});
+                   .map([](auto elems) -> std::shared_ptr<BasePattern> {
+                     return std::make_shared<TuplePattern>(std::move(elems));
                    });
 
     p_slice_ = tok(rc::TokenType::L_BRACKET)
                    .thenR(comma_separated_patterns)
                    .thenL(tok(rc::TokenType::R_BRACKET))
-                   .map([](auto elems) {
-                     return std::make_shared<BasePattern>(
-                         SlicePattern{std::move(elems)});
+                   .map([](auto elems) -> std::shared_ptr<BasePattern> {
+                     return std::make_shared<SlicePattern>(std::move(elems));
                    });
 
-    // FIX: ADD STRUCT PATTERN
+    // FIX: Implement STRUCT pattern parsing
 
-    p_reference_ = (tok(rc::TokenType::AMPERSAND) | tok(rc::TokenType::AND))
-                       .combine(optional(tok(rc::TokenType::MUT)),
-                                [](auto, auto m) { return m.has_value(); })
-                       .combine(parsec::Parser<std::shared_ptr<BasePattern>>(
-                                    lazy_pattern_no_top_alt),
-                                [](bool is_mut, auto sub) {
-                                  return std::make_shared<BasePattern>(
-                                      ReferencePattern{sub, is_mut});
-                                });
+    p_reference_ =
+        (tok(rc::TokenType::AMPERSAND) | tok(rc::TokenType::AND))
+            .combine(optional(tok(rc::TokenType::MUT)),
+                     [](auto, auto m) { return m.has_value(); })
+            .combine(parsec::Parser<std::shared_ptr<BasePattern>>(
+                         lazy_pattern_no_top_alt),
+                     [](bool is_mut, auto sub) -> std::shared_ptr<BasePattern> {
+                       return std::make_shared<ReferencePattern>(sub, is_mut);
+                     });
 
-    p_path_pattern_ = p_path_.map([](const Path &path) {
-      return std::make_shared<BasePattern>(PathPattern{path});
-    });
+    p_path_pattern_ =
+        p_path_.map([](const Path &path) -> std::shared_ptr<BasePattern> {
+          return std::make_shared<PathPattern>(path);
+        });
   }
 
   parsec::ParseResult<std::shared_ptr<BasePattern>>
@@ -160,9 +164,10 @@ public:
             -> parsec::ParseResult<std::shared_ptr<BasePattern>> {
           size_t saved = pos;
 
-          auto parsers = {p_wildcard_,    p_rest_,  p_literal_, p_identifier_,
-                          p_grouped_,     p_tuple_, p_slice_,   p_reference_,
-                          p_path_pattern_ /*, p_struct_ */};
+          auto parsers = {
+              p_wildcard_,    p_rest_,  p_literal_, p_identifier_,
+              p_grouped_,     p_tuple_, p_slice_,   /*p_struct_,*/ p_reference_,
+              p_path_pattern_};
 
           for (const auto &parser : parsers) {
             auto result = parser.parse(toks, pos);
@@ -183,12 +188,12 @@ public:
   parsec::Parser<std::shared_ptr<BasePattern>> or_pattern() {
     return pattern_no_top_alt().combine(
         many(tok(rc::TokenType::PIPE).thenR(pattern_no_top_alt())),
-        [](auto first, auto rest) {
+        [](auto first, auto rest) -> std::shared_ptr<BasePattern> {
           if (rest.empty()) {
             return first;
           }
           rest.insert(rest.begin(), first);
-          return std::make_shared<BasePattern>(OrPattern{std::move(rest)});
+          return std::make_shared<OrPattern>(std::move(rest));
         });
   }
 

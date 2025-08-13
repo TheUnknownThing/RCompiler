@@ -53,10 +53,10 @@ public:
 class ModuleDecl : public BaseItem {
 public:
   std::string name;
-  std::optional<std::vector<std::unique_ptr<BaseNode>>> items;
+  std::optional<std::vector<std::shared_ptr<BaseNode>>> items;
 
   ModuleDecl(const std::string &n,
-             std::optional<std::vector<std::unique_ptr<BaseNode>>> items =
+             std::optional<std::vector<std::shared_ptr<BaseNode>>> items =
                  std::nullopt)
       : name(n), items(std::move(items)) {}
 
@@ -103,9 +103,9 @@ public:
 class TraitDecl : public BaseItem {
 public:
   std::string name;
-  std::vector<std::unique_ptr<BaseItem>> associated_items;
+  std::vector<std::shared_ptr<BaseItem>> associated_items;
 
-  TraitDecl(const std::string &n, std::vector<std::unique_ptr<BaseItem>> items)
+  TraitDecl(const std::string &n, std::vector<std::shared_ptr<BaseItem>> items)
       : name(n), associated_items(std::move(items)) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
@@ -118,10 +118,10 @@ public:
   ImplType impl_type;
   LiteralType target_type;
   std::optional<std::string> trait_name; // For trait impl
-  std::vector<std::unique_ptr<BaseItem>> associated_items;
+  std::vector<std::shared_ptr<BaseItem>> associated_items;
 
   ImplDecl(ImplType t, LiteralType target,
-           std::vector<std::unique_ptr<BaseItem>> items,
+           std::vector<std::shared_ptr<BaseItem>> items,
            std::optional<std::string> trait = std::nullopt)
       : impl_type(t), target_type(target), trait_name(std::move(trait)),
         associated_items(std::move(items)) {}
@@ -131,7 +131,7 @@ public:
 
 class RootNode : public BaseItem {
 public:
-  std::vector<std::unique_ptr<BaseItem>> children;
+  std::vector<std::shared_ptr<BaseItem>> children;
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
