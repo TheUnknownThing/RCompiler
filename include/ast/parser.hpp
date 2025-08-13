@@ -12,6 +12,8 @@
 #include "utils/parsec.hpp"
 #include "utils/pratt.hpp"
 
+#include "parsers/pattern_parser.hpp"
+
 #include "nodes/base.hpp"
 #include "nodes/expr.hpp"
 #include "nodes/stmt.hpp"
@@ -48,6 +50,8 @@ public:
   parsec::Parser<std::unique_ptr<ModuleDecl>> parse_module();
   parsec::Parser<std::unique_ptr<EnumDecl>> parse_enum();
   parsec::Parser<std::unique_ptr<ConstantItem>> parse_const_item();
+
+  parsec::Parser<std::unique_ptr<BaseNode>> parse_let_statement();
 
   parsec::Parser<std::pair<std::string, LiteralType>>
   identifier_and_type_parser();
@@ -141,30 +145,8 @@ inline std::unique_ptr<RootNode> Parser::parse() {
 
 inline std::unique_ptr<BaseNode> Parser::parse_statement() {
   LOG_DEBUG("Parsing statement");
-  auto expr = any_expression();
 
-  auto let_stmt =
-      tok(TokenType::LET)
-          .thenR(parsec::identifier)
-          .combine(optional(tok(TokenType::COLON).thenR(typ)),
-                   [](const auto &id, const auto &t) {
-                     auto ty = t.value_or(
-                         LiteralType(PrimitiveLiteralType::TO_BE_INFERRED));
-                     return std::make_pair(id, ty);
-                   })
-          .thenL(tok(TokenType::ASSIGN))
-          .combine(expr,
-                   [](const auto &id_ty, auto e) {
-                     return std::tuple<std::string, LiteralType,
-                                       std::shared_ptr<Expression>>{
-                         id_ty.first, id_ty.second, std::move(e)};
-                   })
-          .thenL(tok(TokenType::SEMICOLON))
-          .map([](auto t) -> std::unique_ptr<BaseNode> {
-            LOG_DEBUG("Parsed let statement for variable: " + std::get<0>(t));
-            return std::make_unique<LetStatement>(
-                std::get<0>(t), std::get<1>(t), std::get<2>(t));
-          });
+  auto let_stmt = parse_let_statement();
 
   auto empty_stmt =
       tok(TokenType::SEMICOLON).map([](auto) -> std::unique_ptr<BaseNode> {
@@ -173,7 +155,7 @@ inline std::unique_ptr<BaseNode> Parser::parse_statement() {
       });
 
   // expr ; or expr (no semicolon)
-  auto expr_stmt = expr.combine(
+  auto expr_stmt = any_expression().combine(
       optional(tok(TokenType::SEMICOLON)), [](auto e, const auto &semi) {
         return std::unique_ptr<BaseNode>(
             new ExpressionStatement(e, semi.has_value()));
@@ -620,28 +602,7 @@ Parser::parse_block_expression() {
         auto empty_stmt = tok(TokenType::SEMICOLON).map([](auto) {
           return std::shared_ptr<BaseNode>(std::make_shared<EmptyStatement>());
         });
-        auto let_stmt =
-            tok(TokenType::LET)
-                .thenR(parsec::identifier)
-                .combine(optional(tok(TokenType::COLON).thenR(typ)),
-                         [](const auto &id, const auto &t) {
-                           auto ty = t.value_or(LiteralType(
-                               PrimitiveLiteralType::TO_BE_INFERRED));
-                           return std::make_pair(id, ty);
-                         })
-                .thenL(tok(TokenType::ASSIGN))
-                .combine(expr,
-                         [](const auto &id_ty, auto e) {
-                           return std::tuple<std::string, LiteralType,
-                                             std::shared_ptr<Expression>>{
-                               id_ty.first, id_ty.second, std::move(e)};
-                         })
-                .thenL(tok(TokenType::SEMICOLON))
-                .map([](auto t) {
-                  return std::shared_ptr<BaseNode>(
-                      std::make_shared<LetStatement>(
-                          std::get<0>(t), std::get<1>(t), std::get<2>(t)));
-                });
+        auto let_stmt = parse_let_statement();
         auto expr_stmt = expr.thenL(tok(TokenType::SEMICOLON)).map([](auto e) {
           return std::shared_ptr<BaseNode>(
               std::make_shared<ExpressionStatement>(e, true));
@@ -1310,6 +1271,32 @@ Parser::expression_list_parser() {
         LOG_DEBUG("Parsed expression list with " +
                   std::to_string(exprs.size()) + " expressions");
         return exprs;
+      });
+}
+
+inline parsec::Parser<std::unique_ptr<BaseNode>>
+Parser::parse_let_statement() {
+  using namespace parsec;
+  return tok(TokenType::LET)
+      .thenR(parsec::identifier)
+      .combine(optional(tok(TokenType::COLON).thenR(typ)),
+               [](const auto &id, const auto &t) {
+                 auto ty = t.value_or(
+                     LiteralType(PrimitiveLiteralType::TO_BE_INFERRED));
+                 return std::make_pair(id, ty);
+               })
+      .thenL(tok(TokenType::ASSIGN))
+      .combine(any_expression(),
+               [](const auto &id_ty, auto e) {
+                 return std::tuple<std::string, LiteralType,
+                                   std::shared_ptr<Expression>>{
+                     id_ty.first, id_ty.second, std::move(e)};
+               })
+      .thenL(tok(TokenType::SEMICOLON))
+      .map([](auto t) -> std::unique_ptr<BaseNode> {
+        LOG_DEBUG("Parsed let statement for variable: " + std::get<0>(t));
+        return std::make_unique<LetStatement>(std::get<0>(t), std::get<1>(t),
+                                              std::get<2>(t));
       });
 }
 

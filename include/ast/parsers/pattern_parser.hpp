@@ -142,7 +142,6 @@ public:
     return or_pattern().parse(toks, pos);
   }
 
-private:
   parsec::Parser<Path> p_path_;
   parsec::Parser<std::shared_ptr<BasePattern>> p_wildcard_;
   parsec::Parser<std::shared_ptr<BasePattern>> p_rest_;
