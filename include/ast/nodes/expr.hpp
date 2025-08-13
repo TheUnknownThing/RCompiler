@@ -248,4 +248,39 @@ public:
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
+struct PathSegmentExprArg {
+  std::vector<std::shared_ptr<Expression>> args;
+};
+
+class PathExpression : public Expression {
+public:
+  bool leading_colons;
+  struct Segment {
+    std::string ident;
+    std::optional<PathSegmentExprArg> call;
+  };
+  std::vector<Segment> segments;
+
+  PathExpression(bool leading, std::vector<Segment> segs)
+      : leading_colons(leading), segments(std::move(segs)) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class QualifiedPathExpression : public Expression {
+public:
+  rc::LiteralType base_type;
+  // TODO: This represents TypePath, need FIX here.
+  std::optional<std::vector<std::string>> as_type_path;
+  std::vector<PathExpression::Segment> segments;
+
+  QualifiedPathExpression(rc::LiteralType base,
+                          std::optional<std::vector<std::string>> as_path,
+                          std::vector<PathExpression::Segment> segs)
+      : base_type(std::move(base)), as_type_path(std::move(as_path)),
+        segments(std::move(segs)) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
 } // namespace rc

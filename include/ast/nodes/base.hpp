@@ -46,6 +46,8 @@ class GroupedPattern;
 class PathPattern;
 class SlicePattern;
 class RootNode;
+class PathExpression;
+class QualifiedPathExpression;
 
 class BaseVisitor;
 
@@ -80,6 +82,8 @@ public:
   virtual void visit(ArrayExpression &) {}
   virtual void visit(IndexExpression &) {}
   virtual void visit(TupleExpression &) {}
+  virtual void visit(PathExpression &) {}
+  virtual void visit(QualifiedPathExpression &) {}
 
   // Statement visitors
   virtual void visit(BlockStatement &) {}
