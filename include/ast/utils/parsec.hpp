@@ -58,42 +58,33 @@ public:
         });
   }
 
-  template <typename U>
-auto operator|(const Parser<U> &other) const {
-  // If the types T and U are the same...
-  if constexpr (std::is_same_v<T, U>) {
-    // ...return a simple Parser<T>
-    return Parser<T>([*this, other](const std::vector<rc::Token> &toks,
-                                    size_t &pos) -> ParseResult<T> {
-      size_t saved_pos = pos;
-      // Try the first parser
-      if (auto result1 = this->parse(toks, pos)) {
-        return result1;
-      }
-      pos = saved_pos;
-      // If it failed, try the second parser
-      return other.parse(toks, pos);
-    });
-  } else {
-    // Otherwise, return a Parser<std::variant<T, U>> as before,
-    // but use std::in_place_type to explicitly state which variant
-    // alternative to construct, preventing any ambiguity.
-    return Parser<std::variant<T, U>>(
-        [*this, other](
-            const std::vector<rc::Token> &toks,
-            size_t &pos) -> ParseResult<std::variant<T, U>> {
-          size_t saved_pos = pos;
-          if (auto result1 = this->parse(toks, pos)) {
-            return std::variant<T, U>(std::in_place_type<T>, *result1);
-          }
-          pos = saved_pos;
-          if (auto result2 = other.parse(toks, pos)) {
-            return std::variant<T, U>(std::in_place_type<U>, *result2);
-          }
-          return std::nullopt;
-        });
+  template <typename U> auto operator|(const Parser<U> &other) const {
+    if constexpr (std::is_same_v<T, U>) {
+      return Parser<T>([*this, other](const std::vector<rc::Token> &toks,
+                                      size_t &pos) -> ParseResult<T> {
+        size_t saved_pos = pos;
+        if (auto result1 = this->parse(toks, pos)) {
+          return result1;
+        }
+        pos = saved_pos;
+        return other.parse(toks, pos);
+      });
+    } else {
+      return Parser<std::variant<T, U>>(
+          [*this, other](const std::vector<rc::Token> &toks,
+                         size_t &pos) -> ParseResult<std::variant<T, U>> {
+            size_t saved_pos = pos;
+            if (auto result1 = this->parse(toks, pos)) {
+              return std::variant<T, U>(std::in_place_type<T>, *result1);
+            }
+            pos = saved_pos;
+            if (auto result2 = other.parse(toks, pos)) {
+              return std::variant<T, U>(std::in_place_type<U>, *result2);
+            }
+            return std::nullopt;
+          });
+    }
   }
-}
 
   template <typename U>
   Parser<std::tuple<T, U>> operator+(const Parser<U> &other) const {
