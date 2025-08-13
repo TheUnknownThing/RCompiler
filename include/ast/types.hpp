@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <map>
+#include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <variant>
@@ -19,6 +22,7 @@ enum class PrimitiveLiteralType {
   RAW_C_STRING,
   CHAR,
   BOOL,
+  NEVER,
   TO_BE_INFERRED
 };
 
@@ -26,7 +30,22 @@ struct LiteralType {
   struct Tuple {
     std::vector<LiteralType> elements;
   };
-  using Storage = std::variant<PrimitiveLiteralType, Tuple>;
+  struct Array {
+    std::shared_ptr<LiteralType> element;
+    std::uint64_t size;
+  };
+  struct Slice {
+    std::shared_ptr<LiteralType> element;
+  };
+  struct Path {
+    std::vector<std::string> segments;
+  };
+  struct Union {
+    std::vector<LiteralType> alternatives;
+  };
+
+  using Storage =
+      std::variant<PrimitiveLiteralType, Tuple, Array, Slice, Path, Union>;
 
   Storage storage;
 
@@ -34,17 +53,32 @@ struct LiteralType {
   explicit LiteralType(Storage s) : storage(std::move(s)) {}
   LiteralType(PrimitiveLiteralType b) : storage(b) {}
 
-  static LiteralType base(PrimitiveLiteralType b) {
-    return LiteralType{Storage{b}};
-  }
+  static LiteralType base(PrimitiveLiteralType b) { return LiteralType{b}; }
   static LiteralType tuple(std::vector<LiteralType> elems) {
-    return LiteralType{Storage{Tuple{std::move(elems)}}};
+    return LiteralType{Tuple{std::move(elems)}};
+  }
+  static LiteralType array(LiteralType elem, std::uint64_t size) {
+    return LiteralType{
+        Array{std::make_shared<LiteralType>(std::move(elem)), size}};
+  }
+  static LiteralType slice(LiteralType elem) {
+    return LiteralType{Slice{std::make_shared<LiteralType>(std::move(elem))}};
+  }
+  static LiteralType path(std::vector<std::string> segments) {
+    return LiteralType{Path{std::move(segments)}};
+  }
+  static LiteralType union_of(std::vector<LiteralType> alts) {
+    return LiteralType{Union{std::move(alts)}};
   }
 
   bool is_base() const {
     return std::holds_alternative<PrimitiveLiteralType>(storage);
   }
   bool is_tuple() const { return std::holds_alternative<Tuple>(storage); }
+  bool is_array() const { return std::holds_alternative<Array>(storage); }
+  bool is_slice() const { return std::holds_alternative<Slice>(storage); }
+  bool is_path() const { return std::holds_alternative<Path>(storage); }
+  bool is_union() const { return std::holds_alternative<Union>(storage); }
 
   PrimitiveLiteralType as_base() const {
     return std::get<PrimitiveLiteralType>(storage);
@@ -55,32 +89,119 @@ struct LiteralType {
   std::vector<LiteralType> &as_tuple() {
     return std::get<Tuple>(storage).elements;
   }
+  const Array &as_array() const { return std::get<Array>(storage); }
+  Array &as_array() { return std::get<Array>(storage); }
+  const Slice &as_slice() const { return std::get<Slice>(storage); }
+  Slice &as_slice() { return std::get<Slice>(storage); }
+  const Path &as_path() const { return std::get<Path>(storage); }
+  Path &as_path() { return std::get<Path>(storage); }
+  const std::vector<LiteralType> &as_union() const {
+    return std::get<Union>(storage).alternatives;
+  }
+  std::vector<LiteralType> &as_union() {
+    return std::get<Union>(storage).alternatives;
+  }
 };
 
 inline bool operator==(const LiteralType &a, const LiteralType &b) {
-  if (a.is_base() && b.is_base())
+  if (a.storage.index() != b.storage.index())
+    return false;
+  if (a.is_base())
     return a.as_base() == b.as_base();
-  if (a.is_tuple() && b.is_tuple())
+  if (a.is_tuple())
     return a.as_tuple() == b.as_tuple();
+  if (a.is_array()) {
+    const auto &ae = a.as_array();
+    const auto &be = b.as_array();
+    return *ae.element == *be.element && ae.size == be.size;
+  }
+  if (a.is_slice()) {
+    return *a.as_slice().element == *b.as_slice().element;
+  }
+  if (a.is_path()) {
+    return a.as_path().segments == b.as_path().segments;
+  }
+  if (a.is_union()) {
+    return a.as_union() == b.as_union();
+  }
   return false;
 }
+
 inline bool operator<(const LiteralType &a, const LiteralType &b) {
+  auto rank = [](const LiteralType &t) -> int {
+    if (t.is_base())
+      return 0;
+    if (t.is_tuple())
+      return 1;
+    if (t.is_array())
+      return 2;
+    if (t.is_slice())
+      return 3;
+    if (t.is_path())
+      return 4;
+    if (t.is_union())
+      return 5;
+    return 6;
+  };
+  int ra = rank(a), rb = rank(b);
+  if (ra != rb)
+    return ra < rb;
+
   if (a.is_base() && b.is_base())
     return static_cast<int>(a.as_base()) < static_cast<int>(b.as_base());
-  if (a.is_base() && b.is_tuple())
-    return true;
-  if (a.is_tuple() && b.is_base())
-    return false;
-  const auto &ae = a.as_tuple();
-  const auto &be = b.as_tuple();
-  const auto n = std::min(ae.size(), be.size());
-  for (size_t i = 0; i < n; ++i) {
-    if (ae[i] < be[i])
-      return true;
-    if (be[i] < ae[i])
-      return false;
+
+  if (a.is_tuple() && b.is_tuple()) {
+    const auto &ae = a.as_tuple();
+    const auto &be = b.as_tuple();
+    const auto n = std::min(ae.size(), be.size());
+    for (size_t i = 0; i < n; ++i) {
+      if (ae[i] < be[i])
+        return true;
+      if (be[i] < ae[i])
+        return false;
+    }
+    return ae.size() < be.size();
   }
-  return ae.size() < be.size();
+
+  if (a.is_array() && b.is_array()) {
+    const auto &ae = a.as_array();
+    const auto &be = b.as_array();
+    if (*ae.element == *be.element)
+      return ae.size < be.size;
+    return *ae.element < *be.element;
+  }
+
+  if (a.is_slice() && b.is_slice()) {
+    return *a.as_slice().element < *b.as_slice().element;
+  }
+
+  if (a.is_path() && b.is_path()) {
+    const auto &ap = a.as_path().segments;
+    const auto &bp = b.as_path().segments;
+    const auto n = std::min(ap.size(), bp.size());
+    for (size_t i = 0; i < n; ++i) {
+      if (ap[i] < bp[i])
+        return true;
+      if (bp[i] < ap[i])
+        return false;
+    }
+    return ap.size() < bp.size();
+  }
+
+  if (a.is_union() && b.is_union()) {
+    const auto &au = a.as_union();
+    const auto &bu = b.as_union();
+    const auto n = std::min(au.size(), bu.size());
+    for (size_t i = 0; i < n; ++i) {
+      if (au[i] < bu[i])
+        return true;
+      if (bu[i] < au[i])
+        return false;
+    }
+    return au.size() < bu.size();
+  }
+
+  return false; // same rank but no comparable case
 }
 
 inline const std::map<std::string, PrimitiveLiteralType> base_literal_type_map =
@@ -94,6 +215,7 @@ inline const std::map<std::string, PrimitiveLiteralType> base_literal_type_map =
      {"raw_c_string", PrimitiveLiteralType::RAW_C_STRING},
      {"char", PrimitiveLiteralType::CHAR},
      {"bool", PrimitiveLiteralType::BOOL},
+     {"never", PrimitiveLiteralType::NEVER},
      {"to_be_inferred", PrimitiveLiteralType::TO_BE_INFERRED}};
 
 inline const std::map<PrimitiveLiteralType, std::string>
@@ -108,6 +230,7 @@ inline const std::map<PrimitiveLiteralType, std::string>
         {PrimitiveLiteralType::RAW_C_STRING, "raw_c_string"},
         {PrimitiveLiteralType::CHAR, "char"},
         {PrimitiveLiteralType::BOOL, "bool"},
+        {PrimitiveLiteralType::NEVER, "!"},
         {PrimitiveLiteralType::TO_BE_INFERRED, "to_be_inferred"}};
 
 inline const std::map<std::string, LiteralType> literal_type_map = {
@@ -121,27 +244,60 @@ inline const std::map<std::string, LiteralType> literal_type_map = {
     {"raw_c_string", LiteralType::base(PrimitiveLiteralType::RAW_C_STRING)},
     {"char", LiteralType::base(PrimitiveLiteralType::CHAR)},
     {"bool", LiteralType::base(PrimitiveLiteralType::BOOL)},
+    {"never", LiteralType::base(PrimitiveLiteralType::NEVER)},
     {"to_be_inferred",
      LiteralType::base(PrimitiveLiteralType::TO_BE_INFERRED)}};
 
 inline const std::set<std::string> valid_literal_types = {
-    "i32",      "u32",          "isize", "usize", "string",        "raw_string",
-    "c_string", "raw_c_string", "char",  "bool",  "to_be_inferred"};
+    "i32",      "u32",          "isize", "usize", "string", "raw_string",
+    "c_string", "raw_c_string", "char",  "bool",  "never",  "to_be_inferred"};
 
 inline std::string to_string(const LiteralType &t) {
   if (t.is_base()) {
     auto it = literal_type_reverse_map.find(t.as_base());
     return it != literal_type_reverse_map.end() ? it->second : "<unknown>";
   }
-  const auto &elems = t.as_tuple();
-  std::string out = "(";
-  for (size_t i = 0; i < elems.size(); ++i) {
-    if (i)
-      out += ", ";
-    out += to_string(elems[i]);
+  if (t.is_tuple()) {
+    const auto &elems = t.as_tuple();
+    std::string out = "(";
+    for (size_t i = 0; i < elems.size(); ++i) {
+      if (i)
+        out += ", ";
+      out += to_string(elems[i]);
+    }
+    out += ")";
+    return out;
   }
-  out += ")";
-  return out;
+  if (t.is_array()) {
+    const auto &arr = t.as_array();
+    return "[" + to_string(*arr.element) + "; " + std::to_string(arr.size) +
+           "]";
+  }
+  if (t.is_slice()) {
+    const auto &sl = t.as_slice();
+    return "[" + to_string(*sl.element) + "]";
+  }
+  if (t.is_path()) {
+    const auto &segments = t.as_path().segments;
+    std::string out;
+    for (size_t i = 0; i < segments.size(); ++i) {
+      if (i)
+        out += "::";
+      out += segments[i];
+    }
+    return out.empty() ? std::string("<path>") : out;
+  }
+  if (t.is_union()) {
+    const auto &alts = t.as_union();
+    std::string out;
+    for (size_t i = 0; i < alts.size(); ++i) {
+      if (i)
+        out += " | ";
+      out += to_string(alts[i]);
+    }
+    return out;
+  }
+  return "<unknown>";
 }
 
 } // namespace rc

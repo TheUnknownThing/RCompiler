@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -252,10 +253,82 @@ inline Parser<rc::LiteralType> typ =
                                size_t &pos) -> ParseResult<rc::LiteralType> {
       size_t saved_pos = pos;
 
+      // [...]
+      if (pos < toks.size() && toks[pos].type == rc::TokenType::L_BRACKET) {
+        pos++;
+        auto elem_ty = typ.parse(toks, pos);
+        if (!elem_ty) {
+          pos = saved_pos;
+          return std::nullopt;
+        }
+
+        if (pos < toks.size() && toks[pos].type == rc::TokenType::SEMICOLON) {
+          pos++;
+          if (pos < toks.size() &&
+              toks[pos].type == rc::TokenType::INTEGER_LITERAL) {
+            std::string s = toks[pos++].lexeme;
+            // strip known integer suffixes
+            auto strip_suffix = [](std::string &str) {
+              static const char *suffixes[] = {"i32", "isize", "u32", "usize"};
+              for (auto suf : suffixes) {
+                std::string suffix{suf};
+                if (str.size() >= suffix.size() &&
+                    str.compare(str.size() - suffix.size(), suffix.size(),
+                                suffix) == 0) {
+                  str.erase(str.size() - suffix.size());
+                  break;
+                }
+              }
+            };
+            strip_suffix(s);
+            s.erase(std::remove(s.begin(), s.end(), '_'), s.end());
+            int base = 10;
+            if (s.rfind("0x", 0) == 0 || s.rfind("0X", 0) == 0) {
+              base = 16;
+              s.erase(0, 2);
+            } else if (s.rfind("0o", 0) == 0 || s.rfind("0O", 0) == 0) {
+              base = 8;
+              s.erase(0, 2);
+            } else if (s.rfind("0b", 0) == 0 || s.rfind("0B", 0) == 0) {
+              base = 2;
+              s.erase(0, 2);
+            }
+            std::uint64_t size_val = 0;
+            try {
+              size_val = s.empty() ? 0ULL
+                                   : static_cast<std::uint64_t>(
+                                         std::stoull(s, nullptr, base));
+            } catch (...) {
+              pos = saved_pos;
+              return std::nullopt;
+            }
+            if (pos < toks.size() &&
+                toks[pos].type == rc::TokenType::R_BRACKET) {
+              pos++; // consume ']'
+              return rc::LiteralType::array(*elem_ty, size_val);
+            }
+          }
+          pos = saved_pos;
+          return std::nullopt;
+        } else if (pos < toks.size() &&
+                   toks[pos].type == rc::TokenType::R_BRACKET) {
+          // slice
+          pos++;
+          return rc::LiteralType::slice(*elem_ty);
+        }
+        pos = saved_pos;
+      }
+
       // tuple type
       if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
         pos++; // consume '('
         std::vector<rc::LiteralType> elements;
+
+        // () as unit type
+        if (pos < toks.size() && toks[pos].type == rc::TokenType::R_PAREN) {
+          pos++;
+          return rc::LiteralType::tuple(std::move(elements));
+        }
 
         auto first = typ.parse(toks, pos);
         if (first) {
@@ -279,15 +352,31 @@ inline Parser<rc::LiteralType> typ =
         pos = saved_pos;
       }
 
-      // regular type
+      if (pos < toks.size() && toks[pos].type == rc::TokenType::NOT) {
+        pos++;
+        return rc::LiteralType::base(rc::PrimitiveLiteralType::NEVER);
+      }
+
+      // primitive type or path type
       if (pos < toks.size() &&
           toks[pos].type == rc::TokenType::NON_KEYWORD_IDENTIFIER) {
-        const std::string &name = toks[pos].lexeme;
-        auto it = rc::literal_type_map.find(name);
-        if (it != rc::literal_type_map.end()) {
+        std::vector<std::string> segments;
+        segments.push_back(toks[pos++].lexeme);
+        while (pos + 1 < toks.size() &&
+               toks[pos].type == rc::TokenType::COLON_COLON &&
+               toks[pos + 1].type == rc::TokenType::NON_KEYWORD_IDENTIFIER) {
           pos++;
-          return it->second;
+          segments.push_back(toks[pos++].lexeme);
         }
+
+        if (segments.size() == 1) {
+          const std::string &name = segments.front();
+          auto it = rc::literal_type_map.find(name);
+          if (it != rc::literal_type_map.end()) {
+            return it->second;
+          }
+        }
+        return rc::LiteralType::path(std::move(segments));
       }
 
       return std::nullopt;
