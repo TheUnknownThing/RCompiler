@@ -135,7 +135,8 @@ bool validate_ast_structure(std::shared_ptr<rc::RootNode> ast, const std::string
         }
         
         // Try to identify item type (would need proper visitor pattern for full validation)
-        std::cout << "  - Item " << i << ": " << typeid(*item).name() << std::endl;
+        const auto& node_ref = *item;
+        std::cout << "  - Item " << i << ": " << typeid(node_ref).name() << std::endl;
     }
     
     return true;

@@ -42,7 +42,7 @@ if (BUILD_TESTING)
   set_tests_properties(parser_simple_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "parser;unit;stable")
 
   # Unit: Comprehensive parser tests (AST validation) - for manual testing
-  add_executable(parser_comprehensive_runner tests/unit/parser_comprehensive_runner.cpp)
+  add_executable(parser_comprehensive_runner tests/unit/parser_comprehensive_runner.cpp src/pretty_print.cpp)
   # Note: This runner is for manual testing and integration, not automated unit tests
 
   # Lexer case runner: compares tokens with expected files
