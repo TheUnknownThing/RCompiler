@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    name: Build and Test Stable (${{ matrix.os }} / ${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        compiler: [gcc, clang]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build ${{ matrix.compiler }}
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                ${{ matrix.compiler == 'clang' && '-DCMAKE_CXX_COMPILER=clang++' || '-DCMAKE_CXX_COMPILER=g++' }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run unit tests (stable)
+        run: |
+          ctest --test-dir build --output-on-failure -C Release -L stable
+
+      - name: Run parser unit tests
+        run: |
+          ctest --test-dir build --output-on-failure -C Release -R "parser_simple_tests"
+
+      - name: Run all parser tests
+        run: |
+          ctest --test-dir build --output-on-failure -C Release -L "parser"
+
+      - name: Upload build artifacts (binary)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcompiler-${{ matrix.os }}-${{ matrix.compiler }}
+          path: |
+            build/rcompiler
+            build/**/*.log
+
+  build-and-test-unstable:
+    name: Build and Test Unstable (Allowed Failure)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run tests (unstable label)
+        run: ctest --test-dir build --output-on-failure -C Release -L unstable || true
