@@ -69,7 +69,8 @@ private:
 };
 
 inline Parser::Parser(std::vector<Token> tokens)
-    : tokens(std::move(tokens)), pratt_table_(pratt::default_table(this)), pattern_parser_(PatternParser()) {
+    : tokens(std::move(tokens)), pratt_table_(pratt::default_table(this)),
+      pattern_parser_(PatternParser()) {
   LOG_DEBUG("Parser initialized with " + std::to_string(this->tokens.size()) +
             " tokens");
 }
@@ -1278,6 +1279,7 @@ Parser::expression_list_parser() {
 
 inline parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
   using namespace parsec;
+  auto assignment = tok(TokenType::ASSIGN).thenR(any_expression());
   return tok(TokenType::LET)
       .thenR(pattern_parser_.pattern_no_top_alt())
       .combine(optional(tok(TokenType::COLON).thenR(typ)),
@@ -1286,18 +1288,17 @@ inline parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
                      LiteralType(PrimitiveLiteralType::TO_BE_INFERRED));
                  return std::make_pair(id, ty);
                })
-      .thenL(tok(TokenType::ASSIGN))
-      .combine(any_expression(),
-               [](const auto &id_ty, auto e) {
-                 return std::tuple<std::shared_ptr<BasePattern>, LiteralType,
-                                   std::shared_ptr<Expression>>{
-                     id_ty.first, id_ty.second, std::move(e)};
+      .combine(optional(assignment),
+               [](const auto &id_ty, const auto &init) {
+                 return std::make_tuple(id_ty.first, id_ty.second, init);
                })
       .thenL(tok(TokenType::SEMICOLON))
       .map([](auto t) -> std::shared_ptr<BaseNode> {
+        const auto &pattern = std::get<0>(t);
+        const auto &type = std::get<1>(t);
+        const auto &init = std::get<2>(t).value_or(nullptr);
         LOG_DEBUG("Parsed let statement");
-        return std::make_shared<LetStatement>(std::get<0>(t), std::get<1>(t),
-                                              std::get<2>(t));
+        return std::make_shared<LetStatement>(pattern, type, init);
       });
 }
 

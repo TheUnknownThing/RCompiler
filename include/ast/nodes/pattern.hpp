@@ -25,7 +25,7 @@ public:
   std::optional<std::shared_ptr<BasePattern>> subpattern;
 
   IdentifierPattern(
-      std::string n, bool mutable_ = false, bool ref = false,
+      std::string n, bool ref = false, bool mutable_ = false,
       std::optional<std::shared_ptr<BasePattern>> sub = std::nullopt)
       : name(std::move(n)), is_mutable(mutable_), is_ref(ref), subpattern(sub) {
   }
@@ -70,12 +70,12 @@ public:
 };
 
 struct StructPatternField {
-    std::string name;
-    std::shared_ptr<BasePattern> pattern;
-  
-    StructPatternField(std::string n, std::shared_ptr<BasePattern> p)
-        : name(std::move(n)), pattern(std::move(p)) {}
-  };
+  std::string name;
+  std::shared_ptr<BasePattern> pattern;
+
+  StructPatternField(std::string n, std::shared_ptr<BasePattern> p)
+      : name(std::move(n)), pattern(std::move(p)) {}
+};
 
 class StructPattern : public BasePattern {
 public:
