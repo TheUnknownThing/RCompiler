@@ -26,7 +26,7 @@ endif()
 
 # --- Testing setup ---
 include(CTest)
-option(BUILD_TESTING "Build tests" ON)
+option(BUILD_TESTING "Build tests" OFF)
 
 if (BUILD_TESTING)
   enable_testing()

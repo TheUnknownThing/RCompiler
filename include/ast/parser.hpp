@@ -63,12 +63,13 @@ public:
 private:
   std::vector<Token> tokens;
   pratt::PrattTable pratt_table_;
+  PatternParser pattern_parser_;
 
   std::shared_ptr<BaseNode> parse_statement();
 };
 
 inline Parser::Parser(std::vector<Token> tokens)
-    : tokens(std::move(tokens)), pratt_table_(pratt::default_table(this)) {
+    : tokens(std::move(tokens)), pratt_table_(pratt::default_table(this)), pattern_parser_(PatternParser()) {
   LOG_DEBUG("Parser initialized with " + std::to_string(this->tokens.size()) +
             " tokens");
 }
@@ -1278,7 +1279,7 @@ Parser::expression_list_parser() {
 inline parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
   using namespace parsec;
   return tok(TokenType::LET)
-      .thenR(parsec::identifier)
+      .thenR(pattern_parser_.pattern_no_top_alt())
       .combine(optional(tok(TokenType::COLON).thenR(typ)),
                [](const auto &id, const auto &t) {
                  auto ty = t.value_or(
@@ -1288,13 +1289,13 @@ inline parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
       .thenL(tok(TokenType::ASSIGN))
       .combine(any_expression(),
                [](const auto &id_ty, auto e) {
-                 return std::tuple<std::string, LiteralType,
+                 return std::tuple<std::shared_ptr<BasePattern>, LiteralType,
                                    std::shared_ptr<Expression>>{
                      id_ty.first, id_ty.second, std::move(e)};
                })
       .thenL(tok(TokenType::SEMICOLON))
       .map([](auto t) -> std::shared_ptr<BaseNode> {
-        LOG_DEBUG("Parsed let statement for variable: " + std::get<0>(t));
+        LOG_DEBUG("Parsed let statement");
         return std::make_shared<LetStatement>(std::get<0>(t), std::get<1>(t),
                                               std::get<2>(t));
       });

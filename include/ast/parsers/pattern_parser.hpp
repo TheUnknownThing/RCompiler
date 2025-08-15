@@ -27,7 +27,7 @@ public:
         });
 
     p_wildcard_ =
-        tok(rc::TokenType::NON_KEYWORD_IDENTIFIER) // '_' is an identifier
+        tok(rc::TokenType::NON_KEYWORD_IDENTIFIER, "_") // '_' is an identifier
             .map([](auto) -> std::shared_ptr<BasePattern> {
               return std::make_shared<WildcardPattern>();
             });

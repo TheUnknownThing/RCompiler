@@ -1,6 +1,7 @@
 #include "ast/visitors/pretty_print.hpp"
-#include "lexer/lexer.hpp"
 #include "ast/nodes/expr.hpp"
+#include "ast/nodes/pattern.hpp"
+#include "lexer/lexer.hpp"
 #include <typeinfo>
 
 /**
@@ -57,6 +58,14 @@ void PrettyPrintVisitor::visit(BaseNode &node) {
   } else if (auto *expr = dynamic_cast<IndexExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<TupleExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<BreakExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<ContinueExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<PathExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<QualifiedPathExpression *>(&node)) {
     visit(*expr);
   } else if (auto *stmt = dynamic_cast<BlockStatement *>(&node)) {
     visit(*stmt);
@@ -145,7 +154,9 @@ void PrettyPrintVisitor::visit(IfExpression &node) {
 }
 
 void PrettyPrintVisitor::visit(CallExpression &node) {
-  print_inline("CallExpr( function name, [");
+  print_inline("CallExpr(");
+  node.function_name->accept(*this);
+  print_inline(", [");
   for (size_t i = 0; i < node.arguments.size(); ++i) {
     node.arguments[i]->accept(*this);
     if (i < node.arguments.size() - 1) {
@@ -322,6 +333,63 @@ void PrettyPrintVisitor::visit(TupleExpression &node) {
   print_inline(")");
 }
 
+void PrettyPrintVisitor::visit(BreakExpression &node) {
+  print_inline("BreakExpr(");
+  if (node.expr.has_value()) {
+    node.expr.value()->accept(*this);
+  } else {
+    print_inline("None");
+  }
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(ContinueExpression &node) {
+  (void)node;
+  print_inline("ContinueExpr");
+}
+
+void PrettyPrintVisitor::visit(PathExpression &node) {
+  print_inline("PathExpr(");
+  if (node.leading_colons)
+    print_inline("::");
+  for (size_t i = 0; i < node.segments.size(); ++i) {
+    const auto &seg = node.segments[i];
+    print_inline(seg.ident);
+    if (seg.call.has_value()) {
+      print_inline("(");
+      const auto &args = seg.call->args;
+      for (size_t j = 0; j < args.size(); ++j) {
+        args[j]->accept(*this);
+        if (j + 1 < args.size())
+          print_inline(", ");
+      }
+      print_inline(")");
+    }
+    if (i + 1 < node.segments.size())
+      print_inline("::");
+  }
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(QualifiedPathExpression &node) {
+  print_inline("QualifiedPathExpr(");
+  print_inline("base_type: " + format_type(node.base_type));
+  if (node.as_type_path.has_value()) {
+    print_inline(", as: ");
+    const auto &tp = node.as_type_path.value();
+    for (size_t i = 0; i < tp.size(); ++i) {
+      print_inline(tp[i]);
+      if (i + 1 < tp.size())
+        print_inline("::");
+    }
+  }
+  print_inline(", segments: ");
+  PathExpression tmp(false, {});
+  tmp.segments = node.segments;
+  visit(tmp);
+  print_inline(")");
+}
+
 // Statement visitors
 void PrettyPrintVisitor::visit(BlockStatement &node) {
   print_line("BlockStmt {");
@@ -343,7 +411,14 @@ void PrettyPrintVisitor::visit(BlockStatement &node) {
 
 void PrettyPrintVisitor::visit(LetStatement &node) {
   print_inline("LetStmt {");
-  print_inline(" identifier: " + node.identifier);
+  print_inline(" pattern: ");
+  // Use pattern visitors by visiting a small shim node
+  if (node.pattern) {
+    // We have pattern nodes that aren't BaseNode; dispatch manually
+    node.pattern->accept(*this);
+  } else {
+    print_inline("<none>");
+  }
   print_inline(", type: " + format_type(node.type));
   print_inline(", expr: ");
   node.expr->accept(*this);
@@ -591,6 +666,122 @@ void PrettyPrintVisitor::visit(RootNode &node) {
   print_line("]");
   decrease_indent();
   print_line("}");
+}
+
+// Pattern visitors
+void PrettyPrintVisitor::visit(BasePattern &node) {
+  (void)node;
+  print_inline("<pattern>");
+}
+
+void PrettyPrintVisitor::visit(IdentifierPattern &node) {
+  print_inline("IdentifierPattern(");
+  if (node.is_ref)
+    print_inline("ref ");
+  if (node.is_mutable)
+    print_inline("mut ");
+  print_inline(node.name);
+  if (node.subpattern.has_value()) {
+    print_inline(" @ ");
+    node.subpattern.value()->accept(*this);
+  }
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(LiteralPattern &node) {
+  print_inline("LiteralPattern(");
+  if (node.is_negative)
+    print_inline("-");
+  print_inline(node.value);
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(WildcardPattern &node) {
+  (void)node;
+  print_inline("WildcardPattern(_)");
+}
+
+void PrettyPrintVisitor::visit(RestPattern &node) {
+  (void)node;
+  print_inline("RestPattern(..)");
+}
+
+void PrettyPrintVisitor::visit(ReferencePattern &node) {
+  print_inline("ReferencePattern(&");
+  if (node.is_mutable)
+    print_inline("mut ");
+  node.inner_pattern->accept(*this);
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(StructPattern &node) {
+  print_inline("StructPattern(");
+  // print path
+  for (size_t i = 0; i < node.path.size(); ++i) {
+    print_inline(node.path[i]);
+    if (i + 1 < node.path.size())
+      print_inline("::");
+  }
+  print_inline(" { ");
+  for (size_t i = 0; i < node.fields.size(); ++i) {
+    const auto &f = node.fields[i];
+    print_inline(f.name + ": ");
+    f.pattern->accept(*this);
+    if (i + 1 < node.fields.size())
+      print_inline(", ");
+  }
+  if (node.has_rest) {
+    if (!node.fields.empty())
+      print_inline(", ");
+    print_inline("..");
+  }
+  print_inline(" })");
+}
+
+void PrettyPrintVisitor::visit(TuplePattern &node) {
+  print_inline("TuplePattern(");
+  for (size_t i = 0; i < node.elements.size(); ++i) {
+    node.elements[i]->accept(*this);
+    if (i + 1 < node.elements.size())
+      print_inline(", ");
+  }
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(GroupedPattern &node) {
+  print_inline("GroupedPattern(");
+  node.inner_pattern->accept(*this);
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(PathPattern &node) {
+  print_inline("PathPattern(");
+  for (size_t i = 0; i < node.path.size(); ++i) {
+    print_inline(node.path[i]);
+    if (i + 1 < node.path.size())
+      print_inline("::");
+  }
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(SlicePattern &node) {
+  print_inline("SlicePattern([");
+  for (size_t i = 0; i < node.elements.size(); ++i) {
+    node.elements[i]->accept(*this);
+    if (i + 1 < node.elements.size())
+      print_inline(", ");
+  }
+  print_inline("]) ");
+}
+
+void PrettyPrintVisitor::visit(OrPattern &node) {
+  print_inline("OrPattern(");
+  for (size_t i = 0; i < node.alternatives.size(); ++i) {
+    node.alternatives[i]->accept(*this);
+    if (i + 1 < node.alternatives.size())
+      print_inline(" | ");
+  }
+  print_inline(")");
 }
 
 // Private helper methods

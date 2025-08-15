@@ -1,15 +1,16 @@
 #pragma once
 
-#include "base.hpp"
 #include "../../lexer/lexer.hpp"
 #include "../types.hpp"
+#include "ast/nodes/pattern.hpp"
+#include "base.hpp"
 #include "expr.hpp"
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
-#include <optional>
 
 namespace rc {
 
@@ -29,12 +30,14 @@ public:
 
 class LetStatement : public Statement {
 public:
-  std::string identifier;
+  // std::string identifier;
+  std::shared_ptr<BasePattern> pattern;
   LiteralType type;
   std::shared_ptr<Expression> expr;
 
-  LetStatement(const std::string &id, LiteralType ty, std::shared_ptr<Expression> e)
-      : identifier(id), type(ty), expr(std::move(e)) {}
+  LetStatement(std::shared_ptr<BasePattern> pat, LiteralType ty,
+               std::shared_ptr<Expression> e)
+      : pattern(std::move(pat)), type(std::move(ty)), expr(std::move(e)) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
@@ -56,6 +59,5 @@ public:
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
-
 
 } // namespace rc

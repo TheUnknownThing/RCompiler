@@ -42,12 +42,30 @@ public:
   void visit(ArrayExpression &node) override;
   void visit(IndexExpression &node) override;
   void visit(TupleExpression &node) override;
+  void visit(BreakExpression &node) override;
+  void visit(ContinueExpression &node) override;
+  void visit(PathExpression &node) override;
+  void visit(QualifiedPathExpression &node) override;
 
   // Statement visitors
   void visit(BlockStatement &node) override;
   void visit(LetStatement &node) override;
   void visit(ExpressionStatement &node) override;
   void visit(EmptyStatement &node) override;
+
+  // Pattern visitors
+  void visit(BasePattern &node) override;
+  void visit(IdentifierPattern &node) override;
+  void visit(LiteralPattern &node) override;
+  void visit(WildcardPattern &node) override;
+  void visit(RestPattern &node) override;
+  void visit(ReferencePattern &node) override;
+  void visit(StructPattern &node) override;
+  void visit(TuplePattern &node) override;
+  void visit(GroupedPattern &node) override;
+  void visit(PathPattern &node) override;
+  void visit(SlicePattern &node) override;
+  void visit(OrPattern &node) override;
 
   // Top-level declaration visitors
   void visit(FunctionDecl &node) override;

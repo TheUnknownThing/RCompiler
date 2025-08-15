@@ -45,6 +45,7 @@ class TuplePattern;
 class GroupedPattern;
 class PathPattern;
 class SlicePattern;
+class OrPattern;
 class RootNode;
 class PathExpression;
 class QualifiedPathExpression;
@@ -79,6 +80,8 @@ public:
   virtual void visit(BlockExpression &) {}
   virtual void visit(LoopExpression &) {}
   virtual void visit(WhileExpression &) {}
+  virtual void visit(BreakExpression &) {}
+  virtual void visit(ContinueExpression &) {}
   virtual void visit(ArrayExpression &) {}
   virtual void visit(IndexExpression &) {}
   virtual void visit(TupleExpression &) {}
@@ -103,6 +106,7 @@ public:
   virtual void visit(GroupedPattern &) {}
   virtual void visit(PathPattern &) {}
   virtual void visit(SlicePattern &) {}
+  virtual void visit(OrPattern &) {}
 
   // Top-level declaration visitors
   virtual void visit(FunctionDecl &) {}
