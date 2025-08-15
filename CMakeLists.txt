@@ -11,6 +11,15 @@ include_directories(include)
 set(SOURCES 
     src/main.cpp
     src/pretty_print.cpp
+    src/semantic/semantic.cpp
+    src/semantic/context/semanticContext.cpp
+    src/semantic/analyzer/exprAnalyzer.cpp
+    src/semantic/analyzer/stmtAnalyzer.cpp
+    src/semantic/analyzer/typeAnalyzer.cpp
+    src/semantic/analyzer/patternAnalyzer.cpp
+    src/semantic/analyzer/symbolTable.cpp
+    src/semantic/visitors/symbolChecker.cpp
+    src/semantic/visitors/typeChecker.cpp
 )
 
 # Header files (not used for build, but helpful for IDEs)
