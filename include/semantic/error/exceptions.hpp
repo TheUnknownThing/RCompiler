@@ -38,4 +38,10 @@ public:
   explicit InvalidExpressionError(const std::string &expr)
       : SemanticException("Invalid expression: " + expr) {}
 };
+
+class UndefinedBehaviorError : public SemanticException {
+public:
+  explicit UndefinedBehaviorError(const std::string &message)
+      : SemanticException("Undefined behavior: " + message) {}
+};
 } // namespace rc
