@@ -23,7 +23,9 @@ public:
   void visit(EmptyStatement &) override;
 
 private:
-  SemanticContext &ctx_;
+  SemanticContext &ctx;
 };
+
+inline StmtAnalyzer::StmtAnalyzer(SemanticContext &ctx) : ctx(ctx) {}
 
 } // namespace rc

@@ -4,7 +4,6 @@
 
 #include "ast/nodes/base.hpp"
 #include "ast/nodes/topLevel.hpp"
-#include "semantic/analyzer/symbolTable.hpp"
 #include "semantic/error/exceptions.hpp"
 
 #include <memory>
@@ -17,10 +16,18 @@ namespace rc {
 
 class SemanticContext;
 
-enum class SymbolKind { Variable, Constant, Function, Struct, Enum, Module };
+enum class SymbolKind {
+  Variable,
+  Constant,
+  Function,
+  Struct,
+  Enum,
+  Module,
+  Param
+};
 
 struct FunctionTypeInfo {
-  std::vector<LiteralType> param_types;
+  std::optional<std::vector<std::pair<std::string, LiteralType>>> parameters;
   LiteralType return_type;
 };
 
@@ -89,7 +96,7 @@ private:
 
 class SymbolChecker : public BaseVisitor {
 public:
-  explicit SymbolChecker(SemanticContext &ctx);
+  explicit SymbolChecker(SymbolTable &symbols);
 
   void build(const std::shared_ptr<RootNode> &root);
 
@@ -102,10 +109,12 @@ public:
   void visit(EnumDecl &) override;
   void visit(TraitDecl &) override;
   void visit(ImplDecl &) override;
+  void visit(BlockExpression &) override;
   void visit(RootNode &) override;
 
 private:
-  SemanticContext &ctx_;
+  SymbolTable &symbols;
+  std::vector<std::string> module_path{};
 };
 
 inline bool Scope::declare(const Symbol &sym) {
@@ -165,7 +174,7 @@ inline bool SymbolTable::contains(const std::string &name) const {
   return false;
 }
 
-inline SymbolChecker::SymbolChecker(SemanticContext &ctx) : ctx_(ctx) {}
+inline SymbolChecker::SymbolChecker(SymbolTable &symbols) : symbols(symbols) {}
 
 inline void SymbolChecker::build(const std::shared_ptr<RootNode> &root) {
   visit(*root);
@@ -188,8 +197,10 @@ inline void SymbolChecker::visit(BaseNode &node) {
     visit(*impl_decl);
   } else if (auto *root_node = dynamic_cast<RootNode *>(&node)) {
     visit(*root_node);
+  } else if (auto *block_expr = dynamic_cast<BlockExpression *>(&node)) {
+    visit(*block_expr);
   } else {
-    throw UndefinedBehaviorError("Unknown AST node type");
+    // Do nothing
   }
 }
 
@@ -199,18 +210,121 @@ inline void SymbolChecker::visit(RootNode &node) {
   }
 }
 
-inline void SymbolChecker::visit(FunctionDecl &node) {}
+inline void SymbolChecker::visit(FunctionDecl &node) {
+  Symbol sym(node.name, SymbolKind::Function);
+  sym.function_sig = FunctionTypeInfo{node.params, node.return_type};
+  if (!symbols.declare(sym)) {
+    throw SemanticException("Duplicate symbol: " + node.name);
+  }
 
-inline void SymbolChecker::visit(ConstantItem &node) {}
+  symbols.enterScope();
+  if (node.params) {
+    for (const auto &param : node.params.value()) {
+      Symbol param_sym(param.first, SymbolKind::Param);
+      param_sym.type = param.second;
+      if (!symbols.declare(param_sym)) {
+        throw SemanticException("Duplicate parameter in function '" +
+                                node.name + "': " + param.first);
+      }
+    }
+  }
 
-inline void SymbolChecker::visit(ModuleDecl &node) {}
+  if (node.body != std::nullopt) {
+    visit(*node.body.value());
+  }
 
-inline void SymbolChecker::visit(StructDecl &node) {}
+  symbols.exitScope();
+}
 
-inline void SymbolChecker::visit(EnumDecl &node) {}
+inline void SymbolChecker::visit(ConstantItem &node) {
+  Symbol sym(node.name, SymbolKind::Constant);
+  sym.type = node.type;
+  if (!symbols.declare(sym)) {
+    throw SemanticException("Duplicate symbol: " + node.name);
+  }
+}
 
-inline void SymbolChecker::visit(TraitDecl &node) {}
+inline void SymbolChecker::visit(ModuleDecl &node) {
+  Symbol sym(node.name, SymbolKind::Module);
+  ModuleTypeInfo mi;
+  mi.path = module_path;
+  mi.path.push_back(node.name);
+  sym.module_info = std::move(mi);
+  if (!symbols.declare(sym)) {
+    throw SemanticException("Duplicate symbol: " + node.name);
+  }
 
-inline void SymbolChecker::visit(ImplDecl &node) {}
+  if (node.items) {
+    module_path.push_back(node.name);
+    symbols.enterScope();
+    for (const auto &child : *node.items) {
+      visit(*child);
+    }
+    symbols.exitScope();
+    module_path.pop_back();
+  }
+}
+
+inline void SymbolChecker::visit(StructDecl &node) {
+  Symbol sym(node.name, SymbolKind::Struct);
+  StructTypeInfo si;
+  if (node.struct_type == StructDecl::StructType::Tuple) {
+    si.is_tuple = true;
+    si.tuple_fields = node.tuple_fields;
+  } else {
+    si.is_tuple = false;
+    si.fields = node.fields;
+  }
+  sym.struct_info = std::move(si);
+  if (!symbols.declare(sym)) {
+    throw SemanticException("Duplicate symbol: " + node.name);
+  }
+}
+
+inline void SymbolChecker::visit(EnumDecl &node) {
+  Symbol sym(node.name, SymbolKind::Enum);
+  EnumTypeInfo ei;
+  ei.variants.reserve(node.variants.size());
+  for (const auto &v : node.variants) {
+    EnumVariantInfo vi;
+    vi.name = v.name;
+    vi.tuple_fields = v.tuple_fields;
+    vi.struct_fields = v.struct_fields;
+    ei.variants.push_back(std::move(vi));
+  }
+  sym.enum_info = std::move(ei);
+  if (!symbols.declare(sym)) {
+    throw SemanticException("Duplicate symbol: " + node.name);
+  }
+}
+
+inline void SymbolChecker::visit(TraitDecl &node) {
+  // TODO: do we need to implement trait? leave here.
+  symbols.enterScope();
+  for (const auto &item : node.associated_items) {
+    visit(*item);
+  }
+  symbols.exitScope();
+}
+
+inline void SymbolChecker::visit(ImplDecl &node) {
+  // actually, we do not have impl now.
+  symbols.enterScope();
+  for (const auto &item : node.associated_items) {
+    visit(*item);
+  }
+  symbols.exitScope();
+}
+
+inline void SymbolChecker::visit(BlockExpression &node) {
+  symbols.enterScope();
+  for (const auto &child : node.statements) {
+    visit(*child);
+  }
+  if (node.final_expr) {
+    visit(*node.final_expr.value());
+  }
+  symbols.exitScope();
+}
 
 } // namespace rc

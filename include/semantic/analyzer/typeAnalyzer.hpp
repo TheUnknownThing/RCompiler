@@ -27,7 +27,9 @@ public:
   void visit(RootNode &) override;
 
 private:
-  SemanticContext &ctx_;
+  SemanticContext &ctx;
 };
+
+inline TypeAnalyzer::TypeAnalyzer(SemanticContext &ctx) : ctx(ctx) {}
 
 } // namespace rc

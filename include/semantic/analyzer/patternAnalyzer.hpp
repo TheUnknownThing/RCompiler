@@ -43,10 +43,12 @@ public:
   const std::vector<PatternBinding> &bindings() const;
 
 private:
-  SemanticContext &ctx_;
-  std::vector<PatternBinding> current_bindings_;
+  SemanticContext &ctx;
+  std::vector<PatternBinding> current_bindings;
 
   void addBinding(std::string name, const LiteralType &ty, bool is_mutable);
 };
+
+inline PatternAnalyzer::PatternAnalyzer(SemanticContext &ctx) : ctx(ctx) {}
 
 } // namespace rc

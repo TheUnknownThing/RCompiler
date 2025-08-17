@@ -123,7 +123,7 @@ public:
                      return std::make_shared<SlicePattern>(std::move(elems));
                    });
 
-    // FIX: Implement STRUCT pattern parsing
+    // WE DO NOT NEED TO IMPLEMENT STRUCT PATTERN!
 
     p_reference_ =
         (tok(rc::TokenType::AMPERSAND) | tok(rc::TokenType::AND))

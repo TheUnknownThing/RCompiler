@@ -44,13 +44,15 @@ public:
   std::optional<LiteralType> result() const;
 
 private:
-  SemanticContext &ctx_;
-  std::optional<LiteralType> last_type_;
+  SemanticContext &ctx;
+  std::optional<LiteralType> last_type;
 
   std::optional<LiteralType> evaluateBinary(const LiteralType &lhs,
                                             const rc::Token &op,
                                             const LiteralType &rhs);
   std::optional<LiteralType> literalToType(const LiteralExpression &lit);
 };
+
+inline ExprAnalyzer::ExprAnalyzer(SemanticContext &ctx) : ctx(ctx), last_type(std::nullopt) {}
 
 } // namespace rc

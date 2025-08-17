@@ -85,6 +85,11 @@ if (BUILD_TESTING)
     endif()
   endforeach()
 
+  # Unit: Symbol table and checker tests
+  add_executable(symbol_table_tests tests/unit/symbol_table_tests.cpp)
+  add_test(NAME symbol_table_tests COMMAND symbol_table_tests)
+  set_tests_properties(symbol_table_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "semantic;symbols;unit;stable")
+
   # Optional: integration sample (does not assert), keep as smoke
   add_executable(integration_lexer_with_preprocessor tests/integration/lexer_w_preprocessor.cpp)
   add_test(NAME integration_lexer_with_preprocessor COMMAND integration_lexer_with_preprocessor)

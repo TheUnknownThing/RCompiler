@@ -9,6 +9,7 @@
 #include "ast/visitors/pretty_print.hpp"
 #include "lexer/lexer.hpp"
 #include "preprocessor/preprocessor.hpp"
+#include "semantic/semantic.hpp"
 
 int main() {
   try {
@@ -37,6 +38,8 @@ int main() {
     } else {
       std::cout << "Failed!" << std::endl;
     }
+
+
   } catch (const std::exception &e) {
     std::cout << "Error: " << e.what() << std::endl;
     return 1;

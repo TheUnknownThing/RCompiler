@@ -14,7 +14,7 @@ public:
   void analyze(const std::shared_ptr<RootNode> &root);
 
 private:
-  SemanticContext ctx_;
+  SemanticContext ctx;
 };
 
 } // namespace rc
