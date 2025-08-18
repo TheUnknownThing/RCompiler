@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace rc {
@@ -70,8 +71,9 @@ struct Symbol {
 class Scope {
 public:
   bool declare(const Symbol &sym);
+  bool declareOrShadow(const Symbol &sym);
+
   bool contains(const std::string &name) const;
-  bool overwrite(const Symbol &sym);
   std::optional<Symbol> lookup(const std::string &name) const;
 
 private:
@@ -87,7 +89,7 @@ public:
   std::size_t depth() const;
 
   bool declare(const Symbol &sym);
-  bool overwrite(const Symbol &sym);
+  bool declareOrShadow(const Symbol &sym);
 
   std::optional<Symbol> lookup(const std::string &name) const;
   bool contains(const std::string &name) const;
@@ -157,6 +159,45 @@ public:
   void visit(RootNode &node) override;
 
 private:
+  static void ensureUniqueStructFields(
+      const std::vector<std::pair<std::string, LiteralType>> &fields,
+      const std::string &ctx_name) {
+    std::unordered_set<std::string> seen;
+    for (const auto &f : fields) {
+      if (!seen.insert(f.first).second) {
+        throw SemanticException("Duplicate field '" + f.first +
+                                "' in struct '" + ctx_name + "'");
+      }
+    }
+  }
+
+  static void
+  ensureUniqueEnumVariants(const std::vector<EnumVariantInfo> &variants,
+                           const std::string &enum_name) {
+    std::unordered_set<std::string> seen;
+    for (const auto &v : variants) {
+      if (!seen.insert(v.name).second) {
+        throw SemanticException("Duplicate variant '" + v.name + "' in enum '" +
+                                enum_name + "'");
+      }
+      if (v.tuple_fields && v.struct_fields) {
+        throw SemanticException("Enum variant '" + v.name + "' in enum '" +
+                                enum_name +
+                                "' cannot be both tuple-like and struct-like");
+      }
+      if (v.struct_fields) {
+        std::unordered_set<std::string> field_names;
+        for (const auto &sf : *v.struct_fields) {
+          if (!field_names.insert(sf.first).second) {
+            throw SemanticException("Duplicate field '" + sf.first +
+                                    "' in enum variant '" + v.name +
+                                    "' of enum '" + enum_name + "'");
+          }
+        }
+      }
+    }
+  }
+
   SymbolTable &symbols;
   std::vector<std::string> module_path{};
 };
@@ -169,16 +210,13 @@ inline bool Scope::declare(const Symbol &sym) {
   return true;
 }
 
-inline bool Scope::contains(const std::string &name) const {
-  return table_.count(name) > 0;
-}
-
-inline bool Scope::overwrite(const Symbol &sym) {
-  if (table_.count(sym.name) == 0) {
-    return false;
-  }
+inline bool Scope::declareOrShadow(const Symbol &sym) {
   table_[sym.name] = sym;
   return true;
+}
+
+inline bool Scope::contains(const std::string &name) const {
+  return table_.count(name) > 0;
 }
 
 inline std::optional<Symbol> Scope::lookup(const std::string &name) const {
@@ -196,7 +234,11 @@ inline SymbolTable::SymbolTable() {
 
 inline void SymbolTable::enterScope() { scopes_.push_back(Scope()); }
 
-inline void SymbolTable::exitScope() { scopes_.pop_back(); }
+inline void SymbolTable::exitScope() {
+  if (!scopes_.empty()) {
+    scopes_.pop_back();
+  }
+}
 
 inline std::size_t SymbolTable::depth() const { return scopes_.size(); }
 
@@ -207,11 +249,11 @@ inline bool SymbolTable::declare(const Symbol &sym) {
   return scopes_.back().declare(sym);
 }
 
-inline bool SymbolTable::overwrite(const Symbol &sym) {
+inline bool SymbolTable::declareOrShadow(const Symbol &sym) {
   if (scopes_.empty()) {
     return false;
   }
-  return scopes_.back().overwrite(sym);
+  return scopes_.back().declareOrShadow(sym);
 }
 
 inline std::optional<Symbol>
@@ -350,18 +392,19 @@ inline void SymbolChecker::visit(FunctionDecl &node) {
   Symbol sym(node.name, SymbolKind::Function);
   sym.function_sig = FunctionTypeInfo{node.params, node.return_type};
   if (!symbols.declare(sym)) {
-    throw SemanticException("Duplicate symbol: " + node.name);
+    throw SemanticException("Duplicate function: " + node.name);
   }
 
   symbols.enterScope();
   if (node.params) {
     for (const auto &param : node.params.value()) {
-      Symbol param_sym(param.first, SymbolKind::Param);
-      param_sym.type = param.second;
-      if (!symbols.declare(param_sym)) {
+      if (symbols.containsInCurrentScope(param.first)) {
         throw SemanticException("Duplicate parameter in function '" +
                                 node.name + "': " + param.first);
       }
+      Symbol param_sym(param.first, SymbolKind::Param);
+      param_sym.type = param.second;
+      symbols.declare(param_sym);
     }
   }
 
@@ -375,9 +418,11 @@ inline void SymbolChecker::visit(FunctionDecl &node) {
 inline void SymbolChecker::visit(ConstantItem &node) {
   Symbol sym(node.name, SymbolKind::Constant);
   sym.type = node.type;
+
   if (!symbols.declare(sym)) {
-    throw SemanticException("Duplicate symbol: " + node.name);
+    throw SemanticException("Duplicate constant: " + node.name);
   }
+
   if (node.value) {
     visit(*node.value.value());
   }
@@ -390,7 +435,7 @@ inline void SymbolChecker::visit(ModuleDecl &node) {
   mi.path.push_back(node.name);
   sym.module_info = std::move(mi);
   if (!symbols.declare(sym)) {
-    throw SemanticException("Duplicate symbol: " + node.name);
+    throw SemanticException("Duplicate module: " + node.name);
   }
 
   if (node.items) {
@@ -405,6 +450,12 @@ inline void SymbolChecker::visit(ModuleDecl &node) {
 }
 
 inline void SymbolChecker::visit(StructDecl &node) {
+  if (node.struct_type == StructDecl::StructType::Tuple) {
+    // we do not need to implment this
+  } else {
+    ensureUniqueStructFields(node.fields, node.name);
+  }
+
   Symbol sym(node.name, SymbolKind::Struct);
   StructTypeInfo si;
   if (node.struct_type == StructDecl::StructType::Tuple) {
@@ -415,13 +466,13 @@ inline void SymbolChecker::visit(StructDecl &node) {
     si.fields = node.fields;
   }
   sym.struct_info = std::move(si);
+
   if (!symbols.declare(sym)) {
-    throw SemanticException("Duplicate symbol: " + node.name);
+    throw SemanticException("Duplicate struct: " + node.name);
   }
 }
 
 inline void SymbolChecker::visit(EnumDecl &node) {
-  Symbol sym(node.name, SymbolKind::Enum);
   EnumTypeInfo ei;
   ei.variants.reserve(node.variants.size());
   for (const auto &v : node.variants) {
@@ -431,14 +482,18 @@ inline void SymbolChecker::visit(EnumDecl &node) {
     vi.struct_fields = v.struct_fields;
     ei.variants.push_back(std::move(vi));
   }
+
+  ensureUniqueEnumVariants(ei.variants, node.name);
+
+  Symbol sym(node.name, SymbolKind::Enum);
   sym.enum_info = std::move(ei);
+
   if (!symbols.declare(sym)) {
-    throw SemanticException("Duplicate symbol: " + node.name);
+    throw SemanticException("Duplicate enum: " + node.name);
   }
 }
 
 inline void SymbolChecker::visit(TraitDecl &node) {
-  // TODO: do we need to implement trait? leave here.
   symbols.enterScope();
   for (const auto &item : node.associated_items) {
     visit(*item);
@@ -447,7 +502,6 @@ inline void SymbolChecker::visit(TraitDecl &node) {
 }
 
 inline void SymbolChecker::visit(ImplDecl &node) {
-  // actually, we do not have impl now.
   symbols.enterScope();
   for (const auto &item : node.associated_items) {
     visit(*item);
@@ -636,6 +690,7 @@ inline void SymbolChecker::visit(IdentifierPattern &node) {
   if (node.name != "_") {
     Symbol sym(node.name, SymbolKind::Variable);
     sym.is_mutable = node.is_mutable;
+    symbols.declareOrShadow(sym);
   }
 
   if (node.subpattern) {
