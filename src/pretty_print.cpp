@@ -208,7 +208,8 @@ void PrettyPrintVisitor::visit(MatchExpression &node) {
   for (const auto &arm : node.arms) {
     print_line("MatchArm {");
     increase_indent();
-    print_line("pattern: " + arm.pattern);
+    print_line("pattern: ");
+    RC_SAFE_ACCEPT(arm.pattern);
     if (arm.guard.has_value()) {
       print_indent();
       print_inline("guard: ");

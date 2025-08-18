@@ -3,6 +3,7 @@
 #include "ast/types.hpp"
 #include "base.hpp"
 #include "lexer/lexer.hpp"
+#include "ast/nodes/pattern.hpp"
 
 #include <map>
 #include <memory>
@@ -103,7 +104,7 @@ public:
 class MatchExpression : public Expression {
 public:
   struct MatchArm {
-    std::string pattern; // Simplified - just identifier for now
+    std::shared_ptr<BasePattern> pattern;
     std::optional<std::shared_ptr<Expression>> guard;
     std::shared_ptr<Expression> body;
   };
