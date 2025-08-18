@@ -21,9 +21,9 @@ public:
 
 class BlockStatement : public Statement {
 public:
-  std::vector<Statement *> statements;
+  std::vector<std::shared_ptr<Statement>> statements;
 
-  BlockStatement(const std::vector<Statement *> &stmts) : statements(stmts) {}
+  BlockStatement(const std::vector<std::shared_ptr<Statement>> &stmts) : statements(stmts) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };

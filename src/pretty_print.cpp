@@ -409,11 +409,10 @@ void PrettyPrintVisitor::visit(BlockStatement &node) {
   increase_indent();
   print_line("statements: [");
   increase_indent();
-  for (auto *stmt : node.statements) {
+  for (const auto &stmt : node.statements) {
     print_indent();
     if (stmt) {
-      // Cast away const since the visitor pattern expects non-const
-      const_cast<Statement *>(stmt)->accept(*this);
+      stmt->accept(*this);
     } else {
       print_inline("<null>");
     }

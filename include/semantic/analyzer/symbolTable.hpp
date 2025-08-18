@@ -71,6 +71,7 @@ class Scope {
 public:
   bool declare(const Symbol &sym);
   bool contains(const std::string &name) const;
+  bool overwrite(const Symbol &sym);
   std::optional<Symbol> lookup(const std::string &name) const;
 
 private:
@@ -86,9 +87,13 @@ public:
   std::size_t depth() const;
 
   bool declare(const Symbol &sym);
+  bool overwrite(const Symbol &sym);
 
   std::optional<Symbol> lookup(const std::string &name) const;
   bool contains(const std::string &name) const;
+
+  std::optional<Symbol> lookupInCurrentScope(const std::string &name) const;
+  bool containsInCurrentScope(const std::string &name) const;
 
 private:
   std::vector<Scope> scopes_;
@@ -102,15 +107,54 @@ public:
 
   void visit(BaseNode &node) override;
 
-  void visit(FunctionDecl &) override;
-  void visit(ConstantItem &) override;
-  void visit(ModuleDecl &) override;
-  void visit(StructDecl &) override;
-  void visit(EnumDecl &) override;
-  void visit(TraitDecl &) override;
-  void visit(ImplDecl &) override;
-  void visit(BlockExpression &) override;
-  void visit(RootNode &) override;
+  // Expression visitors
+  void visit(NameExpression &node) override;
+  void visit(LiteralExpression &node) override;
+  void visit(PrefixExpression &node) override;
+  void visit(BinaryExpression &node) override;
+  void visit(GroupExpression &node) override;
+  void visit(IfExpression &node) override;
+  void visit(MatchExpression &node) override;
+  void visit(ReturnExpression &node) override;
+  void visit(CallExpression &node) override;
+  void visit(MethodCallExpression &node) override;
+  void visit(FieldAccessExpression &node) override;
+  void visit(UnderscoreExpression &node) override;
+  void visit(BlockExpression &node) override;
+  void visit(LoopExpression &node) override;
+  void visit(WhileExpression &node) override;
+  void visit(ArrayExpression &node) override;
+  void visit(IndexExpression &node) override;
+  void visit(TupleExpression &node) override;
+  void visit(BreakExpression &node) override;
+  void visit(ContinueExpression &node) override;
+  void visit(PathExpression &node) override;
+  void visit(QualifiedPathExpression &node) override;
+
+  // Statement visitors
+  void visit(BlockStatement &node) override;
+  void visit(LetStatement &node) override;
+  void visit(ExpressionStatement &node) override;
+  void visit(EmptyStatement &node) override;
+
+  // Pattern visitors
+  void visit(IdentifierPattern &node) override;
+  void visit(LiteralPattern &node) override;
+  void visit(WildcardPattern &node) override;
+  void visit(ReferencePattern &node) override;
+  void visit(StructPattern &node) override;
+  void visit(PathPattern &node) override;
+  void visit(OrPattern &node) override;
+
+  // Top-level declaration visitors
+  void visit(FunctionDecl &node) override;
+  void visit(ConstantItem &node) override;
+  void visit(ModuleDecl &node) override;
+  void visit(StructDecl &node) override;
+  void visit(EnumDecl &node) override;
+  void visit(TraitDecl &node) override;
+  void visit(ImplDecl &node) override;
+  void visit(RootNode &node) override;
 
 private:
   SymbolTable &symbols;
@@ -127,6 +171,14 @@ inline bool Scope::declare(const Symbol &sym) {
 
 inline bool Scope::contains(const std::string &name) const {
   return table_.count(name) > 0;
+}
+
+inline bool Scope::overwrite(const Symbol &sym) {
+  if (table_.count(sym.name) == 0) {
+    return false;
+  }
+  table_[sym.name] = sym;
+  return true;
 }
 
 inline std::optional<Symbol> Scope::lookup(const std::string &name) const {
@@ -155,6 +207,13 @@ inline bool SymbolTable::declare(const Symbol &sym) {
   return scopes_.back().declare(sym);
 }
 
+inline bool SymbolTable::overwrite(const Symbol &sym) {
+  if (scopes_.empty()) {
+    return false;
+  }
+  return scopes_.back().overwrite(sym);
+}
+
 inline std::optional<Symbol>
 SymbolTable::lookup(const std::string &name) const {
   for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
@@ -174,6 +233,21 @@ inline bool SymbolTable::contains(const std::string &name) const {
   return false;
 }
 
+inline std::optional<Symbol>
+SymbolTable::lookupInCurrentScope(const std::string &name) const {
+  if (!scopes_.empty()) {
+    return scopes_.back().lookup(name);
+  }
+  return std::nullopt;
+}
+
+inline bool SymbolTable::containsInCurrentScope(const std::string &name) const {
+  if (!scopes_.empty()) {
+    return scopes_.back().contains(name);
+  }
+  return false;
+}
+
 inline SymbolChecker::SymbolChecker(SymbolTable &symbols) : symbols(symbols) {}
 
 inline void SymbolChecker::build(const std::shared_ptr<RootNode> &root) {
@@ -181,26 +255,88 @@ inline void SymbolChecker::build(const std::shared_ptr<RootNode> &root) {
 }
 
 inline void SymbolChecker::visit(BaseNode &node) {
-  if (auto *func = dynamic_cast<FunctionDecl *>(&node)) {
-    visit(*func);
-  } else if (auto *const_item = dynamic_cast<ConstantItem *>(&node)) {
-    visit(*const_item);
-  } else if (auto *module = dynamic_cast<ModuleDecl *>(&node)) {
-    visit(*module);
-  } else if (auto *struct_decl = dynamic_cast<StructDecl *>(&node)) {
-    visit(*struct_decl);
-  } else if (auto *enum_decl = dynamic_cast<EnumDecl *>(&node)) {
-    visit(*enum_decl);
-  } else if (auto *trait_decl = dynamic_cast<TraitDecl *>(&node)) {
-    visit(*trait_decl);
-  } else if (auto *impl_decl = dynamic_cast<ImplDecl *>(&node)) {
-    visit(*impl_decl);
-  } else if (auto *root_node = dynamic_cast<RootNode *>(&node)) {
-    visit(*root_node);
-  } else if (auto *block_expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*block_expr);
-  } else {
-    // Do nothing
+  if (auto *expr = dynamic_cast<NameExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<LiteralExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<GroupExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<MatchExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<MethodCallExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<FieldAccessExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<UnderscoreExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<ArrayExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<IndexExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<TupleExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<BreakExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<ContinueExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<PathExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<QualifiedPathExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *stmt = dynamic_cast<BlockStatement *>(&node)) {
+    visit(*stmt);
+  } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
+    visit(*stmt);
+  } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
+    visit(*stmt);
+  } else if (auto *stmt = dynamic_cast<EmptyStatement *>(&node)) {
+    visit(*stmt);
+  } else if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<ConstantItem *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<ModuleDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *p = dynamic_cast<IdentifierPattern *>(&node)) {
+    visit(*p);
+  } else if (auto *p2 = dynamic_cast<LiteralPattern *>(&node)) {
+    visit(*p2);
+  } else if (auto *p3 = dynamic_cast<WildcardPattern *>(&node)) {
+    visit(*p3);
+  } else if (auto *p5 = dynamic_cast<ReferencePattern *>(&node)) {
+    visit(*p5);
+  } else if (auto *p6 = dynamic_cast<StructPattern *>(&node)) {
+    visit(*p6);
+  } else if (auto *p9 = dynamic_cast<PathPattern *>(&node)) {
+    visit(*p9);
+  } else if (auto *p11 = dynamic_cast<OrPattern *>(&node)) {
+    visit(*p11);
+  } else if (auto *root = dynamic_cast<RootNode *>(&node)) {
+    visit(*root);
   }
 }
 
@@ -241,6 +377,9 @@ inline void SymbolChecker::visit(ConstantItem &node) {
   sym.type = node.type;
   if (!symbols.declare(sym)) {
     throw SemanticException("Duplicate symbol: " + node.name);
+  }
+  if (node.value) {
+    visit(*node.value.value());
   }
 }
 
@@ -325,6 +464,207 @@ inline void SymbolChecker::visit(BlockExpression &node) {
     visit(*node.final_expr.value());
   }
   symbols.exitScope();
+}
+
+inline void SymbolChecker::visit(NameExpression &node) {
+  if (!symbols.lookup(node.name).has_value()) {
+    throw UndefinedVariableError(node.name);
+  }
+}
+
+inline void SymbolChecker::visit(LiteralExpression &node) { (void)node; }
+
+inline void SymbolChecker::visit(PrefixExpression &node) {
+  if (node.right) {
+    node.right->accept(*this);
+  }
+}
+
+inline void SymbolChecker::visit(BinaryExpression &node) {
+  if (node.left)
+    node.left->accept(*this);
+  if (node.right)
+    node.right->accept(*this);
+}
+
+inline void SymbolChecker::visit(GroupExpression &node) {
+  if (node.inner)
+    node.inner->accept(*this);
+}
+
+inline void SymbolChecker::visit(IfExpression &node) {
+  if (node.condition)
+    node.condition->accept(*this);
+  if (node.then_block)
+    node.then_block->accept(*this);
+  if (node.else_block)
+    node.else_block.value()->accept(*this);
+}
+
+inline void SymbolChecker::visit(CallExpression &node) {
+  if (node.function_name)
+    node.function_name->accept(*this);
+  for (const auto &arg : node.arguments) {
+    if (arg)
+      arg->accept(*this);
+  }
+}
+
+inline void SymbolChecker::visit(MethodCallExpression &node) {
+  if (node.receiver)
+    node.receiver->accept(*this);
+  for (const auto &arg : node.arguments) {
+    if (arg)
+      arg->accept(*this);
+  }
+}
+
+inline void SymbolChecker::visit(FieldAccessExpression &node) {
+  if (node.target)
+    node.target->accept(*this);
+}
+
+inline void SymbolChecker::visit(MatchExpression &node) {
+  if (node.scrutinee)
+    node.scrutinee->accept(*this);
+  for (const auto &arm : node.arms) {
+    if (arm.guard)
+      arm.guard.value()->accept(*this);
+    if (arm.body)
+      arm.body->accept(*this);
+  }
+}
+
+inline void SymbolChecker::visit(ReturnExpression &node) {
+  if (node.value)
+    node.value.value()->accept(*this);
+}
+
+inline void SymbolChecker::visit(UnderscoreExpression &node) { (void)node; }
+
+inline void SymbolChecker::visit(LoopExpression &node) {
+  if (node.body)
+    node.body->accept(*this);
+}
+
+inline void SymbolChecker::visit(WhileExpression &node) {
+  if (node.condition)
+    node.condition->accept(*this);
+  if (node.body)
+    node.body->accept(*this);
+}
+
+inline void SymbolChecker::visit(ArrayExpression &node) {
+  if (node.repeat) {
+    if (node.repeat->first)
+      node.repeat->first->accept(*this);
+    if (node.repeat->second)
+      node.repeat->second->accept(*this);
+  } else {
+    for (const auto &el : node.elements) {
+      if (el)
+        el->accept(*this);
+    }
+  }
+}
+
+inline void SymbolChecker::visit(IndexExpression &node) {
+  if (node.target)
+    node.target->accept(*this);
+  if (node.index)
+    node.index->accept(*this);
+}
+
+inline void SymbolChecker::visit(TupleExpression &node) {
+  for (const auto &el : node.elements) {
+    if (el)
+      el->accept(*this);
+  }
+}
+
+inline void SymbolChecker::visit(BreakExpression &node) {
+  if (node.expr)
+    node.expr.value()->accept(*this);
+}
+
+inline void SymbolChecker::visit(ContinueExpression &node) { (void)node; }
+
+inline void SymbolChecker::visit(PathExpression &node) {
+  for (const auto &seg : node.segments) {
+    if (seg.call) {
+      for (const auto &arg : seg.call->args) {
+        if (arg)
+          arg->accept(*this);
+      }
+    }
+  }
+}
+
+inline void SymbolChecker::visit(QualifiedPathExpression &node) {
+  PathExpression tmp(false, {});
+  tmp.segments = node.segments;
+  visit(tmp);
+}
+
+inline void SymbolChecker::visit(BlockStatement &node) {
+  symbols.enterScope();
+  for (const auto &stmt : node.statements) {
+    if (stmt) {
+      stmt->accept(*this);
+    }
+  }
+  symbols.exitScope();
+}
+
+inline void SymbolChecker::visit(LetStatement &node) {
+  if (node.expr)
+    node.expr->accept(*this);
+
+  if (node.pattern) {
+    node.pattern->accept(*this);
+  }
+}
+
+inline void SymbolChecker::visit(ExpressionStatement &node) {
+  if (node.expression)
+    node.expression->accept(*this);
+}
+
+inline void SymbolChecker::visit(EmptyStatement &node) { (void)node; }
+
+inline void SymbolChecker::visit(IdentifierPattern &node) {
+  if (node.name != "_") {
+    Symbol sym(node.name, SymbolKind::Variable);
+    sym.is_mutable = node.is_mutable;
+  }
+
+  if (node.subpattern) {
+    node.subpattern.value()->accept(*this);
+  }
+}
+
+inline void SymbolChecker::visit(LiteralPattern &node) { (void)node; }
+
+inline void SymbolChecker::visit(WildcardPattern &node) { (void)node; }
+
+inline void SymbolChecker::visit(ReferencePattern &node) {
+  if (node.inner_pattern)
+    node.inner_pattern->accept(*this);
+}
+
+inline void SymbolChecker::visit(StructPattern &node) {
+  for (const auto &field : node.fields) {
+    if (field.pattern)
+      field.pattern->accept(*this);
+  }
+}
+
+inline void SymbolChecker::visit(PathPattern &node) { (void)node; }
+
+inline void SymbolChecker::visit(OrPattern &node) {
+  for (auto &alt : node.alternatives)
+    if (alt)
+      alt->accept(*this);
 }
 
 } // namespace rc
