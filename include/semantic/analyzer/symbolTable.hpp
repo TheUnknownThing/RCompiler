@@ -23,6 +23,7 @@ enum class SymbolKind {
   Function,
   Struct,
   Enum,
+  EnumVariant,
   Module,
   Param
 };
@@ -40,8 +41,7 @@ struct StructTypeInfo {
 
 struct EnumVariantInfo {
   std::string name;
-  std::optional<std::vector<LiteralType>> tuple_fields;
-  std::optional<std::vector<std::pair<std::string, LiteralType>>> struct_fields;
+  bool isNullary() const { return true; }
 };
 
 struct EnumTypeInfo {
@@ -63,6 +63,7 @@ struct Symbol {
   std::optional<StructTypeInfo> struct_info;
   std::optional<EnumTypeInfo> enum_info;
   std::optional<ModuleTypeInfo> module_info;
+  std::optional<std::pair<std::string, EnumVariantInfo>> enum_variant_info;
 
   Symbol() = default;
   Symbol(std::string n, SymbolKind k) : name(std::move(n)), kind(k) {}
@@ -159,47 +160,19 @@ public:
   void visit(RootNode &node) override;
 
 private:
-  static void ensureUniqueStructFields(
-      const std::vector<std::pair<std::string, LiteralType>> &fields,
-      const std::string &ctx_name) {
-    std::unordered_set<std::string> seen;
-    for (const auto &f : fields) {
-      if (!seen.insert(f.first).second) {
-        throw SemanticException("Duplicate field '" + f.first +
-                                "' in struct '" + ctx_name + "'");
-      }
-    }
-  }
-
-  static void
-  ensureUniqueEnumVariants(const std::vector<EnumVariantInfo> &variants,
-                           const std::string &enum_name) {
-    std::unordered_set<std::string> seen;
-    for (const auto &v : variants) {
-      if (!seen.insert(v.name).second) {
-        throw SemanticException("Duplicate variant '" + v.name + "' in enum '" +
-                                enum_name + "'");
-      }
-      if (v.tuple_fields && v.struct_fields) {
-        throw SemanticException("Enum variant '" + v.name + "' in enum '" +
-                                enum_name +
-                                "' cannot be both tuple-like and struct-like");
-      }
-      if (v.struct_fields) {
-        std::unordered_set<std::string> field_names;
-        for (const auto &sf : *v.struct_fields) {
-          if (!field_names.insert(sf.first).second) {
-            throw SemanticException("Duplicate field '" + sf.first +
-                                    "' in enum variant '" + v.name +
-                                    "' of enum '" + enum_name + "'");
-          }
-        }
-      }
-    }
-  }
+  enum class Pass { Declaration, Analysis };
+  Pass current_pass_;
 
   SymbolTable &symbols;
   std::vector<std::string> module_path{};
+
+  static void ensureUniqueStructFields(
+      const std::vector<std::pair<std::string, LiteralType>> &fields,
+      const std::string &ctx_name);
+
+  static void
+  ensureUniqueEnumVariants(const std::vector<EnumVariantInfo> &variants,
+                           const std::string &enum_name);
 };
 
 inline bool Scope::declare(const Symbol &sym) {
@@ -243,17 +216,11 @@ inline void SymbolTable::exitScope() {
 inline std::size_t SymbolTable::depth() const { return scopes_.size(); }
 
 inline bool SymbolTable::declare(const Symbol &sym) {
-  if (scopes_.empty()) {
-    return false;
-  }
-  return scopes_.back().declare(sym);
+  return !scopes_.empty() && scopes_.back().declare(sym);
 }
 
 inline bool SymbolTable::declareOrShadow(const Symbol &sym) {
-  if (scopes_.empty()) {
-    return false;
-  }
-  return scopes_.back().declareOrShadow(sym);
+  return !scopes_.empty() && scopes_.back().declareOrShadow(sym);
 }
 
 inline std::optional<Symbol>
@@ -267,32 +234,25 @@ SymbolTable::lookup(const std::string &name) const {
 }
 
 inline bool SymbolTable::contains(const std::string &name) const {
-  for (const auto &scope : scopes_) {
-    if (scope.contains(name)) {
-      return true;
-    }
-  }
-  return false;
+  return lookup(name).has_value();
 }
 
 inline std::optional<Symbol>
 SymbolTable::lookupInCurrentScope(const std::string &name) const {
-  if (!scopes_.empty()) {
-    return scopes_.back().lookup(name);
-  }
-  return std::nullopt;
+  return !scopes_.empty() ? scopes_.back().lookup(name) : std::nullopt;
 }
 
 inline bool SymbolTable::containsInCurrentScope(const std::string &name) const {
-  if (!scopes_.empty()) {
-    return scopes_.back().contains(name);
-  }
-  return false;
+  return !scopes_.empty() && scopes_.back().contains(name);
 }
 
 inline SymbolChecker::SymbolChecker(SymbolTable &symbols) : symbols(symbols) {}
 
 inline void SymbolChecker::build(const std::shared_ptr<RootNode> &root) {
+  current_pass_ = Pass::Declaration;
+  visit(*root);
+
+  current_pass_ = Pass::Analysis;
   visit(*root);
 }
 
@@ -389,53 +349,56 @@ inline void SymbolChecker::visit(RootNode &node) {
 }
 
 inline void SymbolChecker::visit(FunctionDecl &node) {
-  Symbol sym(node.name, SymbolKind::Function);
-  sym.function_sig = FunctionTypeInfo{node.params, node.return_type};
-  if (!symbols.declare(sym)) {
-    throw SemanticException("Duplicate function: " + node.name);
-  }
-
-  symbols.enterScope();
-  if (node.params) {
-    for (const auto &param : node.params.value()) {
-      if (symbols.containsInCurrentScope(param.first)) {
-        throw SemanticException("Duplicate parameter in function '" +
-                                node.name + "': " + param.first);
-      }
-      Symbol param_sym(param.first, SymbolKind::Param);
-      param_sym.type = param.second;
-      symbols.declare(param_sym);
+  if (current_pass_ == Pass::Declaration) {
+    Symbol sym(node.name, SymbolKind::Function);
+    sym.function_sig = FunctionTypeInfo{node.params, node.return_type};
+    if (!symbols.declare(sym)) {
+      throw SemanticException("Duplicate function: " + node.name);
     }
+  } else {
+    symbols.enterScope();
+    if (node.params) {
+      for (const auto &param : node.params.value()) {
+        if (symbols.containsInCurrentScope(param.first)) {
+          throw SemanticException("Duplicate parameter in function '" +
+                                  node.name + "': " + param.first);
+        }
+        Symbol param_sym(param.first, SymbolKind::Param);
+        param_sym.type = param.second;
+        symbols.declare(param_sym);
+      }
+    }
+    if (node.body) {
+      visit(*node.body.value());
+    }
+    symbols.exitScope();
   }
-
-  if (node.body != std::nullopt) {
-    visit(*node.body.value());
-  }
-
-  symbols.exitScope();
 }
 
 inline void SymbolChecker::visit(ConstantItem &node) {
-  Symbol sym(node.name, SymbolKind::Constant);
-  sym.type = node.type;
-
-  if (!symbols.declare(sym)) {
-    throw SemanticException("Duplicate constant: " + node.name);
-  }
-
-  if (node.value) {
-    visit(*node.value.value());
+  if (current_pass_ == Pass::Declaration) {
+    Symbol sym(node.name, SymbolKind::Constant);
+    sym.type = node.type;
+    if (!symbols.declare(sym)) {
+      throw SemanticException("Duplicate constant: " + node.name);
+    }
+  } else {
+    if (node.value) {
+      visit(*node.value.value());
+    }
   }
 }
 
 inline void SymbolChecker::visit(ModuleDecl &node) {
-  Symbol sym(node.name, SymbolKind::Module);
-  ModuleTypeInfo mi;
-  mi.path = module_path;
-  mi.path.push_back(node.name);
-  sym.module_info = std::move(mi);
-  if (!symbols.declare(sym)) {
-    throw SemanticException("Duplicate module: " + node.name);
+  if (current_pass_ == Pass::Declaration) {
+    Symbol sym(node.name, SymbolKind::Module);
+    ModuleTypeInfo mi;
+    mi.path = module_path;
+    mi.path.push_back(node.name);
+    sym.module_info = std::move(mi);
+    if (!symbols.declare(sym)) {
+      throw SemanticException("Duplicate module: " + node.name);
+    }
   }
 
   if (node.items) {
@@ -450,46 +413,49 @@ inline void SymbolChecker::visit(ModuleDecl &node) {
 }
 
 inline void SymbolChecker::visit(StructDecl &node) {
-  if (node.struct_type == StructDecl::StructType::Tuple) {
-    // we do not need to implment this
-  } else {
-    ensureUniqueStructFields(node.fields, node.name);
-  }
+  if (current_pass_ == Pass::Declaration) {
+    if (node.struct_type != StructDecl::StructType::Tuple) {
+      ensureUniqueStructFields(node.fields, node.name);
+    }
 
-  Symbol sym(node.name, SymbolKind::Struct);
-  StructTypeInfo si;
-  if (node.struct_type == StructDecl::StructType::Tuple) {
-    si.is_tuple = true;
-    si.tuple_fields = node.tuple_fields;
-  } else {
-    si.is_tuple = false;
-    si.fields = node.fields;
-  }
-  sym.struct_info = std::move(si);
-
-  if (!symbols.declare(sym)) {
-    throw SemanticException("Duplicate struct: " + node.name);
+    Symbol sym(node.name, SymbolKind::Struct);
+    StructTypeInfo si;
+    si.is_tuple = (node.struct_type == StructDecl::StructType::Tuple);
+    if (si.is_tuple) {
+      si.tuple_fields = node.tuple_fields;
+    } else {
+      si.fields = node.fields;
+    }
+    sym.struct_info = std::move(si);
+    if (!symbols.declare(sym)) {
+      throw SemanticException("Duplicate struct: " + node.name);
+    }
   }
 }
 
 inline void SymbolChecker::visit(EnumDecl &node) {
-  EnumTypeInfo ei;
-  ei.variants.reserve(node.variants.size());
-  for (const auto &v : node.variants) {
-    EnumVariantInfo vi;
-    vi.name = v.name;
-    vi.tuple_fields = v.tuple_fields;
-    vi.struct_fields = v.struct_fields;
-    ei.variants.push_back(std::move(vi));
-  }
+  if (current_pass_ == Pass::Declaration) {
+    EnumTypeInfo ei;
+    ei.variants.reserve(node.variants.size());
+    for (const auto &v : node.variants) {
+      EnumVariantInfo vi;
+      vi.name = v.name;
+      ei.variants.push_back(std::move(vi));
+    }
 
-  ensureUniqueEnumVariants(ei.variants, node.name);
+    ensureUniqueEnumVariants(ei.variants, node.name);
 
-  Symbol sym(node.name, SymbolKind::Enum);
-  sym.enum_info = std::move(ei);
+    Symbol enum_sym(node.name, SymbolKind::Enum);
+    enum_sym.enum_info = ei;
+    if (!symbols.declare(enum_sym)) {
+      throw SemanticException("Duplicate enum: " + node.name);
+    }
 
-  if (!symbols.declare(sym)) {
-    throw SemanticException("Duplicate enum: " + node.name);
+    for (const auto &variant_info : enum_sym.enum_info->variants) {
+      Symbol variant_sym(variant_info.name, SymbolKind::EnumVariant);
+      variant_sym.enum_variant_info = std::make_pair(node.name, variant_info);
+      symbols.declareOrShadow(variant_sym);
+    }
   }
 }
 
@@ -509,7 +475,47 @@ inline void SymbolChecker::visit(ImplDecl &node) {
   symbols.exitScope();
 }
 
+inline void SymbolChecker::visit(IdentifierPattern &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
+
+  if (node.name == "_") {
+    if (node.subpattern) {
+      node.subpattern.value()->accept(*this);
+    }
+    return;
+  }
+
+  bool is_binding = false;
+
+  if (node.subpattern) {
+    is_binding = true;
+  } else {
+    auto existing_sym = symbols.lookup(node.name);
+    if (existing_sym &&
+        (existing_sym->kind == SymbolKind::Constant ||
+         (existing_sym->kind == SymbolKind::EnumVariant &&
+          existing_sym->enum_variant_info->second.isNullary()))) {
+      is_binding = false;
+    } else {
+      is_binding = true;
+    }
+  }
+
+  if (is_binding) {
+    Symbol sym(node.name, SymbolKind::Variable);
+    sym.is_mutable = node.is_mutable;
+    symbols.declareOrShadow(sym);
+  }
+
+  if (node.subpattern) {
+    node.subpattern.value()->accept(*this);
+  }
+}
+
 inline void SymbolChecker::visit(BlockExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   symbols.enterScope();
   for (const auto &child : node.statements) {
     visit(*child);
@@ -521,7 +527,9 @@ inline void SymbolChecker::visit(BlockExpression &node) {
 }
 
 inline void SymbolChecker::visit(NameExpression &node) {
-  if (!symbols.lookup(node.name).has_value()) {
+  if (current_pass_ == Pass::Declaration)
+    return;
+  if (!symbols.lookup(node.name)) {
     throw UndefinedVariableError(node.name);
   }
 }
@@ -529,12 +537,16 @@ inline void SymbolChecker::visit(NameExpression &node) {
 inline void SymbolChecker::visit(LiteralExpression &node) { (void)node; }
 
 inline void SymbolChecker::visit(PrefixExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.right) {
     node.right->accept(*this);
   }
 }
 
 inline void SymbolChecker::visit(BinaryExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.left)
     node.left->accept(*this);
   if (node.right)
@@ -542,11 +554,15 @@ inline void SymbolChecker::visit(BinaryExpression &node) {
 }
 
 inline void SymbolChecker::visit(GroupExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.inner)
     node.inner->accept(*this);
 }
 
 inline void SymbolChecker::visit(IfExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.condition)
     node.condition->accept(*this);
   if (node.then_block)
@@ -556,6 +572,8 @@ inline void SymbolChecker::visit(IfExpression &node) {
 }
 
 inline void SymbolChecker::visit(CallExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.function_name)
     node.function_name->accept(*this);
   for (const auto &arg : node.arguments) {
@@ -565,6 +583,8 @@ inline void SymbolChecker::visit(CallExpression &node) {
 }
 
 inline void SymbolChecker::visit(MethodCallExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.receiver)
     node.receiver->accept(*this);
   for (const auto &arg : node.arguments) {
@@ -574,22 +594,32 @@ inline void SymbolChecker::visit(MethodCallExpression &node) {
 }
 
 inline void SymbolChecker::visit(FieldAccessExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.target)
     node.target->accept(*this);
 }
 
 inline void SymbolChecker::visit(MatchExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.scrutinee)
     node.scrutinee->accept(*this);
   for (const auto &arm : node.arms) {
+    symbols.enterScope();
+    if (arm.pattern)
+      arm.pattern->accept(*this);
     if (arm.guard)
       arm.guard.value()->accept(*this);
     if (arm.body)
       arm.body->accept(*this);
+    symbols.exitScope();
   }
 }
 
 inline void SymbolChecker::visit(ReturnExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.value)
     node.value.value()->accept(*this);
 }
@@ -597,11 +627,15 @@ inline void SymbolChecker::visit(ReturnExpression &node) {
 inline void SymbolChecker::visit(UnderscoreExpression &node) { (void)node; }
 
 inline void SymbolChecker::visit(LoopExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.body)
     node.body->accept(*this);
 }
 
 inline void SymbolChecker::visit(WhileExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.condition)
     node.condition->accept(*this);
   if (node.body)
@@ -609,6 +643,8 @@ inline void SymbolChecker::visit(WhileExpression &node) {
 }
 
 inline void SymbolChecker::visit(ArrayExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.repeat) {
     if (node.repeat->first)
       node.repeat->first->accept(*this);
@@ -623,6 +659,8 @@ inline void SymbolChecker::visit(ArrayExpression &node) {
 }
 
 inline void SymbolChecker::visit(IndexExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.target)
     node.target->accept(*this);
   if (node.index)
@@ -630,6 +668,8 @@ inline void SymbolChecker::visit(IndexExpression &node) {
 }
 
 inline void SymbolChecker::visit(TupleExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   for (const auto &el : node.elements) {
     if (el)
       el->accept(*this);
@@ -637,6 +677,8 @@ inline void SymbolChecker::visit(TupleExpression &node) {
 }
 
 inline void SymbolChecker::visit(BreakExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.expr)
     node.expr.value()->accept(*this);
 }
@@ -644,6 +686,9 @@ inline void SymbolChecker::visit(BreakExpression &node) {
 inline void SymbolChecker::visit(ContinueExpression &node) { (void)node; }
 
 inline void SymbolChecker::visit(PathExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
+  // TODO: resolve path
   for (const auto &seg : node.segments) {
     if (seg.call) {
       for (const auto &arg : seg.call->args) {
@@ -655,12 +700,16 @@ inline void SymbolChecker::visit(PathExpression &node) {
 }
 
 inline void SymbolChecker::visit(QualifiedPathExpression &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   PathExpression tmp(false, {});
   tmp.segments = node.segments;
   visit(tmp);
 }
 
 inline void SymbolChecker::visit(BlockStatement &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   symbols.enterScope();
   for (const auto &stmt : node.statements) {
     if (stmt) {
@@ -671,6 +720,8 @@ inline void SymbolChecker::visit(BlockStatement &node) {
 }
 
 inline void SymbolChecker::visit(LetStatement &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.expr)
     node.expr->accept(*this);
 
@@ -680,34 +731,28 @@ inline void SymbolChecker::visit(LetStatement &node) {
 }
 
 inline void SymbolChecker::visit(ExpressionStatement &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.expression)
     node.expression->accept(*this);
 }
 
 inline void SymbolChecker::visit(EmptyStatement &node) { (void)node; }
 
-inline void SymbolChecker::visit(IdentifierPattern &node) {
-  if (node.name != "_") {
-    Symbol sym(node.name, SymbolKind::Variable);
-    sym.is_mutable = node.is_mutable;
-    symbols.declareOrShadow(sym);
-  }
-
-  if (node.subpattern) {
-    node.subpattern.value()->accept(*this);
-  }
-}
-
 inline void SymbolChecker::visit(LiteralPattern &node) { (void)node; }
 
 inline void SymbolChecker::visit(WildcardPattern &node) { (void)node; }
 
 inline void SymbolChecker::visit(ReferencePattern &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   if (node.inner_pattern)
     node.inner_pattern->accept(*this);
 }
 
 inline void SymbolChecker::visit(StructPattern &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   for (const auto &field : node.fields) {
     if (field.pattern)
       field.pattern->accept(*this);
@@ -717,9 +762,35 @@ inline void SymbolChecker::visit(StructPattern &node) {
 inline void SymbolChecker::visit(PathPattern &node) { (void)node; }
 
 inline void SymbolChecker::visit(OrPattern &node) {
+  if (current_pass_ == Pass::Declaration)
+    return;
   for (auto &alt : node.alternatives)
     if (alt)
       alt->accept(*this);
+}
+
+inline void SymbolChecker::ensureUniqueStructFields(
+    const std::vector<std::pair<std::string, LiteralType>> &fields,
+    const std::string &ctx_name) {
+  std::unordered_set<std::string> seen;
+  for (const auto &f : fields) {
+    if (!seen.insert(f.first).second) {
+      throw SemanticException("Duplicate field '" + f.first + "' in struct '" +
+                              ctx_name + "'");
+    }
+  }
+}
+
+inline void SymbolChecker::ensureUniqueEnumVariants(
+    const std::vector<EnumVariantInfo> &variants,
+    const std::string &enum_name) {
+  std::unordered_set<std::string> seen;
+  for (const auto &v : variants) {
+    if (!seen.insert(v.name).second) {
+      throw SemanticException("Duplicate variant '" + v.name + "' in enum '" +
+                              enum_name + "'");
+    }
+  }
 }
 
 } // namespace rc
