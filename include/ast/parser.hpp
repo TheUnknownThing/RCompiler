@@ -381,75 +381,15 @@ inline parsec::Parser<std::shared_ptr<ModuleDecl>> Parser::parse_module() {
 inline parsec::Parser<std::shared_ptr<EnumDecl>> Parser::parse_enum() {
   using EV = EnumDecl::EnumVariant;
 
-  // tuple fields: ( T, T, ... )
-  auto tuple_fields =
-      tok(TokenType::L_PAREN)
-          .thenR(many(typ.thenL(optional(tok(TokenType::COMMA)))))
-          .thenL(tok(TokenType::R_PAREN));
-
-  // struct fields: { name : T, ... }
-  auto field = parsec::identifier.thenL(tok(TokenType::COLON))
-                   .combine(typ, [](const auto &id, const auto &t) {
-                     return std::make_pair(id, t);
-                   });
-  auto struct_fields =
-      tok(TokenType::L_BRACE)
-          .thenR(many(field.thenL(optional(tok(TokenType::COMMA)))))
-          .thenL(tok(TokenType::R_BRACE));
-
-  // body: either tuple fields or struct fields
-  auto variant_body = parsec::Parser<std::tuple<
-      std::optional<std::vector<LiteralType>>,
-      std::optional<std::vector<std::pair<std::string, LiteralType>>>>>(
-      [tuple_fields, struct_fields](const std::vector<rc::Token> &toks,
-                                    size_t &pos)
-          -> parsec::ParseResult<
-              std::tuple<std::optional<std::vector<LiteralType>>,
-                         std::optional<std::vector<
-                             std::pair<std::string, LiteralType>>>>> {
-        size_t saved = pos;
-        if (auto tf = tuple_fields.parse(toks, pos)) {
-          return std::make_tuple(
-              std::optional<std::vector<LiteralType>>(*tf),
-              std::optional<std::vector<std::pair<std::string, LiteralType>>>(
-                  std::nullopt));
-        }
-        pos = saved;
-        if (auto sf = struct_fields.parse(toks, pos)) {
-          return std::make_tuple(
-              std::optional<std::vector<LiteralType>>(std::nullopt),
-              std::optional<std::vector<std::pair<std::string, LiteralType>>>(
-                  *sf));
-        }
-        pos = saved;
-        // No body
-        return std::make_tuple(
-            std::optional<std::vector<LiteralType>>(std::nullopt),
-            std::optional<std::vector<std::pair<std::string, LiteralType>>>(
-                std::nullopt));
-      });
-
-  auto variant = parsec::identifier.combine(
-      variant_body, [](const auto &name, const auto &body) {
-        EV v;
-        v.name = name;
-        v.tuple_fields = std::get<0>(body);
-        v.struct_fields = std::get<1>(body);
-        return v;
-      });
-
-  // optional discriminant: = expr
-  auto variant_with_discriminant =
-      variant.combine(optional(tok(TokenType::ASSIGN).thenR(any_expression())),
-                      [](auto v, auto disc) {
-                        v.discriminant = disc;
-                        return v;
-                      });
+  auto variant = parsec::identifier.map([](const std::string &name) {
+    EV v;
+    v.name = name;
+    return v;
+  });
 
   return parsec::Parser<std::shared_ptr<EnumDecl>>(
-      [variant_with_discriminant](
-          const std::vector<rc::Token> &toks,
-          size_t &pos) -> parsec::ParseResult<std::shared_ptr<EnumDecl>> {
+      [variant](const std::vector<rc::Token> &toks,
+                size_t &pos) -> parsec::ParseResult<std::shared_ptr<EnumDecl>> {
         size_t saved = pos;
         if (!tok(TokenType::ENUM).parse(toks, pos)) {
           pos = saved;
@@ -480,8 +420,7 @@ inline parsec::Parser<std::shared_ptr<EnumDecl>> Parser::parse_enum() {
           pos = before;
         }
 
-        // First variant
-        auto first = variant_with_discriminant.parse(toks, pos);
+        auto first = variant.parse(toks, pos);
         if (!first) {
           pos = saved;
           LOG_ERROR("Expected enum variant after '{' in enum '" + name + "'");
@@ -505,7 +444,7 @@ inline parsec::Parser<std::shared_ptr<EnumDecl>> Parser::parse_enum() {
           }
           pos = before_next;
 
-          auto next = variant_with_discriminant.parse(toks, pos);
+          auto next = variant.parse(toks, pos);
           if (!next) {
             pos = saved;
             LOG_ERROR("Expected enum variant after ',' in enum '" + name + "'");

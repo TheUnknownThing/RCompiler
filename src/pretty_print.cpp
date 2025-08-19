@@ -584,33 +584,6 @@ void PrettyPrintVisitor::visit(EnumDecl &node) {
     increase_indent();
     print_line("name: " + variant.name);
 
-    if (variant.tuple_fields.has_value()) {
-      print_line("tuple_fields: [");
-      increase_indent();
-      for (const auto &field : variant.tuple_fields.value()) {
-        print_line(format_type(field));
-      }
-      decrease_indent();
-      print_line("]");
-    }
-
-    if (variant.struct_fields.has_value()) {
-      print_line("struct_fields: [");
-      increase_indent();
-      for (const auto &field : variant.struct_fields.value()) {
-        print_line("(" + field.first + ": " + format_type(field.second) + ")");
-      }
-      decrease_indent();
-      print_line("]");
-    }
-
-    if (variant.discriminant.has_value()) {
-      print_indent();
-      print_inline("discriminant: ");
-      RC_SAFE_ACCEPT(variant.discriminant.value());
-      output_ << std::endl;
-    }
-
     decrease_indent();
     print_line("}");
   }

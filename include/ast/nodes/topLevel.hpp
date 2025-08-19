@@ -85,10 +85,6 @@ class EnumDecl : public BaseItem {
 public:
   struct EnumVariant {
     std::string name;
-    std::optional<std::vector<LiteralType>> tuple_fields;
-    std::optional<std::vector<std::pair<std::string, LiteralType>>>
-        struct_fields;
-    std::optional<std::shared_ptr<Expression>> discriminant;
   };
 
   std::string name;
