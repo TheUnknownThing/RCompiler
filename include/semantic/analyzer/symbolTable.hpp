@@ -17,6 +17,17 @@ namespace rc {
 
 class SemanticContext;
 
+enum class ScopeKind {
+  Root,
+  Module,
+  Function,
+  Block,
+  Trait,
+  Impl,
+  MatchArm,
+  Unknown,
+};
+
 enum class SymbolKind {
   Variable,
   Constant,
@@ -81,11 +92,32 @@ private:
   std::unordered_map<std::string, Symbol> table_;
 };
 
+struct ScopeNode {
+  std::size_t id;
+  std::size_t depth;
+  ScopeKind kind = ScopeKind::Unknown;
+  const BaseNode *owner = nullptr;
+  std::string label;
+
+  ScopeNode *parent = nullptr;
+  std::vector<std::unique_ptr<ScopeNode>> children{};
+
+  std::unordered_map<std::string, Symbol> table;
+
+  std::optional<Symbol> lookupLocal(const std::string &name) const {
+    auto it = table.find(name);
+    if (it != table.end())
+      return it->second;
+    return std::nullopt;
+  }
+};
+
 class SymbolTable {
 public:
   SymbolTable();
 
-  void enterScope();
+  void enterScope(ScopeKind kind = ScopeKind::Unknown,
+                  const BaseNode *owner = nullptr, std::string label = {});
   void exitScope();
   std::size_t depth() const;
 
@@ -98,8 +130,13 @@ public:
   std::optional<Symbol> lookupInCurrentScope(const std::string &name) const;
   bool containsInCurrentScope(const std::string &name) const;
 
-private:
-  std::vector<Scope> scopes_;
+  const ScopeNode *scopeFor(const BaseNode *owner) const;
+  void attachCurrentTo(const BaseNode *owner);
+
+  std::unique_ptr<ScopeNode> root;
+  ScopeNode *current = nullptr;
+  std::size_t next_id = 0;
+  std::unordered_map<const BaseNode *, ScopeNode *> owner_to_scope;
 };
 
 class SymbolChecker : public BaseVisitor {
@@ -201,34 +238,70 @@ inline std::optional<Symbol> Scope::lookup(const std::string &name) const {
 }
 
 inline SymbolTable::SymbolTable() {
-  scopes_.clear();
-  scopes_.push_back(Scope());
+  root = std::make_unique<ScopeNode>();
+  root->id = next_id++;
+  root->depth = 0;
+  root->kind = ScopeKind::Root;
+  root->label = "<root>";
+  root->parent = nullptr;
+  current = root.get();
 }
 
-inline void SymbolTable::enterScope() { scopes_.push_back(Scope()); }
+inline void SymbolTable::enterScope(ScopeKind kind, const BaseNode *owner,
+                                    std::string label) {
+  auto node = std::make_unique<ScopeNode>();
+  node->id = next_id++;
+  node->depth = current ? current->depth + 1 : 0;
+  node->kind = kind;
+  node->owner = owner;
+  node->label = std::move(label);
+  node->parent = current;
+
+  ScopeNode *raw = node.get();
+  if (current) {
+    current->children.push_back(std::move(node));
+  } else {
+    root = std::move(node);
+  }
+  current = raw;
+  if (owner)
+    owner_to_scope[owner] = raw;
+}
 
 inline void SymbolTable::exitScope() {
-  if (!scopes_.empty()) {
-    scopes_.pop_back();
-  }
+  if (!current)
+    return;
+  current = current->parent ? current->parent : current;
 }
 
-inline std::size_t SymbolTable::depth() const { return scopes_.size(); }
+inline std::size_t SymbolTable::depth() const {
+  return current ? (current->depth + 1) : 0;
+}
 
 inline bool SymbolTable::declare(const Symbol &sym) {
-  return !scopes_.empty() && scopes_.back().declare(sym);
+  if (!current)
+    return false;
+  if (current->table.count(sym.name))
+    return false;
+  current->table[sym.name] = sym;
+  return true;
 }
 
 inline bool SymbolTable::declareOrShadow(const Symbol &sym) {
-  return !scopes_.empty() && scopes_.back().declareOrShadow(sym);
+  if (!current)
+    return false;
+  current->table[sym.name] = sym;
+  return true;
 }
 
 inline std::optional<Symbol>
 SymbolTable::lookup(const std::string &name) const {
-  for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
-    if (auto sym = it->lookup(name)) {
-      return sym;
-    }
+  const ScopeNode *node = current;
+  while (node) {
+    auto it = node->table.find(name);
+    if (it != node->table.end())
+      return it->second;
+    node = node->parent;
   }
   return std::nullopt;
 }
@@ -239,11 +312,29 @@ inline bool SymbolTable::contains(const std::string &name) const {
 
 inline std::optional<Symbol>
 SymbolTable::lookupInCurrentScope(const std::string &name) const {
-  return !scopes_.empty() ? scopes_.back().lookup(name) : std::nullopt;
+  if (!current)
+    return std::nullopt;
+  auto it = current->table.find(name);
+  if (it != current->table.end())
+    return it->second;
+  return std::nullopt;
 }
 
 inline bool SymbolTable::containsInCurrentScope(const std::string &name) const {
-  return !scopes_.empty() && scopes_.back().contains(name);
+  return current && current->table.count(name) > 0;
+}
+
+inline const ScopeNode *SymbolTable::scopeFor(const BaseNode *owner) const {
+  auto it = owner_to_scope.find(owner);
+  if (it != owner_to_scope.end())
+    return it->second;
+  return nullptr;
+}
+
+inline void SymbolTable::attachCurrentTo(const BaseNode *owner) {
+  if (!owner || !current)
+    return;
+  owner_to_scope[owner] = current;
 }
 
 inline SymbolChecker::SymbolChecker(SymbolTable &symbols) : symbols(symbols) {}
@@ -356,7 +447,7 @@ inline void SymbolChecker::visit(FunctionDecl &node) {
       throw SemanticException("Duplicate function: " + node.name);
     }
   } else {
-    symbols.enterScope();
+    symbols.enterScope(ScopeKind::Function, &node, node.name);
     if (node.params) {
       for (const auto &param : node.params.value()) {
         if (symbols.containsInCurrentScope(param.first)) {
@@ -403,7 +494,7 @@ inline void SymbolChecker::visit(ModuleDecl &node) {
 
   if (node.items) {
     module_path.push_back(node.name);
-    symbols.enterScope();
+    symbols.enterScope(ScopeKind::Module, &node, node.name);
     for (const auto &child : *node.items) {
       visit(*child);
     }
@@ -460,7 +551,7 @@ inline void SymbolChecker::visit(EnumDecl &node) {
 }
 
 inline void SymbolChecker::visit(TraitDecl &node) {
-  symbols.enterScope();
+  symbols.enterScope(ScopeKind::Trait, &node, node.name);
   for (const auto &item : node.associated_items) {
     visit(*item);
   }
@@ -468,7 +559,7 @@ inline void SymbolChecker::visit(TraitDecl &node) {
 }
 
 inline void SymbolChecker::visit(ImplDecl &node) {
-  symbols.enterScope();
+  symbols.enterScope(ScopeKind::Impl, &node, "impl");
   for (const auto &item : node.associated_items) {
     visit(*item);
   }
@@ -516,7 +607,7 @@ inline void SymbolChecker::visit(IdentifierPattern &node) {
 inline void SymbolChecker::visit(BlockExpression &node) {
   if (current_pass_ == Pass::Declaration)
     return;
-  symbols.enterScope();
+  symbols.enterScope(ScopeKind::Block, &node, "block");
   for (const auto &child : node.statements) {
     visit(*child);
   }
@@ -606,7 +697,7 @@ inline void SymbolChecker::visit(MatchExpression &node) {
   if (node.scrutinee)
     node.scrutinee->accept(*this);
   for (const auto &arm : node.arms) {
-    symbols.enterScope();
+    symbols.enterScope(ScopeKind::MatchArm, nullptr, "match_arm");
     if (arm.pattern)
       arm.pattern->accept(*this);
     if (arm.guard)
@@ -710,7 +801,7 @@ inline void SymbolChecker::visit(QualifiedPathExpression &node) {
 inline void SymbolChecker::visit(BlockStatement &node) {
   if (current_pass_ == Pass::Declaration)
     return;
-  symbols.enterScope();
+  symbols.enterScope(ScopeKind::Block, &node, "block");
   for (const auto &stmt : node.statements) {
     if (stmt) {
       stmt->accept(*this);

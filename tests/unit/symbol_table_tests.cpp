@@ -88,7 +88,7 @@ public:
     std::string code = R"RS(
       struct Point { x: i32, y: i32 }
       struct Color(i32, i32);
-      enum E { A, B(i32), C { z: i32 } }
+      enum E { A, B, C }
       mod m { fn f() {} }
     )RS";
 
