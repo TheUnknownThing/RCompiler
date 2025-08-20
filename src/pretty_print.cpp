@@ -68,6 +68,8 @@ void PrettyPrintVisitor::visit(BaseNode &node) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<TupleExpression *>(&node)) {
     visit(*expr);
+  } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
+    visit(*expr);
   } else if (auto *expr = dynamic_cast<BreakExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<ContinueExpression *>(&node)) {
@@ -344,6 +346,24 @@ void PrettyPrintVisitor::visit(TupleExpression &node) {
       print_inline(", ");
     }
   }
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(StructExpression &node) {
+  print_inline("StructExpr(");
+  RC_SAFE_ACCEPT(node.path_expr);
+  print_inline(" { ");
+  for (size_t i = 0; i < node.fields.size(); ++i) {
+    const auto &f = node.fields[i];
+    print_inline(f.name);
+    if (f.value.has_value()) {
+      print_inline(": ");
+      RC_SAFE_ACCEPT(f.value.value());
+    }
+    if (i + 1 < node.fields.size())
+      print_inline(", ");
+  }
+  print_inline(" }");
   print_inline(")");
 }
 

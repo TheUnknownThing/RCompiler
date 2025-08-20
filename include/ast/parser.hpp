@@ -42,6 +42,8 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_tuple_or_group_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_path_or_name_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_qualified_path_expression();
+  parsec::Parser<std::vector<rc::StructExpression::FieldInit>>
+  parse_struct_expr_fields();
 
   inline parsec::Parser<std::shared_ptr<BaseItem>> any_top_level_item();
 
@@ -1237,6 +1239,41 @@ inline parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
       });
 }
 
+inline parsec::Parser<std::vector<rc::StructExpression::FieldInit>>
+Parser::parse_struct_expr_fields() {
+  using Field = rc::StructExpression::FieldInit;
+  using namespace parsec;
+
+  auto shorthand = parsec::identifier.map([](const std::string &name) {
+    Field f{name, std::nullopt};
+    return f;
+  });
+
+  auto explicit_field =
+      parsec::identifier.thenL(tok(TokenType::COLON))
+          .combine(any_expression(), [](const std::string &name,
+                                        std::shared_ptr<Expression> expr) {
+            Field f{name, expr};
+            return f;
+          });
+
+  auto one_field = parsec::Parser<Field>(
+      [shorthand, explicit_field](const std::vector<rc::Token> &toks,
+                                  size_t &pos) -> parsec::ParseResult<Field> {
+        size_t saved = pos;
+        if (auto f = explicit_field.parse(toks, pos))
+          return *f;
+        pos = saved;
+        if (auto f = shorthand.parse(toks, pos))
+          return *f;
+        return std::nullopt;
+      });
+
+  return tok(TokenType::L_BRACE)
+      .thenR(many(one_field.thenL(optional(tok(TokenType::COMMA)))))
+      .thenL(tok(TokenType::R_BRACE));
+}
+
 } // namespace rc
 
 namespace pratt {
@@ -1391,6 +1428,27 @@ inline PrattTable default_table(rc::Parser *p) {
         }
 
         return nullptr;
+      });
+
+  // Struct expression: PathInExpression { fields }
+  tbl.infix_custom(
+      rc::TokenType::L_BRACE, POSTFIX_PRECEDENCE, POSTFIX_PRECEDENCE + 1,
+      [p](ExprPtr left, const rc::Token &, const std::vector<rc::Token> &toks,
+          size_t &pos) -> ExprPtr {
+        if (!left)
+          return nullptr;
+        if (!(dynamic_cast<rc::NameExpression *>(left.get()) ||
+              dynamic_cast<rc::PathExpression *>(left.get()) ||
+              dynamic_cast<rc::QualifiedPathExpression *>(left.get()))) {
+          return nullptr;
+        }
+        size_t start_pos = pos - 1;
+        auto fields = p->parse_struct_expr_fields().parse(toks, start_pos);
+        if (!fields) {
+          return nullptr;
+        }
+        pos = start_pos;
+        return std::make_shared<rc::StructExpression>(left, *fields);
       });
 
   // 80: index expression

@@ -215,6 +215,23 @@ public:
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
+class StructExpression : public Expression {
+public:
+  struct FieldInit {
+    std::string name;
+    std::optional<std::shared_ptr<Expression>> value;
+  };
+
+  std::shared_ptr<Expression> path_expr;
+  std::vector<FieldInit> fields;
+
+  StructExpression(std::shared_ptr<Expression> path,
+                   std::vector<FieldInit> inits)
+      : path_expr(std::move(path)), fields(std::move(inits)) {}
+
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
 class BlockExpression : public Expression {
 public:
   std::vector<std::shared_ptr<BaseNode>> statements;

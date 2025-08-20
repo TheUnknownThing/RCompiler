@@ -42,6 +42,7 @@ public:
   void visit(ArrayExpression &node) override;
   void visit(IndexExpression &node) override;
   void visit(TupleExpression &node) override;
+  void visit(StructExpression &node) override;
   void visit(BreakExpression &node) override;
   void visit(ContinueExpression &node) override;
   void visit(PathExpression &node) override;

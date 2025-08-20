@@ -23,6 +23,7 @@ class ContinueExpression;
 class ArrayExpression;
 class IndexExpression;
 class TupleExpression;
+class StructExpression;
 class BlockStatement;
 class LetStatement;
 class ExpressionStatement;
@@ -85,6 +86,7 @@ public:
   virtual void visit(ArrayExpression &) {}
   virtual void visit(IndexExpression &) {}
   virtual void visit(TupleExpression &) {}
+  virtual void visit(StructExpression &) {}
   virtual void visit(PathExpression &) {}
   virtual void visit(QualifiedPathExpression &) {}
 
