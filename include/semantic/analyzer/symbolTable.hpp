@@ -215,7 +215,8 @@ private:
   Pass current_pass_;
 
   SymbolTable &symbols;
-  std::vector<std::string> module_path{};
+  std::vector<std::string> module_path;
+  std::optional<LiteralType> current_let_type;
 
   static void ensureUniqueStructFields(
       const std::vector<std::pair<std::string, LiteralType>> &fields,
@@ -633,6 +634,9 @@ inline void SymbolChecker::visit(IdentifierPattern &node) {
   if (is_binding) {
     Symbol sym(node.name, SymbolKind::Variable);
     sym.is_mutable = node.is_mutable;
+    if (current_let_type) {
+      sym.type = *current_let_type;
+    }
     symbols.declareOrShadow(sym);
   }
 
@@ -850,12 +854,16 @@ inline void SymbolChecker::visit(BlockStatement &node) {
 inline void SymbolChecker::visit(LetStatement &node) {
   if (current_pass_ == Pass::Declaration)
     return;
+
+  validateType(node.type);
   if (node.expr)
     node.expr->accept(*this);
 
+  current_let_type = node.type;
   if (node.pattern) {
     node.pattern->accept(*this);
   }
+  current_let_type.reset();
 }
 
 inline void SymbolChecker::visit(ExpressionStatement &node) {

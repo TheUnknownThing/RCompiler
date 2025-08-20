@@ -1,5 +1,12 @@
 #pragma once
 
+/**
+ * @details This class CHECKS:
+ * 1. Type consistency (e.g. return type, expr members)
+ * 2. Literal Out of Bounds.
+ * 3. Invalid member access of Enums and Structs.
+ */
+
 #include "ast/nodes/base.hpp"
 #include "ast/nodes/expr.hpp"
 #include "ast/nodes/pattern.hpp"
