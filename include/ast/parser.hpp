@@ -206,8 +206,7 @@ inline parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
                    })
           .combine(optional(return_type), [](const auto &pm_list,
                                              const auto &ty) {
-            auto ret_ty =
-                ty.value_or(LiteralType(PrimitiveLiteralType::TO_BE_INFERRED));
+            auto ret_ty = ty.value_or(LiteralType(PrimitiveLiteralType::NONE));
             return std::tuple<
                 std::string,
                 std::optional<std::vector<std::pair<std::string, LiteralType>>>,
@@ -1177,10 +1176,8 @@ inline parsec::Parser<std::pair<std::string, LiteralType>>
 Parser::identifier_and_type_parser() {
   using namespace parsec;
   return parsec::identifier.combine(
-      optional(tok(TokenType::COLON).thenR(typ)),
-      [](const auto &id, const auto &t) {
-        const auto &ty =
-            t.value_or(LiteralType(PrimitiveLiteralType::TO_BE_INFERRED));
+      tok(TokenType::COLON).thenR(typ), [](const auto &id, const auto &t) {
+        const auto &ty = t;
         LOG_DEBUG("Parsed identifier with type: " + id);
         return std::make_pair(id, ty);
       });
@@ -1221,10 +1218,9 @@ inline parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
   auto assignment = tok(TokenType::ASSIGN).thenR(any_expression());
   return tok(TokenType::LET)
       .thenR(pattern_parser_.pattern_no_top_alt())
-      .combine(optional(tok(TokenType::COLON).thenR(typ)),
+      .combine(tok(TokenType::COLON).thenR(typ),
                [](const auto &id, const auto &t) {
-                 auto ty = t.value_or(
-                     LiteralType(PrimitiveLiteralType::TO_BE_INFERRED));
+                 auto ty = t;
                  return std::make_pair(id, ty);
                })
       .combine(optional(assignment),

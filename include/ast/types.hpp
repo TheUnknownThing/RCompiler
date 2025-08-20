@@ -23,7 +23,7 @@ enum class PrimitiveLiteralType {
   CHAR,
   BOOL,
   NEVER,
-  TO_BE_INFERRED
+  NONE
 };
 
 struct LiteralType {
@@ -216,7 +216,7 @@ inline const std::map<std::string, PrimitiveLiteralType> base_literal_type_map =
      {"char", PrimitiveLiteralType::CHAR},
      {"bool", PrimitiveLiteralType::BOOL},
      {"never", PrimitiveLiteralType::NEVER},
-     {"to_be_inferred", PrimitiveLiteralType::TO_BE_INFERRED}};
+     {"none", PrimitiveLiteralType::NONE}};
 
 inline const std::map<PrimitiveLiteralType, std::string>
     literal_type_reverse_map = {
@@ -231,7 +231,7 @@ inline const std::map<PrimitiveLiteralType, std::string>
         {PrimitiveLiteralType::CHAR, "char"},
         {PrimitiveLiteralType::BOOL, "bool"},
         {PrimitiveLiteralType::NEVER, "!"},
-        {PrimitiveLiteralType::TO_BE_INFERRED, "to_be_inferred"}};
+        {PrimitiveLiteralType::NONE, "none"}};
 
 inline const std::map<std::string, LiteralType> literal_type_map = {
     {"i32", LiteralType::base(PrimitiveLiteralType::I32)},
@@ -245,12 +245,11 @@ inline const std::map<std::string, LiteralType> literal_type_map = {
     {"char", LiteralType::base(PrimitiveLiteralType::CHAR)},
     {"bool", LiteralType::base(PrimitiveLiteralType::BOOL)},
     {"never", LiteralType::base(PrimitiveLiteralType::NEVER)},
-    {"to_be_inferred",
-     LiteralType::base(PrimitiveLiteralType::TO_BE_INFERRED)}};
+    {"none", LiteralType::base(PrimitiveLiteralType::NONE)}};
 
 inline const std::set<std::string> valid_literal_types = {
     "i32",      "u32",          "isize", "usize", "string", "raw_string",
-    "c_string", "raw_c_string", "char",  "bool",  "never",  "to_be_inferred"};
+    "c_string", "raw_c_string", "char",  "bool",  "never",  "none"};
 
 inline std::string to_string(const LiteralType &t) {
   if (t.is_base()) {
