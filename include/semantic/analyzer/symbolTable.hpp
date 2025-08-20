@@ -210,6 +210,13 @@ private:
   static void
   ensureUniqueEnumVariants(const std::vector<EnumVariantInfo> &variants,
                            const std::string &enum_name);
+
+  void validateType(const LiteralType &t) const;
+  void validateTypeList(const std::vector<LiteralType> &types) const;
+  std::optional<Symbol>
+  resolveQualifiedSymbol(const std::vector<std::string> &segments) const;
+  static const ScopeNode *findChildModule(const ScopeNode *parent,
+                                          const std::string &name);
 };
 
 inline bool Scope::declare(const Symbol &sym) {
@@ -447,6 +454,13 @@ inline void SymbolChecker::visit(FunctionDecl &node) {
       throw SemanticException("Duplicate function: " + node.name);
     }
   } else {
+    if (node.params) {
+      for (const auto &param : node.params.value()) {
+        validateType(param.second);
+      }
+    }
+    validateType(node.return_type);
+
     symbols.enterScope(ScopeKind::Function, &node, node.name);
     if (node.params) {
       for (const auto &param : node.params.value()) {
@@ -474,6 +488,7 @@ inline void SymbolChecker::visit(ConstantItem &node) {
       throw SemanticException("Duplicate constant: " + node.name);
     }
   } else {
+    validateType(node.type);
     if (node.value) {
       visit(*node.value.value());
     }
@@ -520,6 +535,14 @@ inline void SymbolChecker::visit(StructDecl &node) {
     sym.struct_info = std::move(si);
     if (!symbols.declare(sym)) {
       throw SemanticException("Duplicate struct: " + node.name);
+    }
+  } else {
+    if (node.struct_type == StructDecl::StructType::Tuple) {
+      validateTypeList(node.tuple_fields);
+    } else {
+      for (const auto &f : node.fields) {
+        validateType(f.second);
+      }
     }
   }
 }
@@ -882,6 +905,132 @@ inline void SymbolChecker::ensureUniqueEnumVariants(
                               enum_name + "'");
     }
   }
+}
+
+inline void SymbolChecker::validateType(const LiteralType &t) const {
+  if (t.is_base()) {
+    return; // valid
+  }
+  if (t.is_tuple()) {
+    validateTypeList(t.as_tuple());
+    return;
+  }
+  if (t.is_array()) {
+    const auto &arr = t.as_array();
+    if (!arr.element) {
+      throw TypeError("Invalid array element type");
+    }
+    validateType(*arr.element);
+    return;
+  }
+  if (t.is_slice()) {
+    const auto &sl = t.as_slice();
+    if (!sl.element) {
+      throw TypeError("Invalid slice element type");
+    }
+    validateType(*sl.element);
+    return;
+  }
+  if (t.is_union()) {
+    validateTypeList(t.as_union());
+    return;
+  }
+  if (t.is_path()) {
+    const auto &segs = t.as_path().segments;
+    if (segs.empty()) {
+      throw TypeError("Empty type path");
+    }
+    auto resolved = resolveQualifiedSymbol(segs);
+    if (!resolved) {
+      throw TypeError("Unknown type when parsing Path.");
+    }
+    switch (resolved->kind) {
+    case SymbolKind::Struct:
+    case SymbolKind::Enum:
+      return; // TODO: we need to validate it later.
+    default:
+      throw TypeError("Not a type when parsing Path.");
+    }
+  }
+}
+
+inline void
+SymbolChecker::validateTypeList(const std::vector<LiteralType> &types) const {
+  for (const auto &t : types) {
+    validateType(t);
+  }
+}
+
+inline const ScopeNode *
+SymbolChecker::findChildModule(const ScopeNode *parent,
+                               const std::string &name) {
+  if (!parent)
+    return nullptr;
+  for (const auto &child : parent->children) {
+    if (child && child->kind == ScopeKind::Module && child->label == name) {
+      return child.get();
+    }
+  }
+  return nullptr;
+}
+
+inline std::optional<Symbol> SymbolChecker::resolveQualifiedSymbol(
+    const std::vector<std::string> &segments) const {
+  if (segments.empty())
+    return std::nullopt;
+
+  const auto &last = segments.back();
+
+  if (segments.size() == 1) {
+    const ScopeNode *node = symbols.current;
+    while (node) {
+      auto local = node->lookupLocal(last);
+      if (local) {
+        if (local->kind == SymbolKind::Struct ||
+            local->kind == SymbolKind::Enum)
+          return local;
+      }
+      node = node->parent;
+    }
+    return std::nullopt;
+  }
+
+  // qualified path
+  const ScopeNode *anchor = symbols.current;
+  while (anchor) {
+    const ScopeNode *cursor = anchor;
+    bool ok = true;
+    for (size_t i = 0; i + 1 < segments.size(); ++i) {
+      cursor = findChildModule(cursor, segments[i]);
+      if (!cursor) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok && cursor) {
+      auto local = cursor->lookupLocal(last);
+      if (local)
+        return local;
+    }
+    anchor = anchor->parent;
+  }
+
+  // absolute from root
+  const ScopeNode *cursor = symbols.root.get();
+  bool ok = true;
+  for (size_t i = 0; i + 1 < segments.size(); ++i) {
+    cursor = findChildModule(cursor, segments[i]);
+    if (!cursor) {
+      ok = false;
+      break;
+    }
+  }
+  if (ok && cursor) {
+    auto local = cursor->lookupLocal(last);
+    if (local)
+      return local;
+  }
+  return std::nullopt;
 }
 
 } // namespace rc
