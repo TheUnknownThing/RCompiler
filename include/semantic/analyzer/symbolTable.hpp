@@ -1,5 +1,19 @@
 #pragma once
 
+/**
+ * @details This class does 2 things:
+ * 1. Manages scopes for semantic analysis.
+ * 2. Stores symbols and their metadata.
+ * AND IT CHECKS:
+ * 1. Variable usage before declaration.
+ * 2. Types (whether they are valid).
+ * 3. Duplicated enum fields and struct members.
+ * It DOES NOT CHECK:
+ * 1. Type consistency (e.g. return type, expr members)
+ * 2. Literal Out of Bounds.
+ * 3. Invalid member access of Enums and Structs.
+ */
+
 #include "ast/types.hpp"
 
 #include "ast/nodes/base.hpp"
@@ -947,7 +961,7 @@ inline void SymbolChecker::validateType(const LiteralType &t) const {
     switch (resolved->kind) {
     case SymbolKind::Struct:
     case SymbolKind::Enum:
-      return; // TODO: we need to validate it later.
+      return; // resolved, ok
     default:
       throw TypeError("Not a type when parsing Path.");
     }
