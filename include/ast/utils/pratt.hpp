@@ -34,7 +34,7 @@ class PrattTable {
 public:
   using NudFn =
       std::function<ExprPtr(const std::vector<rc::Token> &, size_t &)>;
-    
+
   using Bp = std::pair<int, int>;
   struct LedEntry {
     Bp bp;
@@ -78,10 +78,11 @@ public:
   }
 
   // Custom infix w/ explicit lbp/rbp
-  void infix_custom(rc::TokenType t, int lbp, int rbp,
-                    std::function<ExprPtr(ExprPtr, const rc::Token &,
-                                           const std::vector<rc::Token> &,
-                                           size_t &)> led) {
+  void
+  infix_custom(rc::TokenType t, int lbp, int rbp,
+               std::function<ExprPtr(ExprPtr, const rc::Token &,
+                                     const std::vector<rc::Token> &, size_t &)>
+                   led) {
     infix_[OpKey{t}] = LedEntry{Bp{lbp, rbp}, std::move(led)};
   }
 
@@ -115,10 +116,14 @@ public:
       if (lbp < min_bp)
         break;
 
+      size_t op_pos = pos;
       rc::Token op = toks[pos++];
-      ExprPtr new_left = led->led(std::move(left), op, toks, pos);
-      if (!new_left)
-        return nullptr;
+
+      ExprPtr new_left = led->led(left, op, toks, pos);
+      if (!new_left) {
+        pos = op_pos;
+        break;
+      }
       left = std::move(new_left);
     }
 
