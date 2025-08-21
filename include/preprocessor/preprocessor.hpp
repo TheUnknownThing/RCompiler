@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -55,6 +56,14 @@ inline std::string Preprocessor::preprocess() {
   bool in_char = false;
   bool escaped = false;
 
+  auto ensure_ascii = [&](char ch, size_t line_no, size_t col_no) {
+    if (static_cast<unsigned char>(ch) > 0x7F) {
+      throw std::runtime_error("Non-ASCII character detected at line " +
+                               std::to_string(line_no + 1) + ", column " +
+                               std::to_string(col_no + 1));
+    }
+  };
+
   for (size_t line_idx = 0; line_idx < file_lines.size(); ++line_idx) {
     const std::string &line = file_lines[line_idx];
 
@@ -77,6 +86,7 @@ inline std::string Preprocessor::preprocess() {
         }
       } else if (in_string) {
         // string literals
+        ensure_ascii(c, line_idx, i);
         result += c;
         if (escaped) {
           escaped = false;
@@ -87,6 +97,7 @@ inline std::string Preprocessor::preprocess() {
         }
       } else if (in_char) {
         // char literals
+        ensure_ascii(c, line_idx, i);
         result += c;
         if (escaped) {
           escaped = false;
@@ -110,7 +121,8 @@ inline std::string Preprocessor::preprocess() {
           result += c;
         } else {
           // whitespace and tabs
-          if (std::isspace(c)) {
+          ensure_ascii(c, line_idx, i);
+          if (std::isspace(static_cast<unsigned char>(c))) {
             if (!result.empty() && result.back() != ' ') {
               result += " ";
             }
