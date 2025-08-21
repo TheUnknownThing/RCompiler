@@ -913,7 +913,7 @@ Parser::parse_tuple_or_group_expression() {
           return std::nullopt;
         }
 
-        // it's a tuple
+        // it's a tuple, but no tuple expr anymore
         if (tok(TokenType::COMMA).parse(toks, pos)) {
           std::vector<std::shared_ptr<Expression>> elems;
           elems.push_back(*first);

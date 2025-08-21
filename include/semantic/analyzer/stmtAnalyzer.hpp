@@ -11,7 +11,7 @@ class SemanticContext;
 
 class StmtAnalyzer : public BaseVisitor {
 public:
-  explicit StmtAnalyzer(SemanticContext &ctx);
+  explicit StmtAnalyzer();
 
   bool analyze(const std::shared_ptr<Statement> &stmt);
 
@@ -23,9 +23,8 @@ public:
   void visit(EmptyStatement &) override;
 
 private:
-  SemanticContext &ctx;
 };
 
-inline StmtAnalyzer::StmtAnalyzer(SemanticContext &ctx) : ctx(ctx) {}
+inline StmtAnalyzer::StmtAnalyzer() {}
 
 } // namespace rc

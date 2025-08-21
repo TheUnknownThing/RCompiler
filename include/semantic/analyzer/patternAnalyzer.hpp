@@ -21,7 +21,7 @@ struct PatternBinding {
 
 class PatternAnalyzer : public BaseVisitor {
 public:
-  explicit PatternAnalyzer(SemanticContext &ctx);
+  explicit PatternAnalyzer();
 
   std::vector<PatternBinding> analyze(const std::shared_ptr<BasePattern> &pat,
                                       const LiteralType &expectedType);
@@ -43,12 +43,11 @@ public:
   const std::vector<PatternBinding> &bindings() const;
 
 private:
-  SemanticContext &ctx;
   std::vector<PatternBinding> current_bindings;
 
   void addBinding(std::string name, const LiteralType &ty, bool is_mutable);
 };
 
-inline PatternAnalyzer::PatternAnalyzer(SemanticContext &ctx) : ctx(ctx) {}
+inline PatternAnalyzer::PatternAnalyzer() {}
 
 } // namespace rc

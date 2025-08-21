@@ -3,7 +3,6 @@
 #include <memory>
 
 #include "ast/nodes/topLevel.hpp"
-#include "semantic/context/semanticContext.hpp"
 
 namespace rc {
 
@@ -14,7 +13,6 @@ public:
   void analyze(const std::shared_ptr<RootNode> &root);
 
 private:
-  SemanticContext ctx;
 };
 
 } // namespace rc

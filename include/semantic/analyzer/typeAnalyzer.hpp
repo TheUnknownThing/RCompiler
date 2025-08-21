@@ -19,7 +19,7 @@ class SemanticContext;
 
 class TypeAnalyzer : public BaseVisitor {
 public:
-  explicit TypeAnalyzer(SemanticContext &ctx);
+  explicit TypeAnalyzer();
 
   void check(const std::shared_ptr<RootNode> &root);
 
@@ -79,10 +79,9 @@ public:
   void visit(RootNode &) override;
 
 private:
-  SemanticContext &ctx;
 };
 
-inline TypeAnalyzer::TypeAnalyzer(SemanticContext &ctx) : ctx(ctx) {}
+inline TypeAnalyzer::TypeAnalyzer() {}
 
 inline void TypeAnalyzer::check(const std::shared_ptr<RootNode> &root) {
   visit(*root);
