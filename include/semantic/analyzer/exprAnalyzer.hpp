@@ -9,6 +9,7 @@
 #include "ast/nodes/expr.hpp"
 #include "ast/nodes/stmt.hpp"
 #include "semantic/analyzer/symbolTable.hpp"
+#include "semantic/error/exceptions.hpp"
 
 #include <memory>
 #include <optional>
@@ -90,6 +91,16 @@ private:
                                             const rc::Token &op,
                                             const LiteralType &rhs);
   std::optional<LiteralType> literalToType(const LiteralExpression &lit);
+
+  void enterScope(ScopeKind kind = ScopeKind::Block,
+                  const BaseNode *owner = nullptr,
+                  const std::string &label = {});
+  void exitScope();
+
+  std::optional<LiteralType> resolveNameType(const std::string &name);
+  std::optional<LiteralType>
+  resolveFunctionCallType(const std::string &name,
+                          const std::vector<LiteralType> &arg_types);
 };
 
 inline ExprAnalyzer::ExprAnalyzer(SymbolTable &sym)
@@ -304,19 +315,11 @@ inline void ExprAnalyzer::visit(RootNode &node) {
 
 // Expressions
 inline void ExprAnalyzer::visit(NameExpression &node) {
-  // auto sym = symbol_table.lookup(node.name);
-  // if (!sym) {
-  //   throw TypeError("Unknown symbol: " + node.name);
-  // }
-  // if (sym->kind == SymbolKind::Function || sym->kind == SymbolKind::Constant) {
-  //   last_type = sym->type;
-  // } else if (sym->kind == SymbolKind::Struct || sym->kind == SymbolKind::Enum) {
-  //   last_type = LiteralType::base(PrimitiveLiteralType::NONE);
-  // } else {
-  //   throw TypeError("Invalid symbol kind for expression: " + node.name);
-  // }
-  // Above code is buggy! because it do not consider scope!
-  // TODO: Fix here
+  auto type = resolveNameType(node.name);
+  if (!type) {
+    throw UndefinedVariableError(node.name);
+  }
+  last_type = type;
 }
 
 inline void ExprAnalyzer::visit(LiteralExpression &node) {
@@ -343,7 +346,7 @@ inline void ExprAnalyzer::visit(PrefixExpression &node) {
     break;
   }
   default:
-    // Unsupported/untyped unary operator in this subset
+    // Unsupported unary operator
     last_type.reset();
     break;
   }
@@ -397,7 +400,23 @@ inline void ExprAnalyzer::visit(ReturnExpression &node) {
 }
 
 inline void ExprAnalyzer::visit(CallExpression &node) {
-  // TODO
+  auto func_type = analyze(node.function_name);
+  if (!func_type) {
+    last_type.reset();
+    return;
+  }
+
+  std::vector<LiteralType> arg_types;
+  for (const auto &arg : node.arguments) {
+    auto arg_type = analyze(arg);
+    if (!arg_type) {
+      last_type.reset();
+      return;
+    }
+    arg_types.push_back(*arg_type);
+  }
+
+  // TODO: We need to set last_type to function reture type.
 }
 
 inline void ExprAnalyzer::visit(MethodCallExpression &node) {
@@ -414,7 +433,8 @@ inline void ExprAnalyzer::visit(FieldAccessExpression &node) {
 }
 
 inline void ExprAnalyzer::visit(StructExpression &node) {
-  // TODO
+  // Struct expr now only contains identifier, so do not need checking
+  (void)node;
 }
 
 inline void ExprAnalyzer::visit(UnderscoreExpression &) {
@@ -422,14 +442,17 @@ inline void ExprAnalyzer::visit(UnderscoreExpression &) {
 }
 
 inline void ExprAnalyzer::visit(BlockExpression &node) {
+  enterScope(ScopeKind::Block, &node, "block");
   for (const auto &stmt : node.statements) {
     if (stmt)
       stmt->accept(*this);
   }
-  if (node.final_expr)
+  if (node.final_expr) {
     last_type = analyze(node.final_expr.value());
-  else
+  } else {
     last_type = LiteralType::base(PrimitiveLiteralType::NONE);
+  }
+  exitScope();
 }
 
 inline void ExprAnalyzer::visit(LoopExpression &node) {
@@ -509,7 +532,8 @@ inline void ExprAnalyzer::visit(ContinueExpression &) {
 }
 
 inline void ExprAnalyzer::visit(PathExpression &node) {
-  // TODO
+  // No need to check here
+  (void)node;
 }
 
 inline void ExprAnalyzer::visit(QualifiedPathExpression &node) {
@@ -519,17 +543,25 @@ inline void ExprAnalyzer::visit(QualifiedPathExpression &node) {
 
 // Statements
 inline void ExprAnalyzer::visit(BlockStatement &node) {
+  enterScope(ScopeKind::Block, &node, "block");
   for (const auto &st : node.statements) {
     if (st)
       st->accept(*this);
   }
+  exitScope();
 }
 
 inline void ExprAnalyzer::visit(LetStatement &node) {
-  if (node.pattern)
+  if (node.expr) {
+    auto expr_type = analyze(node.expr);
+    if (expr_type != node.type) {
+      throw TypeError("Incompatible types in let statement");
+    }
+  }
+
+  if (node.pattern) {
     node.pattern->accept(*this);
-  if (node.expr)
-    node.expr->accept(*this);
+  }
 }
 
 inline void ExprAnalyzer::visit(ExpressionStatement &node) {
@@ -590,8 +622,11 @@ inline void ExprAnalyzer::visit(OrPattern &node) {
 
 // Top-level
 inline void ExprAnalyzer::visit(FunctionDecl &node) {
-  if (node.body)
+  if (node.body) {
+    enterScope(ScopeKind::Function, &node, node.name);
     node.body.value()->accept(*this);
+    exitScope();
+  }
 }
 
 inline void ExprAnalyzer::visit(ConstantItem &node) {
@@ -601,10 +636,12 @@ inline void ExprAnalyzer::visit(ConstantItem &node) {
 
 inline void ExprAnalyzer::visit(ModuleDecl &node) {
   if (node.items) {
+    enterScope(ScopeKind::Module, &node, node.name);
     for (const auto &child : *node.items) {
       if (child)
         child->accept(*this);
     }
+    exitScope();
   }
 }
 
@@ -613,17 +650,21 @@ inline void ExprAnalyzer::visit(StructDecl &) {}
 inline void ExprAnalyzer::visit(EnumDecl &) {}
 
 inline void ExprAnalyzer::visit(TraitDecl &node) {
+  enterScope(ScopeKind::Trait, &node, node.name);
   for (const auto &item : node.associated_items) {
     if (item)
       item->accept(*this);
   }
+  exitScope();
 }
 
 inline void ExprAnalyzer::visit(ImplDecl &node) {
+  enterScope(ScopeKind::Impl, &node, "impl");
   for (const auto &item : node.associated_items) {
     if (item)
       item->accept(*this);
   }
+  exitScope();
 }
 
 inline std::optional<LiteralType> ExprAnalyzer::result() const {
@@ -633,6 +674,77 @@ inline std::optional<LiteralType> ExprAnalyzer::result() const {
 inline std::optional<LiteralType>
 ExprAnalyzer::literalToType(const LiteralExpression &lit) {
   return lit.type;
+}
+
+inline void ExprAnalyzer::enterScope(ScopeKind kind, const BaseNode *owner,
+                                     const std::string &label) {
+  symbol_table.enterScope(kind, owner, label);
+}
+
+inline void ExprAnalyzer::exitScope() { symbol_table.exitScope(); }
+
+inline std::optional<LiteralType>
+ExprAnalyzer::resolveNameType(const std::string &name) {
+  auto symbol = symbol_table.lookup(name);
+  if (!symbol) {
+    return std::nullopt;
+  }
+
+  switch (symbol->kind) {
+  case SymbolKind::Variable:
+  case SymbolKind::Constant:
+  case SymbolKind::Param:
+    return symbol->type;
+  case SymbolKind::Function:
+    if (symbol->function_sig) {
+      return symbol->function_sig->return_type;
+    }
+    return std::nullopt;
+  case SymbolKind::Struct:
+  case SymbolKind::Enum:
+    return LiteralType::path({name});
+  default:
+    return std::nullopt;
+  }
+}
+
+inline std::optional<LiteralType> ExprAnalyzer::resolveFunctionCallType(
+    const std::string &name, const std::vector<LiteralType> &arg_types) {
+  auto symbol = symbol_table.lookup(name);
+  if (!symbol || symbol->kind != SymbolKind::Function) {
+    return std::nullopt;
+  }
+
+  if (!symbol->function_sig) {
+    return std::nullopt;
+  }
+
+  const auto &func_sig = *symbol->function_sig;
+
+  // Check parameter count
+  if (func_sig.parameters) {
+    const auto &params = *func_sig.parameters;
+    if (params.size() != arg_types.size()) {
+      throw TypeError("Function '" + name + "' expects " +
+                      std::to_string(params.size()) + " arguments, got " +
+                      std::to_string(arg_types.size()));
+    }
+
+    // Check parameter types
+    for (size_t i = 0; i < params.size(); ++i) {
+      if (!(arg_types[i] == params[i].second)) {
+        throw TypeError("Function '" + name + "' parameter " +
+                        std::to_string(i) + " expects type '" +
+                        to_string(params[i].second) + "', got '" +
+                        to_string(arg_types[i]) + "'");
+      }
+    }
+  } else if (!arg_types.empty()) {
+    throw TypeError("Function '" + name + "' expects no arguments, got " +
+                    std::to_string(arg_types.size()));
+  }
+
+  return func_sig.return_type;
 }
 
 } // namespace rc
