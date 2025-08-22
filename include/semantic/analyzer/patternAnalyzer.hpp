@@ -1,5 +1,11 @@
 #pragma once
 
+/**
+ * @details This class CHECKS:
+ * 1. Pattern irrefutability & refutability checking
+ * 2. Else block divergence validation
+ */
+
 #include "ast/nodes/pattern.hpp"
 #include "ast/types.hpp"
 #include "semantic/analyzer/symbolTable.hpp"

@@ -6,7 +6,6 @@
 
 #include "../../include/ast/parser.hpp"
 #include "../../include/semantic/analyzer/symbolTable.hpp"
-#include "../../include/semantic/context/semanticContext.hpp"
 
 namespace rc {
 

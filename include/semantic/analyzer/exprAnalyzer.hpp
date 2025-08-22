@@ -2,7 +2,8 @@
 
 /**
  * @details This class CHECKS:
- * Operator compatibility in Expressions
+ * 1. Operator compatibility in Expressions
+ * 2. Type compatibility
  */
 
 #include "ast/nodes/expr.hpp"
@@ -303,7 +304,19 @@ inline void ExprAnalyzer::visit(RootNode &node) {
 
 // Expressions
 inline void ExprAnalyzer::visit(NameExpression &node) {
-  // TODO
+  // auto sym = symbol_table.lookup(node.name);
+  // if (!sym) {
+  //   throw TypeError("Unknown symbol: " + node.name);
+  // }
+  // if (sym->kind == SymbolKind::Function || sym->kind == SymbolKind::Constant) {
+  //   last_type = sym->type;
+  // } else if (sym->kind == SymbolKind::Struct || sym->kind == SymbolKind::Enum) {
+  //   last_type = LiteralType::base(PrimitiveLiteralType::NONE);
+  // } else {
+  //   throw TypeError("Invalid symbol kind for expression: " + node.name);
+  // }
+  // Above code is buggy! because it do not consider scope!
+  // TODO: Fix here
 }
 
 inline void ExprAnalyzer::visit(LiteralExpression &node) {
@@ -357,15 +370,30 @@ inline void ExprAnalyzer::visit(GroupExpression &node) {
 }
 
 inline void ExprAnalyzer::visit(IfExpression &node) {
-  // TODO
+  auto cond = analyze(node.condition);
+  if (!cond || !is_bool(*cond)) {
+    throw TypeError("If condition must be boolean");
+  }
+  last_type = analyze(node.then_block);
+  if (node.else_block) {
+    last_type = analyze(node.else_block.value());
+  }
 }
 
 inline void ExprAnalyzer::visit(MatchExpression &node) {
-  // TODO
+  // No match expr anymore, yay
+  (void)node;
 }
 
 inline void ExprAnalyzer::visit(ReturnExpression &node) {
-  // TODO
+  if (node.value) {
+    last_type = analyze(node.value.value());
+    if (!last_type) {
+      last_type = LiteralType::base(PrimitiveLiteralType::NONE);
+    }
+  } else {
+    last_type = LiteralType::base(PrimitiveLiteralType::NONE);
+  }
 }
 
 inline void ExprAnalyzer::visit(CallExpression &node) {
@@ -405,11 +433,15 @@ inline void ExprAnalyzer::visit(BlockExpression &node) {
 }
 
 inline void ExprAnalyzer::visit(LoopExpression &node) {
-  // TODO
+  last_type = analyze(node.body);
 }
 
 inline void ExprAnalyzer::visit(WhileExpression &node) {
-  // TODO
+  auto cond = analyze(node.condition);
+  if (!cond || !is_bool(*cond)) {
+    throw TypeError("While condition must be boolean");
+  }
+  last_type = analyze(node.body);
 }
 
 inline void ExprAnalyzer::visit(ArrayExpression &node) {
@@ -481,7 +513,8 @@ inline void ExprAnalyzer::visit(PathExpression &node) {
 }
 
 inline void ExprAnalyzer::visit(QualifiedPathExpression &node) {
-  // TODO
+  // No QualifiedPathExpr.
+  (void)node;
 }
 
 // Statements
