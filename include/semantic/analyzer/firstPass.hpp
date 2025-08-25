@@ -215,28 +215,28 @@ FirstPassBuilder::ensureUniqueNames(const std::vector<std::string> &names,
 }
 
 inline void FirstPassBuilder::visit(BaseNode &node) {
-  if (auto *fn = dynamic_cast<FunctionDecl *>(&node)) {
-    visit(*fn);
-  } else if (auto *c = dynamic_cast<ConstantItem *>(&node)) {
-    visit(*c);
-  } else if (auto *s = dynamic_cast<StructDecl *>(&node)) {
-    visit(*s);
-  } else if (auto *e = dynamic_cast<EnumDecl *>(&node)) {
-    visit(*e);
-  } else if (auto *t = dynamic_cast<TraitDecl *>(&node)) {
-    visit(*t);
-  } else if (auto *r = dynamic_cast<RootNode *>(&node)) {
-    visit(*r);
-  } else if (auto *b = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*b);
-  } else if (auto *ife = dynamic_cast<IfExpression *>(&node)) {
-    visit(*ife);
-  } else if (auto *me = dynamic_cast<MatchExpression *>(&node)) {
-    visit(*me);
-  } else if (auto *le = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*le);
-  } else if (auto *we = dynamic_cast<WhileExpression *>(&node)) {
-    visit(*we);
+  if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<ConstantItem *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *root = dynamic_cast<RootNode *>(&node)) {
+    visit(*root);
+  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<MatchExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
+    visit(*expr);
   }
   // Expressions, statements, patterns ignored in first pass.
 }
