@@ -2,28 +2,22 @@
 
 /**
  * @details This class CHECKS:
- * 1. Inappropriate breaks and continues
- * 2. Return type compatibility (also expr evaluate type)
+ * Inappropriate breaks and continues
  */
 
 #include "ast/nodes/stmt.hpp"
 #include "ast/nodes/topLevel.hpp"
-#include "semantic/analyzer/exprAnalyzer.hpp"
 #include "semantic/analyzer/symbolTable.hpp"
 
 #include <memory>
 
 namespace rc {
 
-class SemanticContext;
-
-class StmtAnalyzer : public BaseVisitor {
+class ControlAnalyzer : public BaseVisitor {
 public:
-  explicit StmtAnalyzer(SymbolTable &symbols);
+  explicit ControlAnalyzer();
 
-  bool analyze(const std::shared_ptr<Statement> &stmt);
-
-  bool analyzeNode(const std::shared_ptr<BaseNode> &node);
+  bool analyze(const std::shared_ptr<BaseNode> &node);
 
   void visit(BaseNode &node) override;
 
@@ -82,27 +76,15 @@ public:
   void visit(RootNode &node) override;
 
 private:
-  SymbolTable &symbols_;
-  ExprAnalyzer expr_analyzer;
   std::vector<LiteralType> function_return_stack;
   std::size_t loop_depth;
 };
 
 // Implementation
 
-inline StmtAnalyzer::StmtAnalyzer(SymbolTable &symbols)
-    : symbols_(symbols), expr_analyzer(symbols), loop_depth(0) {}
+inline ControlAnalyzer::ControlAnalyzer() : loop_depth(0) {}
 
-inline bool StmtAnalyzer::analyze(const std::shared_ptr<Statement> &stmt) {
-  loop_depth = 0;
-  function_return_stack.clear();
-  if (!stmt)
-    return true;
-  stmt->accept(*this);
-  return true;
-}
-
-inline bool StmtAnalyzer::analyzeNode(const std::shared_ptr<BaseNode> &node) {
+inline bool ControlAnalyzer::analyze(const std::shared_ptr<BaseNode> &node) {
   loop_depth = 0;
   function_return_stack.clear();
   if (!node)
@@ -111,7 +93,7 @@ inline bool StmtAnalyzer::analyzeNode(const std::shared_ptr<BaseNode> &node) {
   return true;
 }
 
-inline void StmtAnalyzer::visit(BaseNode &node) {
+inline void ControlAnalyzer::visit(BaseNode &node) {
   // Expressions
   if (auto *expr = dynamic_cast<NameExpression *>(&node)) {
     visit(*expr);
@@ -217,28 +199,28 @@ inline void StmtAnalyzer::visit(BaseNode &node) {
 }
 
 // Expression visitors
-inline void StmtAnalyzer::visit(NameExpression &node) { (void)node; }
+inline void ControlAnalyzer::visit(NameExpression &node) { (void)node; }
 
-inline void StmtAnalyzer::visit(LiteralExpression &node) { (void)node; }
+inline void ControlAnalyzer::visit(LiteralExpression &node) { (void)node; }
 
-inline void StmtAnalyzer::visit(PrefixExpression &node) {
+inline void ControlAnalyzer::visit(PrefixExpression &node) {
   if (node.right)
     node.right->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(BinaryExpression &node) {
+inline void ControlAnalyzer::visit(BinaryExpression &node) {
   if (node.left)
     node.left->accept(*this);
   if (node.right)
     node.right->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(GroupExpression &node) {
+inline void ControlAnalyzer::visit(GroupExpression &node) {
   if (node.inner)
     node.inner->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(IfExpression &node) {
+inline void ControlAnalyzer::visit(IfExpression &node) {
   if (node.condition)
     node.condition->accept(*this);
   if (node.then_block)
@@ -247,7 +229,7 @@ inline void StmtAnalyzer::visit(IfExpression &node) {
     node.else_block.value()->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(MatchExpression &node) {
+inline void ControlAnalyzer::visit(MatchExpression &node) {
   if (node.scrutinee)
     node.scrutinee->accept(*this);
   for (auto &arm : node.arms) {
@@ -260,16 +242,14 @@ inline void StmtAnalyzer::visit(MatchExpression &node) {
   }
 }
 
-inline void StmtAnalyzer::visit(ReturnExpression &node) {
+inline void ControlAnalyzer::visit(ReturnExpression &node) {
   if (function_return_stack.empty()) {
     throw SemanticException("return outside of function");
   }
   auto expected = function_return_stack.back();
   LiteralType actual = LiteralType::base(PrimitiveLiteralType::NONE);
   if (node.value) {
-    auto t = expr_analyzer.analyze(node.value.value());
-    if (t)
-      actual = *t;
+    // TODO: validate return type
   }
   if (!(actual == expected)) {
     throw TypeError("Return type mismatch: expected '" + to_string(expected) +
@@ -277,7 +257,7 @@ inline void StmtAnalyzer::visit(ReturnExpression &node) {
   }
 }
 
-inline void StmtAnalyzer::visit(CallExpression &node) {
+inline void ControlAnalyzer::visit(CallExpression &node) {
   if (node.function_name)
     node.function_name->accept(*this);
   for (auto &arg : node.arguments) {
@@ -286,7 +266,7 @@ inline void StmtAnalyzer::visit(CallExpression &node) {
   }
 }
 
-inline void StmtAnalyzer::visit(MethodCallExpression &node) {
+inline void ControlAnalyzer::visit(MethodCallExpression &node) {
   if (node.receiver)
     node.receiver->accept(*this);
   for (auto &arg : node.arguments) {
@@ -295,12 +275,12 @@ inline void StmtAnalyzer::visit(MethodCallExpression &node) {
   }
 }
 
-inline void StmtAnalyzer::visit(FieldAccessExpression &node) {
+inline void ControlAnalyzer::visit(FieldAccessExpression &node) {
   if (node.target)
     node.target->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(StructExpression &node) {
+inline void ControlAnalyzer::visit(StructExpression &node) {
   if (node.path_expr)
     node.path_expr->accept(*this);
   for (auto &f : node.fields) {
@@ -309,9 +289,9 @@ inline void StmtAnalyzer::visit(StructExpression &node) {
   }
 }
 
-inline void StmtAnalyzer::visit(UnderscoreExpression &node) { (void)node; }
+inline void ControlAnalyzer::visit(UnderscoreExpression &node) { (void)node; }
 
-inline void StmtAnalyzer::visit(BlockExpression &node) {
+inline void ControlAnalyzer::visit(BlockExpression &node) {
   for (auto &s : node.statements) {
     if (s)
       s->accept(*this);
@@ -320,14 +300,14 @@ inline void StmtAnalyzer::visit(BlockExpression &node) {
     node.final_expr.value()->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(LoopExpression &node) {
+inline void ControlAnalyzer::visit(LoopExpression &node) {
   loop_depth++;
   if (node.body)
     node.body->accept(*this);
   loop_depth--;
 }
 
-inline void StmtAnalyzer::visit(WhileExpression &node) {
+inline void ControlAnalyzer::visit(WhileExpression &node) {
   if (node.condition)
     node.condition->accept(*this);
   loop_depth++;
@@ -336,7 +316,7 @@ inline void StmtAnalyzer::visit(WhileExpression &node) {
   loop_depth--;
 }
 
-inline void StmtAnalyzer::visit(ArrayExpression &node) {
+inline void ControlAnalyzer::visit(ArrayExpression &node) {
   if (node.repeat) {
     if (node.repeat->first)
       node.repeat->first->accept(*this);
@@ -350,21 +330,21 @@ inline void StmtAnalyzer::visit(ArrayExpression &node) {
   }
 }
 
-inline void StmtAnalyzer::visit(IndexExpression &node) {
+inline void ControlAnalyzer::visit(IndexExpression &node) {
   if (node.target)
     node.target->accept(*this);
   if (node.index)
     node.index->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(TupleExpression &node) {
+inline void ControlAnalyzer::visit(TupleExpression &node) {
   for (auto &e : node.elements) {
     if (e)
       e->accept(*this);
   }
 }
 
-inline void StmtAnalyzer::visit(BreakExpression &node) {
+inline void ControlAnalyzer::visit(BreakExpression &node) {
   if (loop_depth == 0) {
     throw SemanticException("break outside of loop");
   }
@@ -372,14 +352,14 @@ inline void StmtAnalyzer::visit(BreakExpression &node) {
     node.expr.value()->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(ContinueExpression &node) {
+inline void ControlAnalyzer::visit(ContinueExpression &node) {
   if (loop_depth == 0) {
     throw SemanticException("continue outside of loop");
   }
   (void)node;
 }
 
-inline void StmtAnalyzer::visit(PathExpression &node) {
+inline void ControlAnalyzer::visit(PathExpression &node) {
   for (auto &seg : node.segments) {
     if (seg.call) {
       for (auto &arg : seg.call->args) {
@@ -390,78 +370,78 @@ inline void StmtAnalyzer::visit(PathExpression &node) {
   }
 }
 
-inline void StmtAnalyzer::visit(QualifiedPathExpression &node) {
+inline void ControlAnalyzer::visit(QualifiedPathExpression &node) {
   // No QualiiedPath anymore
 }
 
 // Statement visitors
-inline void StmtAnalyzer::visit(BlockStatement &node) {
+inline void ControlAnalyzer::visit(BlockStatement &node) {
   for (auto &s : node.statements) {
     if (s)
       s->accept(*this);
   }
 }
 
-inline void StmtAnalyzer::visit(LetStatement &node) {
+inline void ControlAnalyzer::visit(LetStatement &node) {
   if (node.pattern)
     node.pattern->accept(*this);
   if (node.expr)
     node.expr->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(ExpressionStatement &node) {
+inline void ControlAnalyzer::visit(ExpressionStatement &node) {
   if (node.expression)
     node.expression->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(EmptyStatement &node) { (void)node; }
+inline void ControlAnalyzer::visit(EmptyStatement &node) { (void)node; }
 
 // Pattern visitors
-inline void StmtAnalyzer::visit(IdentifierPattern &node) {
+inline void ControlAnalyzer::visit(IdentifierPattern &node) {
   if (node.subpattern)
     node.subpattern.value()->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(LiteralPattern &node) { (void)node; }
+inline void ControlAnalyzer::visit(LiteralPattern &node) { (void)node; }
 
-inline void StmtAnalyzer::visit(WildcardPattern &node) { (void)node; }
+inline void ControlAnalyzer::visit(WildcardPattern &node) { (void)node; }
 
-inline void StmtAnalyzer::visit(RestPattern &node) { (void)node; }
+inline void ControlAnalyzer::visit(RestPattern &node) { (void)node; }
 
-inline void StmtAnalyzer::visit(ReferencePattern &node) {
+inline void ControlAnalyzer::visit(ReferencePattern &node) {
   if (node.inner_pattern)
     node.inner_pattern->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(StructPattern &node) {
+inline void ControlAnalyzer::visit(StructPattern &node) {
   for (auto &f : node.fields) {
     if (f.pattern)
       f.pattern->accept(*this);
   }
 }
 
-inline void StmtAnalyzer::visit(TuplePattern &node) {
+inline void ControlAnalyzer::visit(TuplePattern &node) {
   for (auto &el : node.elements) {
     if (el)
       el->accept(*this);
   }
 }
 
-inline void StmtAnalyzer::visit(GroupedPattern &node) {
+inline void ControlAnalyzer::visit(GroupedPattern &node) {
   if (node.inner_pattern)
     node.inner_pattern->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(PathPattern &node) { (void)node; }
+inline void ControlAnalyzer::visit(PathPattern &node) { (void)node; }
 
-inline void StmtAnalyzer::visit(SlicePattern &node) {
+inline void ControlAnalyzer::visit(SlicePattern &node) {
   for (auto &el : node.elements) {
     if (el)
       el->accept(*this);
   }
 }
 
-inline void StmtAnalyzer::visit(OrPattern &node) {
+inline void ControlAnalyzer::visit(OrPattern &node) {
   for (auto &alt : node.alternatives) {
     if (alt)
       alt->accept(*this);
@@ -469,7 +449,7 @@ inline void StmtAnalyzer::visit(OrPattern &node) {
 }
 
 // Top-level declaration visitors
-inline void StmtAnalyzer::visit(FunctionDecl &node) {
+inline void ControlAnalyzer::visit(FunctionDecl &node) {
   function_return_stack.push_back(node.return_type);
   if (node.body) {
     node.body.value()->accept(*this);
@@ -477,12 +457,12 @@ inline void StmtAnalyzer::visit(FunctionDecl &node) {
   function_return_stack.pop_back();
 }
 
-inline void StmtAnalyzer::visit(ConstantItem &node) {
+inline void ControlAnalyzer::visit(ConstantItem &node) {
   if (node.value)
     node.value.value()->accept(*this);
 }
 
-inline void StmtAnalyzer::visit(ModuleDecl &node) {
+inline void ControlAnalyzer::visit(ModuleDecl &node) {
   if (node.items) {
     for (auto &child : *node.items) {
       if (child)
@@ -491,25 +471,25 @@ inline void StmtAnalyzer::visit(ModuleDecl &node) {
   }
 }
 
-inline void StmtAnalyzer::visit(StructDecl &node) { (void)node; }
+inline void ControlAnalyzer::visit(StructDecl &node) { (void)node; }
 
-inline void StmtAnalyzer::visit(EnumDecl &node) { (void)node; }
+inline void ControlAnalyzer::visit(EnumDecl &node) { (void)node; }
 
-inline void StmtAnalyzer::visit(TraitDecl &node) {
+inline void ControlAnalyzer::visit(TraitDecl &node) {
   for (auto &item : node.associated_items) {
     if (item)
       item->accept(*this);
   }
 }
 
-inline void StmtAnalyzer::visit(ImplDecl &node) {
+inline void ControlAnalyzer::visit(ImplDecl &node) {
   for (auto &item : node.associated_items) {
     if (item)
       item->accept(*this);
   }
 }
 
-inline void StmtAnalyzer::visit(RootNode &node) {
+inline void ControlAnalyzer::visit(RootNode &node) {
   for (auto &child : node.children) {
     if (child)
       child->accept(*this);

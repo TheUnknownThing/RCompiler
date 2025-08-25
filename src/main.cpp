@@ -8,6 +8,7 @@
 #include "ast/visitors/pretty_print.hpp"
 #include "lexer/lexer.hpp"
 #include "preprocessor/preprocessor.hpp"
+#include "semantic/analyzer/controlAnalyzer.hpp"
 #include "semantic/analyzer/firstPass.hpp"
 #include "semantic/analyzer/secondPass.hpp"
 #include "semantic/semantic.hpp"
@@ -21,7 +22,7 @@ int main() {
     rc::Lexer lexer(preprocessed_code);
     auto tks = lexer.tokenize();
 
-    std::cout << "Tokens:" << std::endl;
+    std::cout << "[Tokens]" << std::endl;
 
     size_t pos = 0;
     for (const auto &token : tks) {
@@ -35,7 +36,7 @@ int main() {
     if (ast) {
       std::cout << "\nParsed" << ast->children.size() << " top-level items."
                 << std::endl;
-      std::cout << "\nAST Pretty Print:" << std::endl;
+      std::cout << "\n[AST Pretty Print]" << std::endl;
       std::cout << rc::pretty_print(*ast) << std::endl;
 
       rc::FirstPassBuilder first_pass;
@@ -49,20 +50,10 @@ int main() {
       std::cout << "[Semantic] Second pass (impl promotion) completed."
                 << std::endl;
 
-      // // Legacy symbol table build (can be removed once fully migrated)
-      // rc::SymbolTable symtab;
-      // rc::SymbolChecker symChecker(symtab);
-      // symChecker.build(ast);
-      // std::cout << "[Semantic] Legacy symbol table build completed." <<
-      // std::endl;
+      rc::ControlAnalyzer control_analyzer;
+      control_analyzer.analyze(ast);
+      std::cout << "[Semantic] Control flow analysis completed." << std::endl;
 
-      // rc::SemanticContext semCtx;
-      // semCtx.symbols() = symtab;
-      // // Type checking / expression analysis / statement analysis
-      // // rc::TypeAnalyzer &types = semCtx.types();
-      // // rc::ExprAnalyzer &exprs = semCtx.exprs();
-      // // rc::StmtAnalyzer &stmts = semCtx.stmts();
-      // // rc::PatternAnalyzer &patterns = semCtx.patterns();
     } else {
       std::cout << "Failed!" << std::endl;
     }

@@ -10,8 +10,8 @@ namespace rc {
 
 class SecondPassBuilder : public BaseVisitor {
 public:
-  SecondPassBuilder(FirstPassBuilder &firstPasspass)
-      : firstPass(firstPasspass) {}
+  SecondPassBuilder(FirstPassBuilder &firstPass)
+      : firstPass(firstPass) {}
 
   void build(const std::shared_ptr<RootNode> &root) {
     if (!root)
