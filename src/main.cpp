@@ -8,7 +8,8 @@
 #include "ast/visitors/pretty_print.hpp"
 #include "lexer/lexer.hpp"
 #include "preprocessor/preprocessor.hpp"
-#include "semantic/analyzer/symbolTable.hpp"
+#include "semantic/analyzer/firstPass.hpp"
+#include "semantic/analyzer/secondPass.hpp"
 #include "semantic/semantic.hpp"
 #include "utils/logger.hpp"
 
@@ -37,10 +38,23 @@ int main() {
       std::cout << "\nAST Pretty Print:" << std::endl;
       std::cout << rc::pretty_print(*ast) << std::endl;
 
-      rc::SymbolTable symtab;
-      rc::SymbolChecker symChecker(symtab);
-      symChecker.build(ast);
-      std::cout << "\n[Semantic] Symbol table build completed." << std::endl;
+      rc::FirstPassBuilder first_pass;
+      first_pass.build(ast);
+      std::cout
+          << "\n[Semantic] First pass (scope & item collection) completed."
+          << std::endl;
+
+      rc::SecondPassBuilder second_pass(first_pass);
+      second_pass.build(ast);
+      std::cout << "[Semantic] Second pass (impl promotion) completed."
+                << std::endl;
+
+      // // Legacy symbol table build (can be removed once fully migrated)
+      // rc::SymbolTable symtab;
+      // rc::SymbolChecker symChecker(symtab);
+      // symChecker.build(ast);
+      // std::cout << "[Semantic] Legacy symbol table build completed." <<
+      // std::endl;
 
       // rc::SemanticContext semCtx;
       // semCtx.symbols() = symtab;

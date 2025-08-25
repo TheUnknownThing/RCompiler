@@ -540,7 +540,8 @@ Parser::parse_block_expression() {
         std::vector<std::shared_ptr<BaseNode>> stmts;
         std::optional<std::shared_ptr<Expression>> tail_expr;
 
-        auto expr = any_expression();
+        auto expr = any_expression(); // TODO, fix should not be any_expression,
+                                      // should be `ExprWithoutBlock`
         auto empty_stmt = tok(TokenType::SEMICOLON).map([](auto) {
           return std::shared_ptr<BaseNode>(std::make_shared<EmptyStatement>());
         });
@@ -549,6 +550,7 @@ Parser::parse_block_expression() {
           return std::shared_ptr<BaseNode>(
               std::make_shared<ExpressionStatement>(e, true));
         });
+        auto item = any_top_level_item();
 
         int stmt_count = 0;
 
@@ -575,6 +577,14 @@ Parser::parse_block_expression() {
             stmt_count++;
             LOG_DEBUG("Parsed statement #" + std::to_string(stmt_count) +
                       " in block (expr)");
+            continue;
+          }
+          pos = before;
+          if (auto s = item.parse(toks, pos)) {
+            stmts.push_back(*s);
+            stmt_count++;
+            LOG_DEBUG("Parsed statement #" + std::to_string(stmt_count) +
+                      " in block (item)");
             continue;
           }
           pos = before;
