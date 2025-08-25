@@ -7,7 +7,7 @@
 
 #include "ast/nodes/stmt.hpp"
 #include "ast/nodes/topLevel.hpp"
-#include "semantic/analyzer/symbolTable.hpp"
+#include "semantic/error/exceptions.hpp"
 
 #include <memory>
 
@@ -245,15 +245,6 @@ inline void ControlAnalyzer::visit(MatchExpression &node) {
 inline void ControlAnalyzer::visit(ReturnExpression &node) {
   if (function_return_stack.empty()) {
     throw SemanticException("return outside of function");
-  }
-  auto expected = function_return_stack.back();
-  LiteralType actual = LiteralType::base(PrimitiveLiteralType::NONE);
-  if (node.value) {
-    // TODO: validate return type
-  }
-  if (!(actual == expected)) {
-    throw TypeError("Return type mismatch: expected '" + to_string(expected) +
-                    "' but got '" + to_string(actual) + "'");
   }
 }
 

@@ -8,7 +8,6 @@
 
 #include "ast/nodes/pattern.hpp"
 #include "ast/types.hpp"
-#include "semantic/analyzer/symbolTable.hpp"
 
 #include <memory>
 #include <optional>
