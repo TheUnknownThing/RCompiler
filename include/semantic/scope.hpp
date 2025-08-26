@@ -133,14 +133,14 @@ public:
     return out;
   }
 
-  const CollectedItem *find_value_item(const std::string &name) const {
+  CollectedItem *find_value_item(const std::string &name) {
     auto it = value_items_.find(name);
     if (it == value_items_.end())
       return nullptr;
     return &it->second;
   }
 
-  const CollectedItem *find_type_item(const std::string &name) const {
+  CollectedItem *find_type_item(const std::string &name) {
     auto it = type_items_.find(name);
     if (it == type_items_.end())
       return nullptr;

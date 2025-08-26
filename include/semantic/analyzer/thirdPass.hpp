@@ -4,6 +4,7 @@
 #include "semantic/error/exceptions.hpp"
 #include "semantic/scope.hpp"
 #include "semantic/types.hpp"
+#include "utils/logger.hpp"
 
 #include <unordered_set>
 
@@ -14,33 +15,41 @@ public:
   ThirdPassPromoter() = default;
 
   void run(const std::shared_ptr<RootNode> &root, ScopeNode *root_scope_) {
+    LOG_INFO("[ThirdPass] Promoting impl blocks");
     root_scope = root_scope_;
     if (!root_scope)
-      throw SemanticException("third pass requires existing root scope");
-    current_scope = root_scope;
+      throw SemanticException("third pass requires root scope");
+    scope_stack.clear();
+    scope_stack.push_back(root_scope);
     if (root) {
+      size_t idx = 0;
       for (const auto &child : root->children) {
-        if (child)
+        if (child) {
+          LOG_DEBUG("[ThirdPass] Visiting top-level item #" +
+                    std::to_string(idx));
           child->accept(*this);
+        }
+        ++idx;
       }
     }
+    LOG_INFO("[ThirdPass] Completed");
   }
 
   void visit(BaseNode &node) override {
-    if (auto *impl = dynamic_cast<ImplDecl *>(&node)) {
-      visit(*impl);
-    } else if (auto *fn = dynamic_cast<FunctionDecl *>(&node)) {
-      visit(*fn);
-    } else if (auto *tr = dynamic_cast<TraitDecl *>(&node)) {
-      visit(*tr);
-    } else if (auto *blk = dynamic_cast<BlockExpression *>(&node)) {
-      visit(*blk);
-    } else if (auto *ife = dynamic_cast<IfExpression *>(&node)) {
-      visit(*ife);
-    } else if (auto *lop = dynamic_cast<LoopExpression *>(&node)) {
-      visit(*lop);
-    } else if (auto *whl = dynamic_cast<WhileExpression *>(&node)) {
-      visit(*whl);
+    if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
+      visit(*expr);
     }
   }
 
@@ -52,6 +61,7 @@ public:
   }
 
   void visit(ImplDecl &node) override {
+    LOG_DEBUG("[ThirdPass] Impl block for target type start");
     if (node.impl_type != ImplDecl::ImplType::Inherent) {
       // Trait impls not handled
       return;
@@ -99,14 +109,14 @@ public:
         if (fn->params) {
           for (const auto &p : *fn->params) {
             fmd.param_names.push_back(p.first);
-            fmd.param_types.push_back(
-                resolve_type(p.second, struct_item->owner_scope));
+            fmd.param_types.push_back(resolve_type(p.second));
           }
         }
-        fmd.return_type =
-            resolve_type(fn->return_type, struct_item->owner_scope);
+        fmd.return_type = resolve_type(fn->return_type);
         fmd.decl = fn;
         meta.methods.push_back(std::move(fmd));
+        LOG_DEBUG("[ThirdPass] Added method '" + fn->name + "' to struct '" +
+                  target_name + "'");
       } else if (auto *cst = dynamic_cast<ConstantItem *>(assoc.get())) {
         if (existing.contains(cst->name)) {
           throw SemanticException("duplicate name " + cst->name + " in impl");
@@ -114,9 +124,11 @@ public:
         existing.insert(cst->name);
         ConstantMetaData cmd;
         cmd.name = cst->name;
-        cmd.type = resolve_type(cst->type, struct_item->owner_scope);
+        cmd.type = resolve_type(cst->type);
         cmd.decl = cst;
         meta.constants.push_back(std::move(cmd));
+        LOG_DEBUG("[ThirdPass] Added constant '" + cst->name + "' to struct '" +
+                  target_name + "'");
       }
     }
   }
@@ -126,10 +138,13 @@ public:
   }
 
   void visit(BlockExpression &node) override {
+    auto *block_scope = current_scope()->find_child_scope_by_owner(&node);
+    push_scope(block_scope);
     for (const auto &stmt : node.statements) {
       if (stmt)
         stmt->accept(*this);
     }
+    pop_scope();
     if (node.final_expr)
       node.final_expr.value()->accept(*this);
   }
@@ -155,18 +170,27 @@ public:
 
 private:
   ScopeNode *root_scope = nullptr;
-  ScopeNode *current_scope = nullptr;
+  std::vector<ScopeNode *> scope_stack;
 
-  CollectedItem *resolve_struct(const std::string &name) const {
-    for (auto *scope = current_scope; scope; scope = scope->parent) {
-      auto *ci = const_cast<CollectedItem *>(scope->find_item(name));
-      if (ci && ci->kind == ItemKind::Struct)
-        return ci;
+  ScopeNode *current_scope() const { return scope_stack.back(); }
+
+  void push_scope(ScopeNode *s) { scope_stack.push_back(s); }
+  void pop_scope() {
+    if (scope_stack.size() > 1)
+      scope_stack.pop_back();
+  }
+
+  CollectedItem *resolve_struct(const std::string &name) {
+    for (auto *scope = current_scope(); scope; scope = scope->parent) {
+      if (auto *ci = scope->find_type_item(name)) {
+        if (ci->kind == ItemKind::Struct)
+          return ci;
+      }
     }
     return nullptr;
   }
 
-  SemType resolve_type(const LiteralType &t, const ScopeNode *base_scope) {
+  SemType resolve_type(const LiteralType &t) {
     if (t.is_base()) {
       return SemType::primitive(map_primitive(t.as_base()));
     }
@@ -174,23 +198,23 @@ private:
       std::vector<SemType> elems;
       elems.reserve(t.as_tuple().size());
       for (const auto &el : t.as_tuple()) {
-        elems.push_back(resolve_type(el, base_scope));
+        elems.push_back(resolve_type(el));
       }
       return SemType::tuple(std::move(elems));
     }
     if (t.is_array()) {
-      return SemType::array(resolve_type(*t.as_array().element, base_scope),
+      return SemType::array(resolve_type(*t.as_array().element),
                             t.as_array().size);
     }
     if (t.is_slice()) {
-      return SemType::slice(resolve_type(*t.as_slice().element, base_scope));
+      return SemType::slice(resolve_type(*t.as_slice().element));
     }
     if (t.is_path()) {
       const auto &segs = t.as_path().segments;
       if (segs.empty())
         throw SemanticException("empty path");
       if (segs.size() == 1) {
-        const auto *ci = resolve_named_item(segs[0], base_scope);
+        const auto *ci = resolve_named_item(segs[0]);
         if (ci)
           return SemType::named(ci);
         throw SemanticException("unknown named item " + segs[0]);
@@ -201,17 +225,17 @@ private:
     throw SemanticException("unknown type");
   }
 
-  const CollectedItem *resolve_named_item(const std::string &name,
-                                          const ScopeNode *start) const {
-    for (auto *scope = const_cast<ScopeNode *>(start); scope;
-         scope = scope->parent) {
-      if (const auto *ci = scope->find_item(name))
-        return ci;
+  const CollectedItem *resolve_named_item(const std::string &name) const {
+    for (auto *scope = current_scope(); scope; scope = scope->parent) {
+      if (const auto *ci = scope->find_type_item(name)) {
+        if (ci->kind == ItemKind::Struct || ci->kind == ItemKind::Enum)
+          return ci;
+      }
     }
     return nullptr;
   }
 
-  SemPrimitiveKind map_primitive(PrimitiveLiteralType plt) const {
+  SemPrimitiveKind map_primitive(PrimitiveLiteralType plt) {
     switch (plt) {
     case PrimitiveLiteralType::I32:
       return SemPrimitiveKind::I32;
@@ -239,6 +263,23 @@ private:
       return SemPrimitiveKind::UNIT;
     }
     return SemPrimitiveKind::UNKNOWN;
+  }
+
+  CollectedItem *lookup_current_value_item(const std::string &name,
+                                           ItemKind kind) {
+    auto *scope = current_scope();
+    auto *found = scope->find_value_item(name);
+    if (found && found->kind == kind)
+      return found;
+    throw SemanticException("item " + name + " not found in value namespace");
+  }
+  CollectedItem *lookup_current_type_item(const std::string &name,
+                                          ItemKind kind) {
+    auto *scope = current_scope();
+    auto *found = scope->find_type_item(name);
+    if (found && found->kind == kind)
+      return found;
+    throw SemanticException("item " + name + " not found in type namespace");
   }
 };
 

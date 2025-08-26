@@ -273,7 +273,7 @@ private:
   CollectedItem *lookup_current_value_item(const std::string &name,
                                            ItemKind kind) {
     auto *scope = current_scope();
-    auto *found = const_cast<CollectedItem *>(scope->find_value_item(name));
+    auto *found = scope->find_value_item(name);
     if (found && found->kind == kind)
       return found;
     throw SemanticException("item " + name + " not found in value namespace");
@@ -281,7 +281,7 @@ private:
   CollectedItem *lookup_current_type_item(const std::string &name,
                                           ItemKind kind) {
     auto *scope = current_scope();
-    auto *found = const_cast<CollectedItem *>(scope->find_type_item(name));
+    auto *found = scope->find_type_item(name);
     if (found && found->kind == kind)
       return found;
     throw SemanticException("item " + name + " not found in type namespace");
