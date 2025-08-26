@@ -16,6 +16,9 @@ RCompiler/
 ├── tests/
 │   ├── unit/
 │   └── integration/
+├── CMakeLists.txt
+├── README.md
+├── whitelist.md
 ```
 
 ## Original Repo
@@ -25,3 +28,20 @@ This project implements [RCompiler-Spec](https://github.com/peterzheng98/RCompil
 ## Implemented Features
 
 See [whitelist.md](whitelist.md) for the concrete, implementable subset of the Rust language that the RCompiler parser and type checker will support. This subset is derived from the current Rust specification, excluding features that are explicitly removed or marked as undefined behavior.
+
+## Implementation Status
+
+- [x] Preprocessor
+    - Remove Comments
+    - Check invalid ASCII character
+
+- [x] Lexer
+    - Identify keywords / identifiers
+    - Classify literals (strings, numbers, etc.)
+
+- [x] Parser
+    - Parse expr, stmts, items
+
+- [ ] Semantic Check (WIP)
+
+- [ ] IR Codegen
