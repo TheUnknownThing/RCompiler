@@ -19,13 +19,27 @@ class ScopeNode;
 enum class ItemKind { Function, Constant, Module, Struct, Enum, Trait };
 
 struct FunctionMetaData {
+  std::string name;
   std::vector<std::string> param_names;
   std::vector<SemType> param_types;
   SemType return_type;
+  const FunctionDecl *decl = nullptr;
 };
+
+struct ConstantMetaData {
+  std::string name;
+  SemType type;
+  const ConstantItem *decl = nullptr;
+};
+
 struct StructMetaData {
   std::vector<std::pair<std::string, SemType>> named_fields;
+
+  // impl fields populated in third pass
+  std::vector<FunctionMetaData> methods;
+  std::vector<ConstantMetaData> constants;
 };
+
 struct EnumMetaData {
   std::vector<std::string> variant_names;
 };

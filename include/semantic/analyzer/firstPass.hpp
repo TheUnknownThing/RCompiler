@@ -50,6 +50,10 @@ public:
   // Item visitors
   void visit(FunctionDecl &node) override {
     current_scope->add_item(node.name, ItemKind::Function, &node);
+
+    if (node.body && node.body.value()) {
+      node.body.value()->accept(*this);
+    }
   }
 
   void visit(ConstantItem &node) override {

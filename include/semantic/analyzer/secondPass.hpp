@@ -32,27 +32,31 @@ public:
   }
 
   void visit(BaseNode &node) override {
-    if (auto *fn = dynamic_cast<FunctionDecl *>(&node)) {
-      visit(*fn);
-    } else if (auto *st = dynamic_cast<StructDecl *>(&node)) {
-      visit(*st);
-    } else if (auto *en = dynamic_cast<EnumDecl *>(&node)) {
-      visit(*en);
-    } else if (auto *tr = dynamic_cast<TraitDecl *>(&node)) {
-      visit(*tr);
-    } else if (auto *blk = dynamic_cast<BlockExpression *>(&node)) {
-      visit(*blk);
-    } else if (auto *ife = dynamic_cast<IfExpression *>(&node)) {
-      visit(*ife);
-    } else if (auto *lop = dynamic_cast<LoopExpression *>(&node)) {
-      visit(*lop);
-    } else if (auto *whl = dynamic_cast<WhileExpression *>(&node)) {
-      visit(*whl);
+    if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *cst = dynamic_cast<ConstantItem *>(&node)) {
+      visit(*cst);
+    } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
+      visit(*expr);
     }
   }
 
   void visit(FunctionDecl &node) override {
     FunctionMetaData sig;
+    sig.name = node.name;
+    sig.decl = &node;
     std::set<std::string> seen;
     if (node.params) {
       for (const auto &p : *node.params) {
@@ -70,6 +74,17 @@ public:
     if (auto *ci = lookup_current_item(node.name, ItemKind::Function)) {
       ci->metadata = std::move(sig);
     }
+
+    if (node.body && node.body.value()) {
+      node.body.value()->accept(*this);
+    }
+  }
+
+  void visit(ConstantItem &node) override {
+    ConstantMetaData meta;
+    meta.name = node.name;
+    meta.decl = &node;
+    meta.type = resolve_type(node.type);
   }
 
   void visit(StructDecl &node) override {
