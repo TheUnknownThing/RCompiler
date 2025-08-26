@@ -52,6 +52,7 @@ public:
   parsec::Parser<std::shared_ptr<ModuleDecl>> parse_module();
   parsec::Parser<std::shared_ptr<EnumDecl>> parse_enum();
   parsec::Parser<std::shared_ptr<ConstantItem>> parse_const_item();
+  parsec::Parser<std::shared_ptr<ImplDecl>> parse_impl();
 
   parsec::Parser<std::shared_ptr<BaseNode>> parse_let_statement();
 
@@ -108,6 +109,11 @@ inline parsec::Parser<std::shared_ptr<BaseItem>> Parser::any_top_level_item() {
           LOG_DEBUG("Parsed constant item at position " +
                     std::to_string(saved_pos));
           return const_item;
+        }
+        pos = saved_pos;
+        if (auto impl = parse_impl().parse(toks, pos)) {
+          LOG_DEBUG("Parsed impl at position " + std::to_string(saved_pos));
+          return impl;
         }
         pos = saved_pos;
         LOG_DEBUG("No top-level item found at position " +
@@ -491,6 +497,48 @@ Parser::parse_const_item() {
         LOG_DEBUG("Parsed const item: " + name);
         return std::make_shared<ConstantItem>(name, ty, init);
       });
+}
+
+inline parsec::Parser<std::shared_ptr<ImplDecl>> Parser::parse_impl() {
+  auto to_base_item = [](const auto &item_ptr) {
+    return std::static_pointer_cast<BaseItem>(item_ptr);
+  };
+
+  auto associated_item =
+      (parse_function() >> to_base_item) | (parse_const_item() >> to_base_item);
+
+  auto inherentImpl =
+      tok(TokenType::IMPL)
+          .thenR(typ)
+          .thenL(tok(TokenType::L_BRACE))
+          .combine(many(associated_item),
+                   [](const auto &typ, const auto &item) {
+                     return std::make_shared<ImplDecl>(
+                         ImplDecl::ImplType::Inherent, typ, item);
+                   })
+          .thenL(tok(TokenType::R_BRACE));
+
+  auto traitImpl =
+      tok(TokenType::IMPL)
+          .thenR(identifier)
+          .thenL(tok(TokenType::FOR))
+          .combine(typ,
+                   [](const auto &trait, const auto &forType) {
+                     return std::make_pair(trait, forType);
+                   })
+          .thenL(tok(TokenType::L_BRACE))
+          .combine(many(associated_item),
+                   [](const auto &pair, const auto &items) {
+                     return std::make_tuple(pair.first, pair.second, items);
+                   })
+          .thenL(tok(TokenType::R_BRACE))
+          .map([](const auto &items) {
+            return std::make_shared<ImplDecl>(
+                ImplDecl::ImplType::Trait, std::get<1>(items),
+                std::get<2>(items), std::get<0>(items));
+          });
+
+  return inherentImpl | traitImpl;
 }
 
 inline parsec::Parser<std::shared_ptr<Expression>>
