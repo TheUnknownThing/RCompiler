@@ -84,37 +84,65 @@ struct CollectedItem {
 
 class ScopeNode {
 public:
-  explicit ScopeNode(std::string name, ScopeNode *parent = nullptr)
-      : name(std::move(name)), parent(parent) {}
+  explicit ScopeNode(std::string name, ScopeNode *parent = nullptr,
+                     const BaseNode *owner = nullptr)
+      : name(std::move(name)), parent(parent), owner(owner) {}
 
   std::string name;
   ScopeNode *parent;
+  const BaseNode *owner;
 
   void add_item(const std::string &name, ItemKind kind, const BaseItem *ast) {
-    if (items_.contains(name)) {
-      throw SemanticException("duplicate item " + name);
+    switch (kind) {
+    case ItemKind::Function:
+    case ItemKind::Constant:
+    case ItemKind::Module: {
+      if (value_items_.contains(name)) {
+        throw SemanticException("duplicate item (value namespace) " + name);
+      }
+      value_items_.emplace(
+          name, CollectedItem{name, kind, ast, this, std::monostate()});
+      break;
     }
-    items_.emplace(name,
-                   CollectedItem{name, kind, ast, this, std::monostate()});
+    case ItemKind::Struct:
+    case ItemKind::Enum:
+    case ItemKind::Trait: {
+      if (type_items_.contains(name)) {
+        throw SemanticException("duplicate item (type namespace) " + name);
+      }
+      type_items_.emplace(
+          name, CollectedItem{name, kind, ast, this, std::monostate()});
+      break;
+    }
+    }
   }
 
-  ScopeNode *add_child_scope(std::string name) {
-    childNodes.push_back(std::make_unique<ScopeNode>(std::move(name), this));
+  ScopeNode *add_child_scope(std::string name, const BaseNode *owner_node) {
+    childNodes.push_back(
+        std::make_unique<ScopeNode>(std::move(name), this, owner_node));
     return childNodes.back().get();
   }
 
   std::vector<CollectedItem> items() const {
     std::vector<CollectedItem> out;
-    out.reserve(items_.size());
-    for (const auto &kv : items_) {
+    out.reserve(value_items_.size() + type_items_.size());
+    for (const auto &kv : value_items_)
       out.push_back(kv.second);
-    }
+    for (const auto &kv : type_items_)
+      out.push_back(kv.second);
     return out;
   }
 
-  const CollectedItem *find_item(const std::string &name) const {
-    auto it = items_.find(name);
-    if (it == items_.end())
+  const CollectedItem *find_value_item(const std::string &name) const {
+    auto it = value_items_.find(name);
+    if (it == value_items_.end())
+      return nullptr;
+    return &it->second;
+  }
+
+  const CollectedItem *find_type_item(const std::string &name) const {
+    auto it = type_items_.find(name);
+    if (it == type_items_.end())
       return nullptr;
     return &it->second;
   }
@@ -123,30 +151,36 @@ public:
     return childNodes;
   }
 
-  const ScopeNode *find_child_scope(const std::string &name) const {
+  const ScopeNode *find_child_scope_by_owner(const BaseNode *owner_node) const {
+    if (!owner_node)
+      return nullptr;
     for (const auto &c : childNodes) {
-      if (c->name == name)
+      if (c->owner == owner_node)
         return c.get();
     }
     return nullptr;
   }
-  ScopeNode *find_child_scope(const std::string &name) {
+  ScopeNode *find_child_scope_by_owner(const BaseNode *owner_node) {
+    if (!owner_node)
+      return nullptr;
     for (const auto &c : childNodes) {
-      if (c->name == name)
+      if (c->owner == owner_node)
         return c.get();
     }
     return nullptr;
   }
 
 private:
-  std::map<std::string, CollectedItem> items_;
+  std::map<std::string, CollectedItem> value_items_;
+  std::map<std::string, CollectedItem> type_items_;
   std::vector<std::unique_ptr<ScopeNode>> childNodes;
 };
 
-inline ScopeNode *enterScope(ScopeNode *&current, const std::string &name) {
+inline ScopeNode *enterScope(ScopeNode *&current, const std::string &name,
+                             const BaseNode *owner_node) {
   if (!current)
     throw SemanticException("null current scope");
-  current = current->add_child_scope(name);
+  current = current->add_child_scope(name, owner_node);
   return current;
 }
 

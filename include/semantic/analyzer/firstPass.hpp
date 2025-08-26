@@ -5,6 +5,7 @@
 
 #include "ast/nodes/topLevel.hpp"
 #include "semantic/scope.hpp"
+#include "utils/logger.hpp"
 
 namespace rc {
 
@@ -15,40 +16,49 @@ public:
   FirstPassBuilder() = default;
 
   void build(const std::shared_ptr<RootNode> &root) {
-    root_scope = new ScopeNode("", nullptr);
+    LOG_INFO("[FirstPass] Building initial scope tree");
+    root_scope = new ScopeNode("", nullptr, root.get());
     current_scope = root_scope;
     if (root) {
+      size_t idx = 0;
       for (const auto &child : root->children) {
-        if (child)
+        if (child) {
+          LOG_DEBUG("[FirstPass] Visiting top-level child #" +
+                    std::to_string(idx));
           child->accept(*this);
+        }
+        ++idx;
       }
     }
+    LOG_INFO("[FirstPass] Completed. Root has " +
+             std::to_string(root_scope->items().size()) + " items");
   }
 
   void visit(BaseNode &node) override {
-    if (auto *fn = dynamic_cast<FunctionDecl *>(&node)) {
-      visit(*fn);
+    if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
+      visit(*decl);
     } else if (auto *cst = dynamic_cast<ConstantItem *>(&node)) {
       visit(*cst);
-    } else if (auto *st = dynamic_cast<StructDecl *>(&node)) {
-      visit(*st);
-    } else if (auto *en = dynamic_cast<EnumDecl *>(&node)) {
-      visit(*en);
-    } else if (auto *tr = dynamic_cast<TraitDecl *>(&node)) {
-      visit(*tr);
-    } else if (auto *blk = dynamic_cast<BlockExpression *>(&node)) {
-      visit(*blk);
-    } else if (auto *ife = dynamic_cast<IfExpression *>(&node)) {
-      visit(*ife);
-    } else if (auto *lop = dynamic_cast<LoopExpression *>(&node)) {
-      visit(*lop);
-    } else if (auto *whl = dynamic_cast<WhileExpression *>(&node)) {
-      visit(*whl);
+    } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
+      visit(*expr);
     }
   }
 
   // Item visitors
   void visit(FunctionDecl &node) override {
+    LOG_DEBUG("[FirstPass] Collect function '" + node.name + "'");
     current_scope->add_item(node.name, ItemKind::Function, &node);
 
     if (node.body && node.body.value()) {
@@ -57,38 +67,43 @@ public:
   }
 
   void visit(ConstantItem &node) override {
+    LOG_DEBUG("[FirstPass] Collect constant '" + node.name + "'");
     current_scope->add_item(node.name, ItemKind::Constant, &node);
   }
 
   void visit(StructDecl &node) override {
+    LOG_DEBUG("[FirstPass] Collect struct '" + node.name + "'");
     current_scope->add_item(node.name, ItemKind::Struct, &node);
   }
 
   void visit(EnumDecl &node) override {
+    LOG_DEBUG("[FirstPass] Collect enum '" + node.name + "'");
     current_scope->add_item(node.name, ItemKind::Enum, &node);
   }
 
   void visit(TraitDecl &node) override {
+    LOG_DEBUG("[FirstPass] Collect trait '" + node.name + "'");
     current_scope->add_item(node.name, ItemKind::Trait, &node);
-    enterScope(current_scope, node.name);
+    enterScope(current_scope, node.name, &node);
+    LOG_DEBUG("[FirstPass] Enter trait scope '" + node.name + "'");
     for (const auto &assoc : node.associated_items) {
       if (assoc)
         assoc->accept(*this);
     }
     exitScope(current_scope);
-  }
-
-  void visit(ImplDecl &node) override {
-    // ignored in first pass
-    (void)node;
+    LOG_DEBUG("[FirstPass] Exit trait scope '" + node.name + "'");
   }
 
   void visit(BlockExpression &node) override {
+    enterScope(current_scope, "block", &node);
+    LOG_DEBUG("[FirstPass] Enter block scope");
     for (const auto &stmt : node.statements) {
       if (!stmt)
         continue;
       stmt->accept(*this);
     }
+    exitScope(current_scope);
+    LOG_DEBUG("[FirstPass] Exit block scope");
     if (node.final_expr) {
       node.final_expr.value()->accept(*this);
     }
