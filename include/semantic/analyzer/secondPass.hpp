@@ -1,84 +1,138 @@
 #pragma once
 
-#include "ast/nodes/topLevel.hpp"
-#include "semantic/analyzer/firstPass.hpp"
-#include "semantic/error/exceptions.hpp"
+#include <map>
+#include <memory>
+#include <optional>
+#include <set>
+#include <string>
+#include <vector>
 
-#include <unordered_set>
+#include "ast/nodes/topLevel.hpp"
+#include "semantic/error/exceptions.hpp"
+#include "semantic/scope.hpp"
 
 namespace rc {
 
-class SecondPassBuilder : public BaseVisitor {
+class SecondPassResolver : public BaseVisitor {
 public:
-  SecondPassBuilder(FirstPassBuilder &firstPass)
-      : firstPass(firstPass) {}
+  SecondPassResolver() = default;
 
-  void build(const std::shared_ptr<RootNode> &root) {
-    if (!root)
-      return;
-
-    currentScope = const_cast<FirstPassScopeNode *>(firstPass.rootScope());
-    scopeStack.clear();
-    root->accept(*this);
+  void run(const std::shared_ptr<RootNode> &root, ScopeNode *root_scope_) {
+    root_scope = root_scope_;
+    if (!root_scope)
+      throw SemanticException("second pass requires root scope");
+    scope_stack.clear();
+    scope_stack.push_back(root_scope);
+    if (root) {
+      for (const auto &child : root->children) {
+        if (child)
+          child->accept(*this);
+      }
+    }
   }
 
   void visit(BaseNode &node) override {
-    if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *root = dynamic_cast<RootNode *>(&node)) {
-      visit(*root);
-    } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<MatchExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-      visit(*expr);
-    }
-    // Other items / exprs do not consider here.
-  }
-
-  void visit(RootNode &node) override {
-    for (auto &child : node.children) {
-      if (child)
-        child->accept(*this);
+    if (auto *fn = dynamic_cast<FunctionDecl *>(&node)) {
+      visit(*fn);
+    } else if (auto *st = dynamic_cast<StructDecl *>(&node)) {
+      visit(*st);
+    } else if (auto *en = dynamic_cast<EnumDecl *>(&node)) {
+      visit(*en);
+    } else if (auto *tr = dynamic_cast<TraitDecl *>(&node)) {
+      visit(*tr);
+    } else if (auto *blk = dynamic_cast<BlockExpression *>(&node)) {
+      visit(*blk);
+    } else if (auto *ife = dynamic_cast<IfExpression *>(&node)) {
+      visit(*ife);
+    } else if (auto *lop = dynamic_cast<LoopExpression *>(&node)) {
+      visit(*lop);
+    } else if (auto *whl = dynamic_cast<WhileExpression *>(&node)) {
+      visit(*whl);
     }
   }
 
   void visit(FunctionDecl &node) override {
-    executeWithScope(&node, [&] {
-      if (node.body && *node.body) {
-        (*node.body)->accept(*this);
+    FunctionMetaData sig;
+    std::set<std::string> seen;
+    if (node.params) {
+      for (const auto &p : *node.params) {
+        const auto &name = p.first;
+        if (seen.contains(name)) {
+          throw SemanticException("duplicate parameter '" + name +
+                                  "' in function '" + node.name + "'");
+        }
+        seen.insert(name);
+        sig.param_names.push_back(name);
+        sig.param_types.push_back(resolve_type(p.second));
       }
-    });
+    }
+    sig.return_type = resolve_type(node.return_type);
+    if (auto *ci = lookup_current_item(node.name, ItemKind::Function)) {
+      ci->metadata = std::move(sig);
+    }
+  }
+
+  void visit(StructDecl &node) override {
+    StructMetaData info;
+    if (node.struct_type == StructDecl::StructType::Struct) {
+      std::set<std::string> seen;
+      for (const auto &field : node.fields) {
+        const auto &name = field.first;
+        if (seen.contains(name)) {
+          throw SemanticException("duplicate field " + name);
+        }
+        seen.insert(name);
+        info.named_fields.emplace_back(name, resolve_type(field.second));
+      }
+    } else {
+      // No Tuple Struct Now
+    }
+    if (auto *ci = lookup_current_item(node.name, ItemKind::Struct)) {
+      ci->metadata = std::move(info);
+    }
+  }
+
+  void visit(EnumDecl &node) override {
+    std::set<std::string> seen;
+    EnumMetaData info;
+    for (const auto &variant : node.variants) {
+      if (seen.contains(variant.name)) {
+        throw SemanticException("duplicate enum variant " + variant.name);
+      }
+      seen.insert(variant.name);
+      info.variant_names.push_back(variant.name);
+    }
+    if (auto *ci = lookup_current_item(node.name, ItemKind::Enum)) {
+      ci->metadata = std::move(info);
+    }
   }
 
   void visit(TraitDecl &node) override {
-    executeWithScope(&node, [&] {
-      for (auto &item : node.associated_items) {
-        if (item)
-          item->accept(*this);
-      }
-    });
+    auto *parent_scope = current_scope();
+    auto *trait_scope = parent_scope->find_child_scope(node.name);
+
+    push_scope(trait_scope);
+    for (const auto &assoc : node.associated_items) {
+      if (assoc)
+        assoc->accept(*this);
+    }
+    pop_scope();
   }
 
   void visit(BlockExpression &node) override {
-    executeWithScope(&node, [&] {
-      for (auto &stmt : node.statements) {
-        if (stmt)
-          stmt->accept(*this);
-      }
-    });
+    for (const auto &stmt : node.statements) {
+      if (stmt)
+        stmt->accept(*this);
+    }
+    if (node.final_expr)
+      node.final_expr.value()->accept(*this);
   }
 
   void visit(IfExpression &node) override {
     if (node.then_block)
       node.then_block->accept(*this);
-    if (node.else_block && *node.else_block)
-      (*node.else_block)->accept(*this);
+    if (node.else_block)
+      node.else_block.value()->accept(*this);
   }
 
   void visit(LoopExpression &node) override {
@@ -91,93 +145,102 @@ public:
       node.body->accept(*this);
   }
 
-  void visit(ImplDecl &node) override {
-    if (!node.target_type.is_path() ||
-        node.target_type.as_path().segments.empty()) {
-      throw SemanticException("Impl target is not a valid path to a struct");
-    }
-    const auto &segs = node.target_type.as_path().segments;
-    const std::string &struct_name = segs.back();
-
-    FirstPassScopeNode *scope_with_struct = nullptr;
-    for (FirstPassScopeNode *s = currentScope; s != nullptr; s = s->parent) {
-      auto it = s->items.find(struct_name);
-      if (it != s->items.end() &&
-          it->second.kind == FirstPassItemKind::Struct) {
-        scope_with_struct = s;
-        break;
-      }
-    }
-    if (!scope_with_struct) {
-      throw SemanticException("Impl target struct not found: " + struct_name);
-    }
-
-    FirstPassItem &struct_item = scope_with_struct->items.at(struct_name);
-    if (!struct_item.struct_data) {
-      throw SemanticException("Target is not struct: " + struct_name);
-    }
-
-    auto &metadata = *struct_item.struct_data;
-    FirstPassStruct::ImplInfo impl_info;
-    impl_info.impl_decl = &node;
-
-    for (auto &assoc : node.associated_items) {
-      if (!assoc)
-        continue;
-      if (auto *fn = dynamic_cast<FunctionDecl *>(assoc.get())) {
-        const std::string &name = fn->name;
-        if (metadata.impl_method_names.count(name) ||
-            metadata.impl_const_names.count(name)) {
-          throw SemanticException("Duplicate " + name + " for struct " +
-                                  struct_name);
-        }
-        FirstPassStruct::ImplMethod m;
-        m.name = name;
-        m.decl = fn;
-        m.signature.return_type = fn->return_type;
-        if (fn->params) {
-          m.signature.params = *fn->params;
-        }
-        impl_info.methods.push_back(std::move(m));
-        metadata.impl_method_names.insert(name);
-      } else if (auto *cst = dynamic_cast<ConstantItem *>(assoc.get())) {
-        const std::string &name = cst->name;
-        if (metadata.impl_method_names.count(name) ||
-            metadata.impl_const_names.count(name)) {
-          throw SemanticException("Duplicate " + name + " for struct " +
-                                  struct_name);
-        }
-        FirstPassStruct::ImplConst c;
-        c.name = name;
-        c.decl = cst;
-        c.type = cst->type;
-        impl_info.consts.push_back(std::move(c));
-        metadata.impl_const_names.insert(name);
-      }
-    }
-
-    metadata.impls.push_back(std::move(impl_info));
-  }
+  void visit(RootNode &) override {}
 
 private:
-  FirstPassBuilder &firstPass;
-  FirstPassScopeNode *currentScope = nullptr;
-  std::vector<FirstPassScopeNode *> scopeStack;
+  ScopeNode *root_scope = nullptr;
+  std::vector<ScopeNode *> scope_stack;
 
-  template <typename Func>
-  void executeWithScope(const BaseNode *owner, Func &&fn) {
-    if (!owner) {
-      throw SemanticException("Owner node is null");
+  ScopeNode *current_scope() const { return scope_stack.back(); }
+
+  void push_scope(ScopeNode *s) { scope_stack.push_back(s); }
+  void pop_scope() {
+    if (scope_stack.size() > 1)
+      scope_stack.pop_back();
+  }
+
+  SemType resolve_type(const LiteralType &t) {
+    if (t.is_base()) {
+      return SemType::primitive(map_primitive(t.as_base()));
     }
-    FirstPassScopeNode *target = firstPass.scopeFor(owner);
-    if (!target) {
-      throw SemanticException("Scope not found for node");
+    if (t.is_tuple()) {
+      std::vector<SemType> elems;
+      elems.reserve(t.as_tuple().size());
+      for (const auto &el : t.as_tuple()) {
+        elems.push_back(resolve_type(el));
+      }
+      return SemType::tuple(std::move(elems));
     }
-    scopeStack.push_back(currentScope);
-    currentScope = target;
-    fn();
-    currentScope = scopeStack.back();
-    scopeStack.pop_back();
+    if (t.is_array()) {
+      return SemType::array(resolve_type(*t.as_array().element),
+                            t.as_array().size);
+    }
+    if (t.is_slice()) {
+      return SemType::slice(resolve_type(*t.as_slice().element));
+    }
+    if (t.is_path()) {
+      const auto &segs = t.as_path().segments;
+      if (segs.empty())
+        throw SemanticException("empty path");
+      if (segs.size() == 1) {
+        const auto *ci = resolve_named_item(segs[0]);
+        if (ci)
+          return SemType::named(ci);
+        throw SemanticException("unknown named item " + segs[0]);
+      }
+      // qualified path, no such thing
+      throw SemanticException("qualified path not supported");
+    }
+    throw SemanticException("unknown type");
+  }
+
+  const CollectedItem *resolve_named_item(const std::string &name) const {
+    for (auto *scope = current_scope(); scope; scope = scope->parent) {
+      if (const auto *ci = scope->find_item(name)) {
+        if (ci->kind == ItemKind::Struct || ci->kind == ItemKind::Enum) {
+          return ci;
+        }
+      }
+    }
+    return nullptr;
+  }
+
+  SemPrimitiveKind map_primitive(PrimitiveLiteralType plt) {
+    switch (plt) {
+    case PrimitiveLiteralType::I32:
+      return SemPrimitiveKind::I32;
+    case PrimitiveLiteralType::U32:
+      return SemPrimitiveKind::U32;
+    case PrimitiveLiteralType::ISIZE:
+      return SemPrimitiveKind::ISIZE;
+    case PrimitiveLiteralType::USIZE:
+      return SemPrimitiveKind::USIZE;
+    case PrimitiveLiteralType::STRING:
+      return SemPrimitiveKind::STRING;
+    case PrimitiveLiteralType::RAW_STRING:
+      return SemPrimitiveKind::RAW_STRING;
+    case PrimitiveLiteralType::C_STRING:
+      return SemPrimitiveKind::C_STRING;
+    case PrimitiveLiteralType::RAW_C_STRING:
+      return SemPrimitiveKind::RAW_C_STRING;
+    case PrimitiveLiteralType::CHAR:
+      return SemPrimitiveKind::CHAR;
+    case PrimitiveLiteralType::BOOL:
+      return SemPrimitiveKind::BOOL;
+    case PrimitiveLiteralType::NEVER:
+      return SemPrimitiveKind::NEVER;
+    case PrimitiveLiteralType::UNIT:
+      return SemPrimitiveKind::UNIT;
+    }
+    return SemPrimitiveKind::UNKNOWN;
+  }
+
+  CollectedItem *lookup_current_item(const std::string &name, ItemKind kind) {
+    auto *scope = current_scope();
+    auto *found = const_cast<CollectedItem *>(scope->find_item(name));
+    if (found && found->kind == kind)
+      return found;
+    throw SemanticException("item not found");
   }
 };
 

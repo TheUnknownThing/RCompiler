@@ -9,9 +9,8 @@
 #include "lexer/lexer.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/analyzer/controlAnalyzer.hpp"
-#include "semantic/analyzer/firstPass.hpp"
-#include "semantic/analyzer/secondPass.hpp"
 #include "semantic/semantic.hpp"
+#include "semantic/types.hpp"
 #include "utils/logger.hpp"
 
 int main() {
@@ -39,21 +38,8 @@ int main() {
       std::cout << "\n[AST Pretty Print]" << std::endl;
       std::cout << rc::pretty_print(*ast) << std::endl;
 
-      rc::FirstPassBuilder first_pass;
-      first_pass.build(ast);
-      std::cout
-          << "\n[Semantic] First pass (scope & item collection) completed."
-          << std::endl;
-
-      rc::SecondPassBuilder second_pass(first_pass);
-      second_pass.build(ast);
-      std::cout << "[Semantic] Second pass (impl promotion) completed."
-                << std::endl;
-
-      rc::ControlAnalyzer control_analyzer;
-      control_analyzer.analyze(ast);
-      std::cout << "[Semantic] Control flow analysis completed." << std::endl;
-
+      rc::SemanticAnalyzer analyzer;
+      analyzer.analyze(ast);
     } else {
       std::cout << "Failed!" << std::endl;
     }

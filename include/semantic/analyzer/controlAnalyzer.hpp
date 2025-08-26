@@ -242,7 +242,7 @@ inline void ControlAnalyzer::visit(MatchExpression &node) {
   }
 }
 
-inline void ControlAnalyzer::visit(ReturnExpression &node) {
+inline void ControlAnalyzer::visit(ReturnExpression &) {
   if (function_return_stack.empty()) {
     throw SemanticException("return outside of function");
   }
@@ -361,7 +361,7 @@ inline void ControlAnalyzer::visit(PathExpression &node) {
   }
 }
 
-inline void ControlAnalyzer::visit(QualifiedPathExpression &node) {
+inline void ControlAnalyzer::visit(QualifiedPathExpression &) {
   // No QualiiedPath anymore
 }
 

@@ -208,7 +208,7 @@ inline parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
                    })
           .combine(optional(return_type), [](const auto &pm_list,
                                              const auto &ty) {
-            auto ret_ty = ty.value_or(LiteralType(PrimitiveLiteralType::NONE));
+            auto ret_ty = ty.value_or(LiteralType(PrimitiveLiteralType::UNIT));
             return std::tuple<
                 std::string,
                 std::optional<std::vector<std::pair<std::string, LiteralType>>>,

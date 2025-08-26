@@ -23,7 +23,7 @@ enum class PrimitiveLiteralType {
   CHAR,
   BOOL,
   NEVER,
-  NONE
+  UNIT
 };
 
 struct LiteralType {
@@ -78,7 +78,6 @@ struct LiteralType {
   bool is_array() const { return std::holds_alternative<Array>(storage); }
   bool is_slice() const { return std::holds_alternative<Slice>(storage); }
   bool is_path() const { return std::holds_alternative<Path>(storage); }
-  bool is_union() const { return std::holds_alternative<Union>(storage); }
 
   PrimitiveLiteralType as_base() const {
     return std::get<PrimitiveLiteralType>(storage);
@@ -121,9 +120,6 @@ inline bool operator==(const LiteralType &a, const LiteralType &b) {
   if (a.is_path()) {
     return a.as_path().segments == b.as_path().segments;
   }
-  if (a.is_union()) {
-    return a.as_union() == b.as_union();
-  }
   return false;
 }
 
@@ -139,8 +135,6 @@ inline bool operator<(const LiteralType &a, const LiteralType &b) {
       return 3;
     if (t.is_path())
       return 4;
-    if (t.is_union())
-      return 5;
     return 6;
   };
   int ra = rank(a), rb = rank(b);
@@ -188,19 +182,6 @@ inline bool operator<(const LiteralType &a, const LiteralType &b) {
     return ap.size() < bp.size();
   }
 
-  if (a.is_union() && b.is_union()) {
-    const auto &au = a.as_union();
-    const auto &bu = b.as_union();
-    const auto n = std::min(au.size(), bu.size());
-    for (size_t i = 0; i < n; ++i) {
-      if (au[i] < bu[i])
-        return true;
-      if (bu[i] < au[i])
-        return false;
-    }
-    return au.size() < bu.size();
-  }
-
   return false; // same rank but no comparable case
 }
 
@@ -216,7 +197,7 @@ inline const std::map<std::string, PrimitiveLiteralType> base_literal_type_map =
      {"char", PrimitiveLiteralType::CHAR},
      {"bool", PrimitiveLiteralType::BOOL},
      {"never", PrimitiveLiteralType::NEVER},
-     {"none", PrimitiveLiteralType::NONE}};
+     {"unit", PrimitiveLiteralType::UNIT}};
 
 inline const std::map<PrimitiveLiteralType, std::string>
     literal_type_reverse_map = {
@@ -231,7 +212,7 @@ inline const std::map<PrimitiveLiteralType, std::string>
         {PrimitiveLiteralType::CHAR, "char"},
         {PrimitiveLiteralType::BOOL, "bool"},
         {PrimitiveLiteralType::NEVER, "!"},
-        {PrimitiveLiteralType::NONE, "none"}};
+        {PrimitiveLiteralType::UNIT, "unit"}};
 
 inline const std::map<std::string, LiteralType> literal_type_map = {
     {"i32", LiteralType::base(PrimitiveLiteralType::I32)},
@@ -245,11 +226,11 @@ inline const std::map<std::string, LiteralType> literal_type_map = {
     {"char", LiteralType::base(PrimitiveLiteralType::CHAR)},
     {"bool", LiteralType::base(PrimitiveLiteralType::BOOL)},
     {"never", LiteralType::base(PrimitiveLiteralType::NEVER)},
-    {"none", LiteralType::base(PrimitiveLiteralType::NONE)}};
+    {"unit", LiteralType::base(PrimitiveLiteralType::UNIT)}};
 
 inline const std::set<std::string> valid_literal_types = {
     "i32",      "u32",          "isize", "usize", "string", "raw_string",
-    "c_string", "raw_c_string", "char",  "bool",  "never",  "none"};
+    "c_string", "raw_c_string", "char",  "bool",  "never",  "unit"};
 
 inline std::string to_string(const LiteralType &t) {
   if (t.is_base()) {
@@ -286,16 +267,7 @@ inline std::string to_string(const LiteralType &t) {
     }
     return out.empty() ? std::string("<path>") : out;
   }
-  if (t.is_union()) {
-    const auto &alts = t.as_union();
-    std::string out;
-    for (size_t i = 0; i < alts.size(); ++i) {
-      if (i)
-        out += " | ";
-      out += to_string(alts[i]);
-    }
-    return out;
-  }
+
   return "<unknown>";
 }
 
