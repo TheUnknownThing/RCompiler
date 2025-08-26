@@ -18,7 +18,7 @@ RCompiler/
 │   └── integration/
 ├── CMakeLists.txt
 ├── README.md
-├── whitelist.md
+└── whitelist.md
 ```
 
 ## Original Repo
