@@ -106,12 +106,88 @@ public:
     // TODO
   }
 
-  void visit(MethodCallExpression &) override {
-    // TODO
+  void visit(MethodCallExpression &node) override {
+    auto recv_type = evaluate(node.receiver.get());
+    if (!recv_type.is_named()) {
+      throw TypeError("method call on non-struct type: " +
+                      to_string(recv_type));
+    }
+
+    const CollectedItem *ci = recv_type.as_named().item;
+    if (!ci || !ci->has_struct_meta()) {
+      throw TypeError("method call target is not a struct");
+    }
+
+    const auto &meta = ci->as_struct_meta();
+    const FunctionMetaData *found = nullptr;
+    for (const auto &m : meta.methods) {
+      if (m.name == node.method_name.name) {
+        found = &m;
+        break;
+      }
+    }
+    if (!found) {
+      throw TypeError("unknown method " + node.method_name.name);
+    }
+    // if param_types.size() == args + 1, first param as receiver and check type
+    // match.
+    const auto &params = found->param_types;
+    const size_t argc = node.arguments.size();
+    if (!(params.size() == argc || params.size() == argc + 1)) {
+      throw TypeError(
+          "method " + node.method_name.name + " signature mismatch: expected " +
+          std::to_string(params.size()) + ", got " + std::to_string(argc + 1));
+    }
+    size_t arg_index_offset = 0;
+    if (params.size() == argc + 1) {
+      // Validate receiver type matches first param type (basic equality).
+      if (!(recv_type == params[0])) {
+        throw TypeError("receiver type mismatch for method " +
+                        node.method_name.name + ": expected " +
+                        to_string(params[0]) + " got " + to_string(recv_type));
+      }
+      arg_index_offset = 1;
+    }
+    for (size_t i = 0; i < argc; ++i) {
+      auto at = evaluate(node.arguments[i].get());
+      const auto &expected = params[i + arg_index_offset];
+      if (!(at == expected)) {
+        throw TypeError("argument type mismatch in method " +
+                        node.method_name.name + " at position " +
+                        std::to_string(i) + ": expected " +
+                        to_string(expected) + " got " + to_string(at));
+      }
+    }
+    cache_expr(&node, found->return_type);
   }
 
-  void visit(FieldAccessExpression &) override {
-    // TODO
+  void visit(FieldAccessExpression &node) override {
+    auto target_type = evaluate(node.target.get());
+
+    bool numeric = !node.field_name.empty() &&
+                   std::all_of(node.field_name.begin(), node.field_name.end(),
+                               [](unsigned char c) { return std::isdigit(c); });
+    if (numeric) {
+      // Tuple Type, why handle it?
+      throw SemanticException("tuple field access not supported yet");
+    }
+    // Struct field access
+    if (!target_type.is_named()) {
+      throw TypeError("field access on non-struct type '" +
+                      to_string(target_type) + "'");
+    }
+    const CollectedItem *ci = target_type.as_named().item;
+    if (!ci || !ci->has_struct_meta()) {
+      throw TypeError("field access target is not a struct");
+    }
+    const auto &meta = ci->as_struct_meta();
+    for (const auto &f : meta.named_fields) {
+      if (f.first == node.field_name) {
+        cache_expr(&node, f.second);
+        return;
+      }
+    }
+    throw TypeError("unknown field '" + node.field_name + "'");
   }
 
   void visit(StructExpression &) override {
@@ -262,15 +338,18 @@ private:
     return k == SemPrimitiveKind::I32 || k == SemPrimitiveKind::U32 ||
            k == SemPrimitiveKind::ISIZE || k == SemPrimitiveKind::USIZE;
   }
+
   bool is_str(SemPrimitiveKind k) const {
     return k == SemPrimitiveKind::STRING || k == SemPrimitiveKind::RAW_STRING ||
            k == SemPrimitiveKind::C_STRING ||
            k == SemPrimitiveKind::RAW_C_STRING;
   }
+
   void require_bool(const SemType &t, const std::string &msg) {
     if (!(t.is_primitive() && t.as_primitive().kind == SemPrimitiveKind::BOOL))
       throw TypeError(msg);
   }
+
   void require_integer(const SemType &t, const std::string &msg) {
     if (!(t.is_primitive() && is_integer(t.as_primitive().kind)))
       throw TypeError(msg);
@@ -280,33 +359,68 @@ private:
     auto lt = evaluate(bin.left.get());
     auto rt = evaluate(bin.right.get());
     const auto op = bin.op.type;
-    switch (op) {
-    case TokenType::PLUS: {
+
+    auto is_literal = [](Expression *e) -> bool {
+      auto *lit = dynamic_cast<LiteralExpression *>(e);
+      if (!lit)
+        return false;
+      if (!(lit->type.is_base() &&
+            lit->type.as_base() == PrimitiveLiteralType::I32))
+        return false; // because in sem check we assume all int lit to be i32
+
+      static const std::array<std::string, 4> suffixes = {"i32", "u32", "isize",
+                                                          "usize"};
+      for (const auto &s : suffixes) {
+        if (lit->value.size() >= s.size() &&
+            lit->value.compare(lit->value.size() - s.size(), s.size(), s) ==
+                0) {
+          return false;
+        }
+      }
+      return true;
+    };
+    
+    bool left_literal = is_literal(bin.left.get());
+    bool right_literal = is_literal(bin.right.get());
+
+    auto check = [&](bool allow_str = false) -> std::optional<SemType> {
       if (lt.is_primitive() && rt.is_primitive()) {
         auto lk = lt.as_primitive().kind;
         auto rk = rt.as_primitive().kind;
-        if (is_integer(lk) && lk == rk && lt == rt)
-          return lt;
-        if (is_str(lk) && lk == rk)
+        if (is_integer(lk) && is_integer(rk)) {
+          if (lk == rk && (lt == rt))
+            return lt;
+          if (left_literal && is_integer(rk)) {
+            return rt;
+          }
+          if (right_literal && is_integer(lk)) {
+            return lt;
+          }
+        }
+        if (allow_str && is_str(lk) && lk == rk)
           return lt;
       }
+      return std::nullopt;
+    };
+    switch (op) {
+    case TokenType::PLUS: {
+      if (auto r = check(true))
+        return *r;
       break;
     }
     case TokenType::MINUS:
     case TokenType::STAR:
     case TokenType::SLASH:
     case TokenType::PERCENT: {
-      if (lt.is_primitive() && rt.is_primitive() && lt == rt &&
-          is_integer(lt.as_primitive().kind))
-        return lt;
+      if (auto r = check())
+        return *r;
       break;
     }
     case TokenType::AMPERSAND:
     case TokenType::PIPE:
     case TokenType::CARET: {
-      if (lt.is_primitive() && rt.is_primitive() && lt == rt &&
-          is_integer(lt.as_primitive().kind))
-        return lt;
+      if (auto r = check())
+        return *r;
       break;
     }
     case TokenType::SHL:
@@ -326,7 +440,9 @@ private:
     }
     case TokenType::EQ:
     case TokenType::NE: {
-      if (lt == rt)
+      if (lt == rt || (is_integer(lt.as_primitive().kind) &&
+                       is_integer(rt.as_primitive().kind) &&
+                       (left_literal || right_literal)))
         return SemType::primitive(SemPrimitiveKind::BOOL);
       break;
     }
@@ -334,9 +450,12 @@ private:
     case TokenType::LE:
     case TokenType::GT:
     case TokenType::GE: {
-      if (lt.is_primitive() && rt.is_primitive() && lt == rt &&
-          is_integer(lt.as_primitive().kind))
-        return SemType::primitive(SemPrimitiveKind::BOOL);
+      if (lt.is_primitive() && rt.is_primitive() &&
+          is_integer(lt.as_primitive().kind) &&
+          is_integer(rt.as_primitive().kind)) {
+        if (lt == rt || left_literal || right_literal)
+          return SemType::primitive(SemPrimitiveKind::BOOL);
+      }
       break;
     }
     default:
