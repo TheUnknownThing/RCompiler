@@ -37,9 +37,20 @@ if (BUILD_TESTING)
   set_tests_properties(unit_preprocessor PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tests/unit" LABELS "preprocessor;stable")
 
   # Unit: Simple parser unit tests
+  # (Legacy) simple parser unit tests retained but not part of basic/comprehensive CI focus
   add_executable(parser_simple_tests tests/unit/parser_simple_tests.cpp)
   add_test(NAME parser_simple_tests COMMAND parser_simple_tests)
-  set_tests_properties(parser_simple_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "parser;unit;stable")
+  set_tests_properties(parser_simple_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "parser;legacy")
+
+  # New: parser basic aggregated test (valid vs invalid classification)
+  add_executable(parser_basic tests/unit/parser_basic.cpp)
+  add_test(NAME parser_basic COMMAND parser_basic)
+  set_tests_properties(parser_basic PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "parser;basic;stable")
+
+  # New: parser comprehensive aggregated test (full dataset, pretty print)
+  add_executable(parser_comprehensive tests/unit/parser_comprehensive.cpp src/pretty_print.cpp)
+  add_test(NAME parser_comprehensive COMMAND parser_comprehensive)
+  set_tests_properties(parser_comprehensive PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "parser;comprehensive;unstable")
 
   # Unit: Comprehensive parser tests (AST validation) - for manual testing
   add_executable(parser_comprehensive_runner tests/unit/parser_comprehensive_runner.cpp src/pretty_print.cpp)
