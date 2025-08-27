@@ -44,4 +44,12 @@ See [whitelist.md](whitelist.md) for the concrete, implementable subset of the R
 
 - [ ] Semantic Check (WIP)
 
+    TBD in this part:
+    - mut / ref check
+    - refutability / irrefutability
+    - const expr handling
+    - Lvalue, Rvalue
+    - closure
+    - ...maybe more
+
 - [ ] IR Codegen
