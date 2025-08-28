@@ -1,3 +1,0 @@
-parser_basic 0 0
----
-parser_basic
