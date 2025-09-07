@@ -447,7 +447,7 @@ private:
     return std::nullopt;
   }
 
-  std::optional<ConstValue> evaluate_struct(const StructExpression &node) {
+  std::optional<ConstValue> evaluate_struct(const StructExpression &) {
     // TODO: Evaluate struct expressions
     return std::nullopt;
   }

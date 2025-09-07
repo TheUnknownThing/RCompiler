@@ -1,10 +1,8 @@
 #pragma once
 
-#include "../../lexer/lexer.hpp"
 #include "../types.hpp"
 #include "base.hpp"
 #include "expr.hpp"
-#include "stmt.hpp"
 
 #include <memory>
 #include <optional>
