@@ -19,6 +19,7 @@ struct SemPrimitiveType;
 struct SemTupleType;
 struct SemArrayType;
 struct SemSliceType;
+struct SemReferenceType; // reference type &T or &mut T
 struct SemNamedItemType; // struct/enum/trait reference resolved to NameItem
 struct SemUnknownType;
 
@@ -55,6 +56,11 @@ struct SemSliceType {
   std::shared_ptr<SemType> element;
 };
 
+struct SemReferenceType {
+  std::shared_ptr<SemType> target;
+  bool is_mutable;
+};
+
 struct SemNamedItemType {
   const CollectedItem *item;
 };
@@ -65,7 +71,7 @@ struct SemUnknownType {
 
 struct SemType {
   using Storage = std::variant<SemPrimitiveType, SemTupleType, SemArrayType,
-                               SemSliceType, SemNamedItemType, SemUnknownType>;
+                               SemSliceType, SemReferenceType, SemNamedItemType, SemUnknownType>;
   Storage storage;
 
   SemType() : storage(SemPrimitiveType{SemPrimitiveKind::UNKNOWN}) {}
@@ -84,6 +90,9 @@ struct SemType {
   static SemType slice(SemType elem) {
     return SemType{SemSliceType{std::make_shared<SemType>(std::move(elem))}};
   }
+  static SemType reference(SemType target, bool is_mutable) {
+    return SemType{SemReferenceType{std::make_shared<SemType>(std::move(target)), is_mutable}};
+  }
   static SemType named(const CollectedItem *ci) {
     return SemType{SemNamedItemType{ci}};
   }
@@ -100,6 +109,9 @@ struct SemType {
   }
   bool is_slice() const {
     return std::holds_alternative<SemSliceType>(storage);
+  }
+  bool is_reference() const {
+    return std::holds_alternative<SemReferenceType>(storage);
   }
   bool is_named() const {
     return std::holds_alternative<SemNamedItemType>(storage);
@@ -119,6 +131,9 @@ struct SemType {
   }
   const SemSliceType &as_slice() const {
     return std::get<SemSliceType>(storage);
+  }
+  const SemReferenceType &as_reference() const {
+    return std::get<SemReferenceType>(storage);
   }
   const SemNamedItemType &as_named() const {
     return std::get<SemNamedItemType>(storage);
@@ -140,6 +155,9 @@ inline bool operator==(const SemType &a, const SemType &b) {
            a.as_array().size == b.as_array().size;
   if (a.is_slice())
     return *a.as_slice().element == *b.as_slice().element;
+  if (a.is_reference())
+    return *a.as_reference().target == *b.as_reference().target &&
+           a.as_reference().is_mutable == b.as_reference().is_mutable;
   if (a.is_named())
     return a.as_named().item == b.as_named().item;
   if (a.is_unknown())
@@ -199,6 +217,15 @@ inline std::string to_string(const SemType &t) {
   }
   if (t.is_slice()) {
     return "[" + to_string(*t.as_slice().element) + "]";
+  }
+  if (t.is_reference()) {
+    const auto &ref = t.as_reference();
+    std::string result = "&";
+    if (ref.is_mutable) {
+      result += "mut ";
+    }
+    result += to_string(*ref.target);
+    return result;
   }
   if (t.is_named()) {
     return "<named-item>";
