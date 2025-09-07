@@ -3,6 +3,7 @@
 #include "ast/nodes/pattern.hpp"
 #include "ast/utils/parsec.hpp"
 #include "lexer/lexer.hpp"
+#include <memory>
 
 namespace rc {
 
@@ -49,18 +50,10 @@ public:
                        return std::make_pair(r.has_value(), m.has_value());
                      })
             .combine(identifier,
-                     [](auto flags, auto id) {
-                       return std::make_tuple(flags.first, flags.second, id);
-                     })
-            .combine(
-                optional(
-                    tok(rc::TokenType::AT)
-                        .thenR(parsec::Parser<std::shared_ptr<BasePattern>>(
-                            lazy_pattern_no_top_alt))),
-                [](auto t, auto sub) -> std::shared_ptr<BasePattern> {
-                  return std::make_shared<IdentifierPattern>(
-                      std::get<2>(t), std::get<0>(t), std::get<1>(t), sub);
-                });
+                     [](auto flags, auto id) -> std::shared_ptr<BasePattern> {
+                       return std::make_shared<IdentifierPattern>(
+                           id, flags.second, flags.first);
+                     });
 
     p_grouped_ = tok(rc::TokenType::L_PAREN)
                      .thenR(parsec::Parser<std::shared_ptr<BasePattern>>(

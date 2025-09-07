@@ -388,9 +388,7 @@ inline void ControlAnalyzer::visit(ExpressionStatement &node) {
 inline void ControlAnalyzer::visit(EmptyStatement &node) { (void)node; }
 
 // Pattern visitors
-inline void ControlAnalyzer::visit(IdentifierPattern &node) {
-  if (node.subpattern)
-    node.subpattern.value()->accept(*this);
+inline void ControlAnalyzer::visit(IdentifierPattern &) {
 }
 
 inline void ControlAnalyzer::visit(LiteralPattern &node) { (void)node; }

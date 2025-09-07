@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -22,13 +21,9 @@ public:
   std::string name;
   bool is_mutable;
   bool is_ref;
-  std::optional<std::shared_ptr<BasePattern>> subpattern;
 
-  IdentifierPattern(
-      std::string n, bool ref = false, bool mutable_ = false,
-      std::optional<std::shared_ptr<BasePattern>> sub = std::nullopt)
-      : name(std::move(n)), is_mutable(mutable_), is_ref(ref), subpattern(sub) {
-  }
+  IdentifierPattern(std::string n, bool ref = false, bool mutable_ = false)
+      : name(std::move(n)), is_mutable(mutable_), is_ref(ref) {}
 
   void accept(class BaseVisitor &visitor) override { visitor.visit(*this); }
 };

@@ -707,10 +707,6 @@ void PrettyPrintVisitor::visit(IdentifierPattern &node) {
   if (node.is_mutable)
     print_inline("mut ");
   print_inline(node.name);
-  if (node.subpattern.has_value()) {
-    print_inline(" @ ");
-    RC_SAFE_ACCEPT(node.subpattern.value());
-  }
   print_inline(")");
 }
 
