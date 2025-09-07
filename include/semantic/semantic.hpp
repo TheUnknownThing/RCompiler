@@ -4,6 +4,7 @@
 
 #include "ast/nodes/topLevel.hpp"
 #include "semantic/analyzer/controlAnalyzer.hpp"
+#include "semantic/analyzer/constEvaluationPass.hpp"
 #include "semantic/analyzer/firstPass.hpp"
 #include "semantic/analyzer/secondPass.hpp"
 #include "semantic/analyzer/thirdPass.hpp"
@@ -34,6 +35,11 @@ inline void SemanticAnalyzer::analyze(const std::shared_ptr<RootNode> &root) {
   SecondPassResolver second;
   second.run(std::dynamic_pointer_cast<RootNode>(root), first.root_scope);
   std::cout << "[Semantic] Second pass completed." << std::endl;
+
+  // Constant evaluation pass
+  ConstEvaluationPass const_eval;
+  const_eval.run(std::dynamic_pointer_cast<RootNode>(root), first.root_scope);
+  std::cout << "[Semantic] Constant evaluation pass completed." << std::endl;
 
   // Third pass promotes impl to struct level
   ThirdPassPromoter third;

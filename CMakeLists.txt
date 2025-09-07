@@ -36,6 +36,11 @@ if (BUILD_TESTING)
   add_test(NAME unit_preprocessor COMMAND unit_preprocessor)
   set_tests_properties(unit_preprocessor PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tests/unit" LABELS "preprocessor;stable")
 
+  # Unit: Constant evaluator test
+  add_executable(const_evaluator_test tests/unit/const_evaluator_test.cpp)
+  add_test(NAME const_evaluator_test COMMAND const_evaluator_test)
+  set_tests_properties(const_evaluator_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "semantic;stable")
+
   # Unit: Simple parser unit tests
   # (Legacy) simple parser unit tests retained but not part of basic/comprehensive CI focus
   add_executable(parser_simple_tests tests/unit/parser_simple_tests.cpp)

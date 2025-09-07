@@ -14,6 +14,8 @@
 
 namespace rc {
 
+struct ConstValue;
+
 class ScopeNode;
 
 enum class ItemKind { Function, Constant, Module, Struct, Enum, Trait };
@@ -30,6 +32,7 @@ struct ConstantMetaData {
   std::string name;
   SemType type;
   const ConstantItem *decl = nullptr;
+  std::shared_ptr<ConstValue> evaluated_value;
 };
 
 struct StructMetaData {
@@ -52,11 +55,14 @@ struct CollectedItem {
 
   // The below items are populated in the second pass
 
-  std::variant<std::monostate, FunctionMetaData, StructMetaData, EnumMetaData>
+  std::variant<std::monostate, FunctionMetaData, ConstantMetaData, StructMetaData, EnumMetaData>
       metadata;
 
   bool has_function_meta() const {
     return std::holds_alternative<FunctionMetaData>(metadata);
+  }
+  bool has_constant_meta() const {
+    return std::holds_alternative<ConstantMetaData>(metadata);
   }
   bool has_struct_meta() const {
     return std::holds_alternative<StructMetaData>(metadata);
@@ -67,6 +73,9 @@ struct CollectedItem {
   const FunctionMetaData &as_function_meta() const {
     return std::get<FunctionMetaData>(metadata);
   }
+  const ConstantMetaData &as_constant_meta() const {
+    return std::get<ConstantMetaData>(metadata);
+  }
   const StructMetaData &as_struct_meta() const {
     return std::get<StructMetaData>(metadata);
   }
@@ -75,6 +84,9 @@ struct CollectedItem {
   }
   FunctionMetaData &as_function_meta() {
     return std::get<FunctionMetaData>(metadata);
+  }
+  ConstantMetaData &as_constant_meta() {
+    return std::get<ConstantMetaData>(metadata);
   }
   StructMetaData &as_struct_meta() {
     return std::get<StructMetaData>(metadata);

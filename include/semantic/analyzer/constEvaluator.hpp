@@ -1,0 +1,663 @@
+#pragma once
+
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <variant>
+#include <vector>
+
+#include "ast/nodes/expr.hpp"
+#include "semantic/error/exceptions.hpp"
+#include "semantic/scope.hpp"
+#include "semantic/types.hpp"
+#include "utils/logger.hpp"
+
+namespace rc {
+struct ConstValue {
+  // Storage for different types of constant values
+  using Storage =
+      std::variant<std::int32_t,                     // i32
+                   std::uint32_t,                    // u32
+                   std::int64_t,                     // isize
+                   std::uint64_t,                    // usize
+                   std::string,                      // string literals
+                   char,                             // char
+                   bool,                             // bool
+                   std::vector<ConstValue>,          // arrays and tuples
+                   std::map<std::string, ConstValue> // struct values
+                   >;
+
+  Storage storage;
+  SemType type;
+
+  explicit ConstValue(Storage s, SemType t)
+      : storage(std::move(s)), type(std::move(t)) {}
+
+  // Factory methods for creating constant values
+  static ConstValue i32(std::int32_t val) {
+    return ConstValue{val, SemType::primitive(SemPrimitiveKind::I32)};
+  }
+
+  static ConstValue u32(std::uint32_t val) {
+    return ConstValue{val, SemType::primitive(SemPrimitiveKind::U32)};
+  }
+
+  static ConstValue isize(std::int64_t val) {
+    return ConstValue{val, SemType::primitive(SemPrimitiveKind::ISIZE)};
+  }
+
+  static ConstValue usize(std::uint64_t val) {
+    return ConstValue{val, SemType::primitive(SemPrimitiveKind::USIZE)};
+  }
+
+  static ConstValue string(const std::string &val) {
+    return ConstValue{val, SemType::primitive(SemPrimitiveKind::STRING)};
+  }
+
+  static ConstValue char_val(char val) {
+    return ConstValue{val, SemType::primitive(SemPrimitiveKind::CHAR)};
+  }
+
+  static ConstValue bool_val(bool val) {
+    return ConstValue{val, SemType::primitive(SemPrimitiveKind::BOOL)};
+  }
+
+  static ConstValue array(std::vector<ConstValue> elements, SemType elem_type,
+                          std::uint64_t size) {
+    return ConstValue{std::move(elements),
+                      SemType::array(std::move(elem_type), size)};
+  }
+
+  static ConstValue tuple(std::vector<ConstValue> elements) {
+    std::vector<SemType> elem_types;
+    elem_types.reserve(elements.size());
+    for (const auto &elem : elements) {
+      elem_types.push_back(elem.type);
+    }
+    return ConstValue{std::move(elements),
+                      SemType::tuple(std::move(elem_types))};
+  }
+
+  static ConstValue struct_val(std::map<std::string, ConstValue> fields,
+                               const CollectedItem *struct_item) {
+    return ConstValue{std::move(fields), SemType::named(struct_item)};
+  }
+
+  // Type checkers
+  bool is_i32() const { return std::holds_alternative<std::int32_t>(storage); }
+  bool is_u32() const { return std::holds_alternative<std::uint32_t>(storage); }
+  bool is_isize() const {
+    return std::holds_alternative<std::int64_t>(storage);
+  }
+  bool is_usize() const {
+    return std::holds_alternative<std::uint64_t>(storage);
+  }
+  bool is_string() const {
+    return std::holds_alternative<std::string>(storage);
+  }
+  bool is_char() const { return std::holds_alternative<char>(storage); }
+  bool is_bool() const { return std::holds_alternative<bool>(storage); }
+  bool is_array() const {
+    return std::holds_alternative<std::vector<ConstValue>>(storage) &&
+           type.is_array();
+  }
+  bool is_tuple() const {
+    return std::holds_alternative<std::vector<ConstValue>>(storage) &&
+           type.is_tuple();
+  }
+  bool is_struct() const {
+    return std::holds_alternative<std::map<std::string, ConstValue>>(storage);
+  }
+
+  // Accessors
+  std::int32_t as_i32() const { return std::get<std::int32_t>(storage); }
+  std::uint32_t as_u32() const { return std::get<std::uint32_t>(storage); }
+  std::int64_t as_isize() const { return std::get<std::int64_t>(storage); }
+  std::uint64_t as_usize() const { return std::get<std::uint64_t>(storage); }
+  const std::string &as_string() const {
+    return std::get<std::string>(storage);
+  }
+  char as_char() const { return std::get<char>(storage); }
+  bool as_bool() const { return std::get<bool>(storage); }
+  const std::vector<ConstValue> &as_array() const {
+    return std::get<std::vector<ConstValue>>(storage);
+  }
+  const std::vector<ConstValue> &as_tuple() const {
+    return std::get<std::vector<ConstValue>>(storage);
+  }
+  const std::map<std::string, ConstValue> &as_struct() const {
+    return std::get<std::map<std::string, ConstValue>>(storage);
+  }
+};
+
+class ConstEvaluator {
+public:
+  ConstEvaluator() = default;
+
+  std::optional<ConstValue> evaluate(const Expression *expr,
+                                     ScopeNode *semantic_scope) {
+    if (!expr || !semantic_scope) {
+      return std::nullopt;
+    }
+
+    current_scope = semantic_scope;
+
+    if (auto *literal = dynamic_cast<const LiteralExpression *>(expr)) {
+      return evaluate_literal(*literal);
+    } else if (auto *name = dynamic_cast<const NameExpression *>(expr)) {
+      return evaluate_name(*name);
+    } else if (auto *prefix = dynamic_cast<const PrefixExpression *>(expr)) {
+      return evaluate_prefix(*prefix);
+    } else if (auto *binary = dynamic_cast<const BinaryExpression *>(expr)) {
+      return evaluate_binary(*binary);
+    } else if (auto *group = dynamic_cast<const GroupExpression *>(expr)) {
+      if (group->inner) {
+        return evaluate(group->inner.get(), current_scope);
+      }
+    } else if (auto *array = dynamic_cast<const ArrayExpression *>(expr)) {
+      return evaluate_array(*array);
+    } else if (auto *tuple = dynamic_cast<const TupleExpression *>(expr)) {
+      return evaluate_tuple(*tuple);
+    } else if (auto *index = dynamic_cast<const IndexExpression *>(expr)) {
+      return evaluate_index(*index);
+    } else if (auto *field =
+                   dynamic_cast<const FieldAccessExpression *>(expr)) {
+      return evaluate_field_access(*field);
+    } else if (auto *struct_expr =
+                   dynamic_cast<const StructExpression *>(expr)) {
+      return evaluate_struct(*struct_expr);
+    }
+
+    return std::nullopt;
+  }
+
+private:
+  ScopeNode *current_scope = nullptr;
+
+  std::optional<ConstValue> evaluate_literal(const LiteralExpression &node) {
+    try {
+      if (node.type.is_base()) {
+        switch (node.type.as_base()) {
+        case PrimitiveLiteralType::I32: {
+          std::int32_t val = std::stoi(node.value);
+          return ConstValue::i32(val);
+        }
+        case PrimitiveLiteralType::U32: {
+          std::uint32_t val = std::stoul(node.value);
+          return ConstValue::u32(val);
+        }
+        case PrimitiveLiteralType::ISIZE: {
+          std::int64_t val = std::stoll(node.value);
+          return ConstValue::isize(val);
+        }
+        case PrimitiveLiteralType::USIZE: {
+          std::uint64_t val = std::stoull(node.value);
+          return ConstValue::usize(val);
+        }
+        case PrimitiveLiteralType::STRING:
+        case PrimitiveLiteralType::RAW_STRING:
+        case PrimitiveLiteralType::C_STRING:
+        case PrimitiveLiteralType::RAW_C_STRING: {
+          return ConstValue::string(node.value);
+        }
+        case PrimitiveLiteralType::CHAR: {
+          if (node.value.length() >= 3) {
+            char val = node.value[1]; // skip ''
+            return ConstValue::char_val(val);
+          }
+          break;
+        }
+        case PrimitiveLiteralType::BOOL: {
+          bool val = (node.value == "true");
+          return ConstValue::bool_val(val);
+        }
+        default:
+          break;
+        }
+      }
+    } catch (const std::exception &e) {
+      LOG_ERROR("[ConstEvaluator] Failed to parse literal: " + node.value +
+                " - " + e.what());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_name(const NameExpression &node) {
+    if (current_scope) {
+      for (auto *scope = current_scope; scope; scope = scope->parent) {
+        if (auto *item = scope->find_value_item(node.name)) {
+          if (item->kind == ItemKind::Constant && item->has_constant_meta()) {
+            const auto &meta = item->as_constant_meta();
+            // this constant has already been evaluated, use its value
+            if (meta.evaluated_value) {
+              return *meta.evaluated_value;
+            }
+            // it has an initializer, evaluate it recursively
+            if (meta.decl && meta.decl->value) {
+              auto evaluated = evaluate(meta.decl->value->get(), current_scope);
+              if (evaluated) {
+                const_cast<ConstantMetaData &>(meta).evaluated_value =
+                    std::make_shared<ConstValue>(std::move(*evaluated));
+                return *meta.evaluated_value;
+              }
+            }
+            LOG_ERROR("[ConstEvaluator] Found constant reference but could not "
+                      "evaluate: " +
+                      node.name);
+            throw SemanticException("could not evaluate constant: " +
+                                    node.name);
+          }
+        }
+      }
+    }
+
+    LOG_ERROR("[ConstEvaluator] Name not found or not constant: " + node.name);
+    throw SemanticException("name not found or not constant: " + node.name);
+  }
+
+  std::optional<ConstValue> evaluate_prefix(const PrefixExpression &node) {
+    if (!node.right)
+      return std::nullopt;
+
+    auto operand = evaluate(node.right.get(), current_scope);
+    if (!operand)
+      return std::nullopt;
+
+    switch (node.op.type) {
+    case TokenType::MINUS: {
+      if (operand->is_i32()) {
+        return ConstValue::i32(-operand->as_i32());
+      }
+      if (operand->is_isize()) {
+        return ConstValue::isize(-operand->as_isize());
+      }
+      break;
+    }
+    case TokenType::NOT: {
+      if (operand->is_bool()) {
+        return ConstValue::bool_val(!operand->as_bool());
+      }
+      break;
+    }
+    default:
+      break;
+    }
+
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_binary(const BinaryExpression &node) {
+    if (!node.left || !node.right)
+      return std::nullopt;
+
+    auto left = evaluate(node.left.get(), current_scope);
+    auto right = evaluate(node.right.get(), current_scope);
+
+    if (!left || !right)
+      return std::nullopt;
+
+    // Arithmetic operations
+    switch (node.op.type) {
+    case TokenType::PLUS:
+      return evaluate_add(*left, *right);
+    case TokenType::MINUS:
+      return evaluate_sub(*left, *right);
+    case TokenType::STAR:
+      return evaluate_mul(*left, *right);
+    case TokenType::SLASH:
+      return evaluate_div(*left, *right);
+    case TokenType::PERCENT:
+      return evaluate_mod(*left, *right);
+    case TokenType::EQ:
+      return evaluate_eq(*left, *right);
+    case TokenType::NE:
+      return evaluate_ne(*left, *right);
+    case TokenType::LT:
+      return evaluate_lt(*left, *right);
+    case TokenType::LE:
+      return evaluate_le(*left, *right);
+    case TokenType::GT:
+      return evaluate_gt(*left, *right);
+    case TokenType::GE:
+      return evaluate_ge(*left, *right);
+    case TokenType::AND:
+      return evaluate_logical_and(*left, *right);
+    case TokenType::OR:
+      return evaluate_logical_or(*left, *right);
+    default:
+      break;
+    }
+
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_array(const ArrayExpression &node) {
+    if (node.repeat) {
+      // [expr; size] form
+      auto value = evaluate(node.repeat->first.get(), current_scope);
+      auto size_expr = evaluate(node.repeat->second.get(), current_scope);
+
+      if (!value || !size_expr || !size_expr->is_usize()) {
+        return std::nullopt;
+      }
+
+      std::uint64_t size = size_expr->as_usize();
+      std::vector<ConstValue> elements;
+      elements.reserve(size);
+
+      for (std::uint64_t i = 0; i < size; ++i) {
+        elements.push_back(*value);
+      }
+
+      return ConstValue::array(std::move(elements), value->type, size);
+    } else {
+      // [e1, e2, ...] form
+      std::vector<ConstValue> elements;
+      elements.reserve(node.elements.size());
+
+      SemType elem_type = SemType::primitive(SemPrimitiveKind::UNKNOWN);
+      bool first = true;
+
+      for (const auto &elem_expr : node.elements) {
+        auto elem_val = evaluate(elem_expr.get(), current_scope);
+        if (!elem_val) {
+          return std::nullopt;
+        }
+
+        if (first) {
+          elem_type = elem_val->type;
+          first = false;
+        }
+
+        elements.push_back(std::move(*elem_val));
+      }
+
+      return ConstValue::array(std::move(elements), std::move(elem_type),
+                               elements.size());
+    }
+  }
+
+  std::optional<ConstValue> evaluate_tuple(const TupleExpression &node) {
+    std::vector<ConstValue> elements;
+    elements.reserve(node.elements.size());
+
+    for (const auto &elem_expr : node.elements) {
+      auto elem_val = evaluate(elem_expr.get(), current_scope);
+      if (!elem_val) {
+        return std::nullopt;
+      }
+      elements.push_back(std::move(*elem_val));
+    }
+
+    return ConstValue::tuple(std::move(elements));
+  }
+
+  std::optional<ConstValue> evaluate_index(const IndexExpression &node) {
+    if (!node.target || !node.index)
+      return std::nullopt;
+
+    auto target = evaluate(node.target.get(), current_scope);
+    auto index = evaluate(node.index.get(), current_scope);
+
+    if (!target || !index || !index->is_usize()) {
+      return std::nullopt;
+    }
+
+    std::uint64_t idx = index->as_usize();
+
+    if (target->is_array()) {
+      const auto &elements = target->as_array();
+      if (idx < elements.size()) {
+        return elements[idx];
+      }
+      throw SemanticException("array index out of bounds");
+    }
+
+    if (target->is_tuple()) {
+      const auto &elements = target->as_tuple();
+      if (idx < elements.size()) {
+        return elements[idx];
+      }
+      throw SemanticException("tuple index out of bounds");
+    }
+
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue>
+  evaluate_field_access(const FieldAccessExpression &node) {
+    if (!node.target)
+      return std::nullopt;
+
+    auto target = evaluate(node.target.get(), current_scope);
+    if (!target)
+      return std::nullopt;
+
+    if (target->is_struct()) {
+      const auto &fields = target->as_struct();
+      auto it = fields.find(node.field_name);
+      if (it != fields.end()) {
+        return it->second;
+      }
+      throw SemanticException("field '" + node.field_name +
+                              "' not found in struct");
+    }
+
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_struct(const StructExpression &node) {
+    // TODO: Evaluate struct expressions
+    return std::nullopt;
+  }
+
+  // Arithmetic operation helpers
+  std::optional<ConstValue> evaluate_add(const ConstValue &left,
+                                         const ConstValue &right) {
+    if (left.is_i32() && right.is_i32()) {
+      return ConstValue::i32(left.as_i32() + right.as_i32());
+    }
+    if (left.is_u32() && right.is_u32()) {
+      return ConstValue::u32(left.as_u32() + right.as_u32());
+    }
+    if (left.is_isize() && right.is_isize()) {
+      return ConstValue::isize(left.as_isize() + right.as_isize());
+    }
+    if (left.is_usize() && right.is_usize()) {
+      return ConstValue::usize(left.as_usize() + right.as_usize());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_sub(const ConstValue &left,
+                                         const ConstValue &right) {
+    if (left.is_i32() && right.is_i32()) {
+      return ConstValue::i32(left.as_i32() - right.as_i32());
+    }
+    if (left.is_u32() && right.is_u32()) {
+      return ConstValue::u32(left.as_u32() - right.as_u32());
+    }
+    if (left.is_isize() && right.is_isize()) {
+      return ConstValue::isize(left.as_isize() - right.as_isize());
+    }
+    if (left.is_usize() && right.is_usize()) {
+      return ConstValue::usize(left.as_usize() - right.as_usize());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_mul(const ConstValue &left,
+                                         const ConstValue &right) {
+    if (left.is_i32() && right.is_i32()) {
+      return ConstValue::i32(left.as_i32() * right.as_i32());
+    }
+    if (left.is_u32() && right.is_u32()) {
+      return ConstValue::u32(left.as_u32() * right.as_u32());
+    }
+    if (left.is_isize() && right.is_isize()) {
+      return ConstValue::isize(left.as_isize() * right.as_isize());
+    }
+    if (left.is_usize() && right.is_usize()) {
+      return ConstValue::usize(left.as_usize() * right.as_usize());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_div(const ConstValue &left,
+                                         const ConstValue &right) {
+    if (left.is_i32() && right.is_i32()) {
+      if (right.as_i32() == 0) {
+        throw SemanticException("division by zero");
+      }
+      return ConstValue::i32(left.as_i32() / right.as_i32());
+    }
+    if (left.is_u32() && right.is_u32()) {
+      if (right.as_u32() == 0) {
+        throw SemanticException("division by zero");
+      }
+      return ConstValue::u32(left.as_u32() / right.as_u32());
+    }
+    if (left.is_isize() && right.is_isize()) {
+      if (right.as_isize() == 0) {
+        throw SemanticException("division by zero");
+      }
+      return ConstValue::isize(left.as_isize() / right.as_isize());
+    }
+    if (left.is_usize() && right.is_usize()) {
+      if (right.as_usize() == 0) {
+        throw SemanticException("division by zero");
+      }
+      return ConstValue::usize(left.as_usize() / right.as_usize());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_mod(const ConstValue &left,
+                                         const ConstValue &right) {
+    if (left.is_i32() && right.is_i32()) {
+      if (right.as_i32() == 0) {
+        throw SemanticException("modulo by zero");
+      }
+      return ConstValue::i32(left.as_i32() % right.as_i32());
+    }
+    if (left.is_u32() && right.is_u32()) {
+      if (right.as_u32() == 0) {
+        throw SemanticException("modulo by zero");
+      }
+      return ConstValue::u32(left.as_u32() % right.as_u32());
+    }
+    if (left.is_isize() && right.is_isize()) {
+      if (right.as_isize() == 0) {
+        throw SemanticException("modulo by zero");
+      }
+      return ConstValue::isize(left.as_isize() % right.as_isize());
+    }
+    if (left.is_usize() && right.is_usize()) {
+      if (right.as_usize() == 0) {
+        throw SemanticException("modulo by zero");
+      }
+      return ConstValue::usize(left.as_usize() % right.as_usize());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_eq(const ConstValue &left,
+                                        const ConstValue &right) {
+    if (left.is_i32() && right.is_i32()) {
+      return ConstValue::bool_val(left.as_i32() == right.as_i32());
+    }
+    if (left.is_u32() && right.is_u32()) {
+      return ConstValue::bool_val(left.as_u32() == right.as_u32());
+    }
+    if (left.is_isize() && right.is_isize()) {
+      return ConstValue::bool_val(left.as_isize() == right.as_isize());
+    }
+    if (left.is_usize() && right.is_usize()) {
+      return ConstValue::bool_val(left.as_usize() == right.as_usize());
+    }
+    if (left.is_bool() && right.is_bool()) {
+      return ConstValue::bool_val(left.as_bool() == right.as_bool());
+    }
+    if (left.is_char() && right.is_char()) {
+      return ConstValue::bool_val(left.as_char() == right.as_char());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_ne(const ConstValue &left,
+                                        const ConstValue &right) {
+    auto eq_result = evaluate_eq(left, right);
+    if (eq_result && eq_result->is_bool()) {
+      return ConstValue::bool_val(!eq_result->as_bool());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_lt(const ConstValue &left,
+                                        const ConstValue &right) {
+    if (left.is_i32() && right.is_i32()) {
+      return ConstValue::bool_val(left.as_i32() < right.as_i32());
+    }
+    if (left.is_u32() && right.is_u32()) {
+      return ConstValue::bool_val(left.as_u32() < right.as_u32());
+    }
+    if (left.is_isize() && right.is_isize()) {
+      return ConstValue::bool_val(left.as_isize() < right.as_isize());
+    }
+    if (left.is_usize() && right.is_usize()) {
+      return ConstValue::bool_val(left.as_usize() < right.as_usize());
+    }
+    if (left.is_char() && right.is_char()) {
+      return ConstValue::bool_val(left.as_char() < right.as_char());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_le(const ConstValue &left,
+                                        const ConstValue &right) {
+    auto lt_result = evaluate_lt(left, right);
+    auto eq_result = evaluate_eq(left, right);
+    if (lt_result && eq_result && lt_result->is_bool() &&
+        eq_result->is_bool()) {
+      return ConstValue::bool_val(lt_result->as_bool() || eq_result->as_bool());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_gt(const ConstValue &left,
+                                        const ConstValue &right) {
+    auto le_result = evaluate_le(left, right);
+    if (le_result && le_result->is_bool()) {
+      return ConstValue::bool_val(!le_result->as_bool());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_ge(const ConstValue &left,
+                                        const ConstValue &right) {
+    auto lt_result = evaluate_lt(left, right);
+    if (lt_result && lt_result->is_bool()) {
+      return ConstValue::bool_val(!lt_result->as_bool());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_logical_and(const ConstValue &left,
+                                                 const ConstValue &right) {
+    if (left.is_bool() && right.is_bool()) {
+      return ConstValue::bool_val(left.as_bool() && right.as_bool());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_logical_or(const ConstValue &left,
+                                                const ConstValue &right) {
+    if (left.is_bool() && right.is_bool()) {
+      return ConstValue::bool_val(left.as_bool() || right.as_bool());
+    }
+    return std::nullopt;
+  }
+};
+
+} // namespace rc

@@ -97,6 +97,10 @@ public:
     meta.name = node.name;
     meta.decl = &node;
     meta.type = resolve_type(node.type);
+    
+    if (auto *ci = lookup_current_value_item(node.name, ItemKind::Constant)) {
+      ci->metadata = std::move(meta);
+    }
   }
 
   void visit(StructDecl &node) override {
