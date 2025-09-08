@@ -53,18 +53,18 @@ public:
   }
 };
 
-class FourthPass : public BaseVisitor {
+class PatternBindingChecker : public BaseVisitor {
 public:
-  FourthPass() = default;
+  PatternBindingChecker() = default;
 
-  ~FourthPass() {
+  ~PatternBindingChecker() {
     for (auto *scope : allocated_scopes) {
       delete scope;
     }
   }
 
   void run(const std::shared_ptr<RootNode> &root, ScopeNode *root_scope_) {
-    LOG_INFO("[FourthPass] Starting handle of references and bindings");
+    LOG_INFO("[PatternBindingChecker] Starting handle of references and bindings");
     root_scope = new ScopeWithBindings(root_scope_);
     scope_stack.clear();
     scope_stack.push_back(root_scope);
@@ -73,14 +73,14 @@ public:
       size_t idx = 0;
       for (const auto &child : root->children) {
         if (child) {
-          LOG_DEBUG("[FourthPass] Evaluating top-level item #" +
+          LOG_DEBUG("[PatternBindingChecker] Evaluating top-level item #" +
                     std::to_string(idx));
           child->accept(*this);
         }
         ++idx;
       }
     }
-    LOG_INFO("[FourthPass] Completed");
+    LOG_INFO("[PatternBindingChecker] Completed");
   }
 
   SemType lookup_type(const std::string &name) {
@@ -146,7 +146,7 @@ public:
   void visit(ConstantItem &) override {}
 
   void visit(FunctionDecl &node) override {
-    LOG_DEBUG("[FourthPass] Visiting function '" + node.name + "'");
+    LOG_DEBUG("[PatternBindingChecker] Visiting function '" + node.name + "'");
 
     if (node.params) {
       auto item = current_scope()->scope->find_value_item(node.name);
@@ -167,7 +167,7 @@ public:
   }
 
   void visit(LetStatement &node) override {
-    LOG_DEBUG("[FourthPass] Processing let statement");
+    LOG_DEBUG("[PatternBindingChecker] Processing let statement");
 
     SemType binding_type = resolve_type(node.type);
     if (node.type.storage.index() != 0 ||
@@ -191,7 +191,7 @@ public:
   void visit(ImplDecl &) override {}
 
   void visit(BlockExpression &node) override {
-    LOG_DEBUG("[FourthPass] Visiting block expression");
+    LOG_DEBUG("[PatternBindingChecker] Visiting block expression");
 
     // Find the corresponding scope for this block
     if (auto *block_scope =
@@ -227,7 +227,7 @@ public:
   }
 
   void visit(IfExpression &node) override {
-    LOG_DEBUG("[FourthPass] Visiting if expression");
+    LOG_DEBUG("[PatternBindingChecker] Visiting if expression");
 
     if (node.then_block) {
       node.then_block->accept(*this);
@@ -239,7 +239,7 @@ public:
   }
 
   void visit(LoopExpression &node) override {
-    LOG_DEBUG("[FourthPass] Visiting loop expression");
+    LOG_DEBUG("[PatternBindingChecker] Visiting loop expression");
 
     if (node.body) {
       node.body->accept(*this);
@@ -247,7 +247,7 @@ public:
   }
 
   void visit(WhileExpression &node) override {
-    LOG_DEBUG("[FourthPass] Visiting while expression");
+    LOG_DEBUG("[PatternBindingChecker] Visiting while expression");
 
     if (node.body) {
       node.body->accept(*this);
@@ -371,7 +371,7 @@ private:
   void extract_identifier_pattern(const IdentifierPattern &pattern,
                                   const SemType &type) {
     IdentifierMeta meta{pattern.is_mutable, pattern.is_ref, type};
-    LOG_DEBUG("[FourthPass] Adding binding: " + pattern.name +
+    LOG_DEBUG("[PatternBindingChecker] Adding binding: " + pattern.name +
               (pattern.is_mutable ? " (mut)" : "") +
               (pattern.is_ref ? " (ref)" : ""));
     current_scope()->add_binding(pattern.name, meta);
