@@ -4,6 +4,22 @@ project(RCompiler VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Clang-tidy integration
+option(ENABLE_CLANG_TIDY "Enable clang-tidy" OFF)
+if(ENABLE_CLANG_TIDY)
+  find_program(CLANG_TIDY_EXE 
+    NAMES clang-tidy
+    PATHS /opt/homebrew/opt/llvm/bin
+    DOC "Path to clang-tidy executable"
+  )
+  if(NOT CLANG_TIDY_EXE)
+    message(STATUS "clang-tidy not found.")
+  else()
+    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
+    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+  endif()
+endif()
+
 # Include directories (apply globally for simplicity)
 include_directories(include)
 
