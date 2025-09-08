@@ -8,7 +8,7 @@
 #include "semantic/analyzer/firstPass.hpp"
 #include "semantic/analyzer/secondPass.hpp"
 #include "semantic/analyzer/thirdPass.hpp"
-#include "semantic/analyzer/patternBindingChecker.hpp"
+#include "semantic/analyzer/fourthPass.hpp"
 
 namespace rc {
 
@@ -48,8 +48,8 @@ inline void SemanticAnalyzer::analyze(const std::shared_ptr<RootNode> &root) {
   std::cout << "[Semantic] Third pass completed." << std::endl;
 
   // Fourth pass handles let statements and bindings
-  PatternBindingChecker pattern;
-  pattern.run(std::dynamic_pointer_cast<RootNode>(root), first.root_scope);
+  FourthPass fourth;
+  fourth.run(std::dynamic_pointer_cast<RootNode>(root), first.root_scope);
   std::cout << "[Semantic] Fourth pass completed." << std::endl;
 
   // Control analyzer analysis inappropriate continues and breaks
