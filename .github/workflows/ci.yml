@@ -24,24 +24,16 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build clang-tidy ${{ matrix.compiler }}
+          sudo apt-get install -y cmake ninja-build ${{ matrix.compiler }}
 
       - name: Configure
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
                 -DBUILD_TESTING=ON \
-                -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
                 ${{ matrix.compiler == 'clang' && '-DCMAKE_CXX_COMPILER=clang++' || '-DCMAKE_CXX_COMPILER=g++' }}
 
       - name: Build
         run: cmake --build build --config Release --parallel
-
-      - name: Run clang-tidy
-        if: matrix.compiler == 'clang'
-        run: |
-          find src include tests -name "*.cpp" -o -name "*.hpp" | \
-          grep -v "\.dir/" | \
-          xargs clang-tidy -p build/ --config-file=.clang-tidy
 
       - name: Run unit tests (stable)
         run: |

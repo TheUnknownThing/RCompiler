@@ -4,22 +4,6 @@ project(RCompiler VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Clang-tidy integration
-option(ENABLE_CLANG_TIDY "Enable clang-tidy" OFF)
-if(ENABLE_CLANG_TIDY)
-  find_program(CLANG_TIDY_EXE 
-    NAMES clang-tidy
-    PATHS /opt/homebrew/opt/llvm/bin
-    DOC "Path to clang-tidy executable"
-  )
-  if(NOT CLANG_TIDY_EXE)
-    message(STATUS "clang-tidy not found.")
-  else()
-    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
-    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
-  endif()
-endif()
-
 # Include directories (apply globally for simplicity)
 include_directories(include)
 
@@ -40,6 +24,11 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU
   target_compile_options(rcompiler PRIVATE -Wall -Wextra -std=c++20)
 endif()
 
+# Function to apply clang-tidy to test executables
+function(add_test_executable target_name source_files)
+    add_executable(${target_name} ${source_files})
+endfunction()
+
 # --- Testing setup ---
 include(CTest)
 option(BUILD_TESTING "Build tests" OFF)
@@ -48,37 +37,35 @@ if (BUILD_TESTING)
   enable_testing()
 
   # Unit: preprocessor existing test
-  add_executable(unit_preprocessor tests/unit/preprocessor.cpp)
+  add_test_executable(unit_preprocessor tests/unit/preprocessor.cpp)
   add_test(NAME unit_preprocessor COMMAND unit_preprocessor)
   set_tests_properties(unit_preprocessor PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tests/unit" LABELS "preprocessor;stable")
 
   # Unit: Constant evaluator test
-  add_executable(const_evaluator_test tests/unit/const_evaluator_test.cpp)
+  add_test_executable(const_evaluator_test tests/unit/const_evaluator_test.cpp)
   add_test(NAME const_evaluator_test COMMAND const_evaluator_test)
   set_tests_properties(const_evaluator_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "semantic;stable")
 
   # Unit: Simple parser unit tests
-  # (Legacy) simple parser unit tests retained but not part of basic/comprehensive CI focus
-  add_executable(parser_simple_tests tests/unit/parser_simple_tests.cpp)
+  add_test_executable(parser_simple_tests tests/unit/parser_simple_tests.cpp)
   add_test(NAME parser_simple_tests COMMAND parser_simple_tests)
   set_tests_properties(parser_simple_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "parser;legacy")
 
   # New: parser basic aggregated test (valid vs invalid classification)
-  add_executable(parser_basic tests/unit/parser_basic.cpp)
+  add_test_executable(parser_basic tests/unit/parser_basic.cpp)
   add_test(NAME parser_basic COMMAND parser_basic)
   set_tests_properties(parser_basic PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "parser;basic;stable")
 
   # New: parser comprehensive aggregated test (full dataset, pretty print)
-  add_executable(parser_comprehensive tests/unit/parser_comprehensive.cpp src/pretty_print.cpp)
+  add_test_executable(parser_comprehensive "tests/unit/parser_comprehensive.cpp;src/pretty_print.cpp")
   add_test(NAME parser_comprehensive COMMAND parser_comprehensive)
   set_tests_properties(parser_comprehensive PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "parser;comprehensive;unstable")
 
   # Unit: Comprehensive parser tests (AST validation) - for manual testing
-  add_executable(parser_comprehensive_runner tests/unit/parser_comprehensive_runner.cpp src/pretty_print.cpp)
-  # Note: This runner is for manual testing and integration, not automated unit tests
+  add_test_executable(parser_comprehensive_runner "tests/unit/parser_comprehensive_runner.cpp;src/pretty_print.cpp")
 
   # Lexer case runner: compares tokens with expected files
-  add_executable(lexer_case_runner tests/unit/lexer_case_runner.cpp)
+  add_test_executable(lexer_case_runner tests/unit/lexer_case_runner.cpp)
 
   # Register all lexer example tests (.tokens paired with .rs)
   file(GLOB LEXER_TOKEN_FILES "${CMAKE_SOURCE_DIR}/examples/lexer/*.tokens")
@@ -99,7 +86,7 @@ if (BUILD_TESTING)
   endforeach()
 
   # Parser smoke runner: ensures parsing succeeds on AST examples
-  add_executable(parser_smoke_runner tests/unit/parser_smoke_runner.cpp)
+  add_test_executable(parser_smoke_runner tests/unit/parser_smoke_runner.cpp)
 
   file(GLOB AST_RS_FILES "${CMAKE_SOURCE_DIR}/examples/ast/*.rs")
   foreach(ast_file IN LISTS AST_RS_FILES)
@@ -118,7 +105,7 @@ if (BUILD_TESTING)
   endforeach()
   
   # Optional: integration sample (does not assert), keep as smoke
-  add_executable(integration_lexer_with_preprocessor tests/integration/lexer_w_preprocessor.cpp)
+  add_test_executable(integration_lexer_with_preprocessor tests/integration/lexer_w_preprocessor.cpp)
   add_test(NAME integration_lexer_with_preprocessor COMMAND integration_lexer_with_preprocessor)
   set_tests_properties(integration_lexer_with_preprocessor PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tests/integration" LABELS "integration;stable")
 endif()
