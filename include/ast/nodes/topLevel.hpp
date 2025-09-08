@@ -18,14 +18,14 @@ public:
 class FunctionDecl : public BaseItem {
 public:
   std::string name;
-  std::optional<std::vector<std::pair<std::string, LiteralType>>> params;
+  std::optional<std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>> params;
   LiteralType return_type;
   std::optional<std::shared_ptr<Expression>>
       body; // BlockExpression or semicolon
 
   FunctionDecl(
       const std::string &nameTok,
-      const std::optional<std::vector<std::pair<std::string, LiteralType>>>
+      const std::optional<std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
           &params,
       LiteralType return_type,
       std::optional<std::shared_ptr<Expression>> body = std::nullopt)

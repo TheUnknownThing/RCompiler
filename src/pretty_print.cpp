@@ -486,7 +486,9 @@ void PrettyPrintVisitor::visit(FunctionDecl &node) {
     print_line("params: [");
     increase_indent();
     for (const auto &param : node.params.value()) {
-      print_line("(" + param.first + ": " + format_type(param.second) + ")");
+      print_line("(");
+      RC_SAFE_ACCEPT(param.first);
+      print_line(": " + format_type(param.second) + ")");
     }
     decrease_indent();
     print_line("]");

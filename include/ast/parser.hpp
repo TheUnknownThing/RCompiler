@@ -56,9 +56,10 @@ public:
 
   parsec::Parser<std::shared_ptr<BaseNode>> parse_let_statement();
 
-  parsec::Parser<std::pair<std::string, LiteralType>>
-  identifier_and_type_parser();
-  parsec::Parser<std::vector<std::pair<std::string, LiteralType>>>
+  parsec::Parser<std::pair<std::shared_ptr<BasePattern>, LiteralType>>
+  pattern_and_type_parser();
+  parsec::Parser<
+      std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
   argument_list_parser();
   parsec::Parser<std::vector<std::shared_ptr<Expression>>>
   expression_list_parser();
@@ -198,7 +199,6 @@ inline std::shared_ptr<BaseNode> Parser::parse_statement() {
 }
 
 inline parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
-  auto identifier_and_type = identifier_and_type_parser();
   auto argument_list = argument_list_parser();
   auto return_type = tok(TokenType::ARROW).thenR(typ);
 
@@ -215,10 +215,11 @@ inline parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
           .combine(optional(return_type), [](const auto &pm_list,
                                              const auto &ty) {
             auto ret_ty = ty.value_or(LiteralType(PrimitiveLiteralType::UNIT));
-            return std::tuple<
-                std::string,
-                std::optional<std::vector<std::pair<std::string, LiteralType>>>,
-                LiteralType>{pm_list.first, pm_list.second, ret_ty};
+            return std::tuple<std::string,
+                              std::optional<std::vector<std::pair<
+                                  std::shared_ptr<BasePattern>, LiteralType>>>,
+                              LiteralType>{pm_list.first, pm_list.second,
+                                           ret_ty};
           });
 
   auto body_block = parse_block_expression().map([](auto e) {
@@ -1232,24 +1233,24 @@ inline parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
       });
 }
 
-inline parsec::Parser<std::pair<std::string, LiteralType>>
-Parser::identifier_and_type_parser() {
+inline parsec::Parser<std::pair<std::shared_ptr<BasePattern>, LiteralType>>
+Parser::pattern_and_type_parser() {
   using namespace parsec;
-  return parsec::identifier.combine(
+  return pattern_parser_.pattern_no_top_alt().combine(
       tok(TokenType::COLON).thenR(typ), [](const auto &id, const auto &t) {
-        const auto &ty = t;
-        LOG_DEBUG("Parsed identifier with type: " + id);
-        return std::make_pair(id, ty);
+        LOG_DEBUG("Parsed pattern with type");
+        return std::make_pair(id, t);
       });
 }
 
-inline parsec::Parser<std::vector<std::pair<std::string, LiteralType>>>
+inline parsec::Parser<
+    std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
 Parser::argument_list_parser() {
   using namespace parsec;
-  auto identifier_and_type = identifier_and_type_parser();
+  auto pattern_and_type = pattern_and_type_parser();
 
   return tok(TokenType::L_PAREN)
-      .thenR(many(identifier_and_type.thenL(optional(tok(TokenType::COMMA)))))
+      .thenR(many(pattern_and_type.thenL(optional(tok(TokenType::COMMA)))))
       .thenL(tok(TokenType::R_PAREN))
       .map([](auto args) {
         LOG_DEBUG("Parsed argument list with " + std::to_string(args.size()) +

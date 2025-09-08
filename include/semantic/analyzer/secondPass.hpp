@@ -66,17 +66,13 @@ public:
     FunctionMetaData sig;
     sig.name = node.name;
     sig.decl = &node;
-    std::set<std::string> seen;
+    
     if (node.params) {
       for (const auto &p : *node.params) {
         const auto &name = p.first;
-        if (seen.contains(name)) {
-          LOG_ERROR("[SecondPass] Duplicate parameter '" + name +
-                    "' in function '" + node.name + "'");
-          throw SemanticException("duplicate parameter '" + name +
-                                  "' in function '" + node.name + "'");
-        }
-        seen.insert(name);
+        
+        // TODO: deduplicate names in parameters
+        
         sig.param_names.push_back(name);
         sig.param_types.push_back(resolve_type(p.second));
       }

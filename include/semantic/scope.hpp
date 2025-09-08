@@ -21,7 +21,7 @@ enum class ItemKind { Function, Constant, Module, Struct, Enum, Trait };
 
 struct FunctionMetaData {
   std::string name;
-  std::vector<std::string> param_names;
+  std::vector<std::shared_ptr<BasePattern>> param_names;
   std::vector<SemType> param_types;
   SemType return_type;
   const FunctionDecl *decl = nullptr;
