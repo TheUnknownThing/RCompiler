@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -199,7 +198,10 @@ public:
     }
 
     if (node.pattern) {
+      validate_irrefutable_pattern(*node.pattern);
       extract_pattern_bindings(*node.pattern, annotated);
+    } else {
+      throw SemanticException("let pattern is required");
     }
   }
 
@@ -255,6 +257,11 @@ public:
   }
 
   void visit(BinaryExpression &node) override {
+    if (is_assignment_token(node.op.type)) {
+      handle_assignment(node);
+      return;
+    }
+
     cache_expr(&node, eval_binary(node));
   }
 
@@ -446,6 +453,7 @@ public:
             "mismatched function parameter names and types");
       }
       for (size_t i = 0; i < names.size(); ++i) {
+        validate_irrefutable_pattern(*names[i]);
         extract_pattern_bindings(*names[i], types[i]);
       }
       pending_params.reset();
@@ -545,6 +553,12 @@ private:
     SemType type;
   };
 
+  struct PlaceInfo {
+    bool is_place = false;
+    bool is_writable = false;
+    std::optional<std::string> root_name;
+  };
+
   using BindingFrame = std::map<std::string, IdentifierMeta>;
   std::vector<BindingFrame> binding_stack;
 
@@ -578,6 +592,15 @@ private:
     return std::nullopt;
   }
 
+  const IdentifierMeta *lookup_binding_meta(const std::string &name) const {
+    for (auto it = binding_stack.rbegin(); it != binding_stack.rend(); ++it) {
+      auto found = it->find(name);
+      if (found != it->end())
+        return &found->second;
+    }
+    return nullptr;
+  }
+
   void add_binding(const std::string &name, const IdentifierMeta &meta) {
     if (current_scope_node) {
       auto *item = current_scope_node->find_value_item(name);
@@ -609,22 +632,16 @@ private:
     if (auto *idp = dynamic_cast<const IdentifierPattern *>(&pattern)) {
       extract_identifier_pattern(*idp, type);
       return;
-    }
-    if (auto *refp = dynamic_cast<const ReferencePattern *>(&pattern)) {
+    } else if (auto *refp = dynamic_cast<const ReferencePattern *>(&pattern)) {
       extract_reference_pattern(*refp, type);
       return;
-    }
-    if (dynamic_cast<const TuplePattern *>(&pattern)) {
+    } else if (dynamic_cast<const TuplePattern *>(&pattern)) {
       throw SemanticException("tuple patterns is removed");
-    }
-    if (dynamic_cast<const StructPattern *>(&pattern)) {
+    } else if (dynamic_cast<const StructPattern *>(&pattern)) {
       throw SemanticException("struct patterns is removed");
-    }
-    if (auto *grp = dynamic_cast<const GroupedPattern *>(&pattern)) {
-      extract_pattern_bindings(*grp->inner_pattern, type);
-      return;
-    }
-    if (dynamic_cast<const OrPattern *>(&pattern)) {
+    } else if (auto *grp = dynamic_cast<const GroupedPattern *>(&pattern)) {
+      throw SemanticException("grouped patterns is removed");
+    } else if (dynamic_cast<const OrPattern *>(&pattern)) {
       // or pattern removed in subset
       return;
     }
@@ -749,29 +766,6 @@ private:
     auto rt = evaluate(bin.right.get());
     const auto op = bin.op.type;
 
-    auto is_plain_i32_literal = [](Expression *e) -> bool {
-      auto *lit = dynamic_cast<LiteralExpression *>(e);
-      if (!lit)
-        return false;
-      // it is due to in parser we assume bare int literals to be i32 (no
-      // suffix)
-      // TODO: maybe we need a fix here.
-      if (!(lit->type.is_base() &&
-            lit->type.as_base() == PrimitiveLiteralType::I32))
-        return false;
-
-      static const std::array<std::string, 4> suffixes = {"i32", "u32", "isize",
-                                                          "usize"};
-      for (const auto &s : suffixes) {
-        if (lit->value.size() >= s.size() &&
-            lit->value.compare(lit->value.size() - s.size(), s.size(), s) ==
-                0) {
-          return false;
-        }
-      }
-      return true;
-    };
-
     bool left_literal = is_plain_i32_literal(bin.left.get());
     bool right_literal = is_plain_i32_literal(bin.right.get());
 
@@ -857,6 +851,258 @@ private:
     throw TypeError("operator '" + std::string(toString(op)) +
                     "' not applicable to types '" + to_string(lt) + "' and '" +
                     to_string(rt) + "'");
+  }
+
+  bool is_assignment_token(TokenType tt) const {
+    switch (tt) {
+    case TokenType::ASSIGN:
+    case TokenType::PLUS_EQ:
+    case TokenType::MINUS_EQ:
+    case TokenType::STAR_EQ:
+    case TokenType::SLASH_EQ:
+    case TokenType::PERCENT_EQ:
+    case TokenType::AMPERSAND_EQ:
+    case TokenType::PIPE_EQ:
+    case TokenType::CARET_EQ:
+    case TokenType::SHL_EQ:
+    case TokenType::SHR_EQ:
+      return true;
+    default:
+      return false;
+    }
+  }
+
+  std::optional<TokenType> compound_base_operator(TokenType tt) const {
+    switch (tt) {
+    case TokenType::PLUS_EQ:
+      return TokenType::PLUS;
+    case TokenType::MINUS_EQ:
+      return TokenType::MINUS;
+    case TokenType::STAR_EQ:
+      return TokenType::STAR;
+    case TokenType::SLASH_EQ:
+      return TokenType::SLASH;
+    case TokenType::PERCENT_EQ:
+      return TokenType::PERCENT;
+    case TokenType::AMPERSAND_EQ:
+      return TokenType::AMPERSAND;
+    case TokenType::PIPE_EQ:
+      return TokenType::PIPE;
+    case TokenType::CARET_EQ:
+      return TokenType::CARET;
+    case TokenType::SHL_EQ:
+      return TokenType::SHL;
+    case TokenType::SHR_EQ:
+      return TokenType::SHR;
+    default:
+      return std::nullopt;
+    }
+  }
+
+  PlaceInfo analyze_place(Expression *expr) {
+    if (!expr)
+      return {};
+
+    if (auto *g = dynamic_cast<GroupExpression *>(expr)) {
+      return analyze_place(g->inner.get());
+    }
+
+    if (auto *n = dynamic_cast<NameExpression *>(expr)) {
+      PlaceInfo info;
+      if (const auto *meta = lookup_binding_meta(n->name)) {
+        info.is_place = true;
+        info.is_writable = meta->is_mutable;
+        info.root_name = n->name;
+        return info;
+      }
+
+      for (auto *s = current_scope_node; s; s = s->parent) {
+        if (auto *it = s->find_value_item(n->name)) {
+          info.is_place = false;
+          info.is_writable = false;
+          info.root_name = n->name;
+          return info;
+        }
+      }
+      return {};
+    }
+
+    if (auto *f = dynamic_cast<FieldAccessExpression *>(expr)) {
+      PlaceInfo base = analyze_place(f->target.get());
+      if (!base.is_place)
+        return {};
+      auto target_t = evaluate(f->target.get());
+      if (!target_t.is_named())
+        return {};
+      const CollectedItem *ci = target_t.as_named().item;
+      if (!ci || !ci->has_struct_meta())
+        return {};
+      bool field_exists = false;
+      for (const auto &p : ci->as_struct_meta().named_fields) {
+        if (p.first == f->field_name) {
+          field_exists = true;
+          break;
+        }
+      }
+      if (!field_exists)
+        return {};
+      return PlaceInfo{true, base.is_writable, base.root_name};
+    }
+
+    if (auto *idx = dynamic_cast<IndexExpression *>(expr)) {
+      PlaceInfo base = analyze_place(idx->target.get());
+      if (!base.is_place)
+        return {};
+      auto target_t = evaluate(idx->target.get());
+      if (!(target_t.is_array() || target_t.is_slice()))
+        return {};
+      return PlaceInfo{true, base.is_writable, base.root_name};
+    }
+
+    // All others are r-values
+    return {};
+  }
+
+  void require_place_writable(Expression *lhs, const char *context) {
+    PlaceInfo info = analyze_place(lhs);
+    if (!info.is_place) {
+      throw TypeError(std::string(context) + ": invalid left-hand side");
+    }
+    if (!info.is_writable) {
+      if (info.root_name) {
+        throw TypeError(std::string(context) +
+                        ": cannot assign to immutable binding '" +
+                        *info.root_name + "'");
+      }
+      throw TypeError(std::string(context) +
+                      ": cannot assign to immutable place");
+    }
+  }
+
+  bool is_plain_i32_literal(Expression *e) const {
+    auto *lit = dynamic_cast<LiteralExpression *>(e);
+    if (!lit)
+      return false;
+    if (!(lit->type.is_base() &&
+          lit->type.as_base() == PrimitiveLiteralType::I32)) {
+      // it is due to in parser we assume bare int literals to be i32 (no
+      // suffix)
+      // TODO: maybe we need a fix here.
+      return false;
+    }
+    static const std::array<std::string, 4> suffixes = {"i32", "u32", "isize",
+                                                        "usize"};
+    for (const auto &s : suffixes) {
+      if (lit->value.size() >= s.size() &&
+          lit->value.compare(lit->value.size() - s.size(), s.size(), s) == 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void handle_assignment(BinaryExpression &node) {
+    require_place_writable(node.left.get(), "assignment");
+
+    auto lhs_t = evaluate(node.left.get());
+    auto rhs_t = evaluate(node.right.get());
+
+    if (node.op.type == TokenType::ASSIGN) {
+      if (!(lhs_t == rhs_t)) {
+        throw TypeError("assignment type mismatch: expected '" +
+                        to_string(lhs_t) + "', got '" + to_string(rhs_t) + "'");
+      }
+      cache_expr(&node, SemType::primitive(SemPrimitiveKind::UNIT));
+      return;
+    }
+
+    auto base_op_opt = compound_base_operator(node.op.type);
+    if (!base_op_opt) {
+      throw TypeError("unsupported compound assignment");
+    }
+    const auto base_op = *base_op_opt;
+
+    bool lhs_is_int =
+        lhs_t.is_primitive() && is_integer(lhs_t.as_primitive().kind);
+    bool rhs_is_int =
+        rhs_t.is_primitive() && is_integer(rhs_t.as_primitive().kind);
+    bool right_literal = is_plain_i32_literal(node.right.get());
+
+    auto unify_int = [&]() -> bool {
+      if (!(lhs_is_int && rhs_is_int))
+        return false;
+      if (lhs_t == rhs_t)
+        return true;
+      if (right_literal)
+        return true; // allow literal to adopt lhs type
+      return false;
+    };
+
+    bool ok = false;
+    switch (base_op) {
+    case TokenType::PLUS:
+    case TokenType::MINUS:
+    case TokenType::STAR:
+    case TokenType::SLASH:
+    case TokenType::PERCENT:
+    case TokenType::AMPERSAND:
+    case TokenType::PIPE:
+    case TokenType::CARET:
+      ok = unify_int();
+      break;
+    case TokenType::SHL:
+    case TokenType::SHR:
+      ok = lhs_is_int && rhs_is_int; // shift keeps lhs type
+      break;
+    default:
+      ok = false;
+    }
+
+    if (!ok) {
+      throw TypeError("invalid types for compound assignment: '" +
+                      to_string(lhs_t) + "' " + std::string(toString(base_op)) +
+                      "= '" + to_string(rhs_t) + "'");
+    }
+
+    // Assignment expression type is unit
+    cache_expr(&node, SemType::primitive(SemPrimitiveKind::UNIT));
+  }
+
+  void validate_irrefutable_pattern(const BasePattern &pattern) {
+    if (auto *idp = dynamic_cast<const IdentifierPattern *>(&pattern)) {
+      (void)idp; // ok
+      return;
+    }
+    if (auto *grp = dynamic_cast<const GroupedPattern *>(&pattern)) {
+      if (grp->inner_pattern) {
+        validate_irrefutable_pattern(*grp->inner_pattern);
+      }
+      return;
+    }
+    if (auto *refp = dynamic_cast<const ReferencePattern *>(&pattern)) {
+      if (refp->inner_pattern) {
+        validate_irrefutable_pattern(*refp->inner_pattern);
+      }
+      return;
+    }
+    if (dynamic_cast<const WildcardPattern *>(&pattern)) {
+      return; // ok
+    }
+
+    if (dynamic_cast<const LiteralPattern *>(&pattern)) {
+      throw SemanticException("literal pattern is not allowed");
+    }
+    if (dynamic_cast<const OrPattern *>(&pattern)) {
+      throw SemanticException("or patterns is removed");
+    }
+    if (dynamic_cast<const TuplePattern *>(&pattern)) {
+      throw SemanticException("tuple patterns is removed");
+    }
+    if (dynamic_cast<const StructPattern *>(&pattern)) {
+      throw SemanticException("struct patterns is removed");
+    }
+
+    throw SemanticException("unsupported pattern");
   }
 };
 
