@@ -9,6 +9,7 @@
 #include "semantic/analyzer/secondPass.hpp"
 #include "semantic/analyzer/thirdPass.hpp"
 #include "semantic/analyzer/fourthPass.hpp"
+#include "semantic/analyzer/dirtyWorkPass.hpp"
 
 namespace rc {
 
@@ -50,6 +51,10 @@ inline void SemanticAnalyzer::analyze(const std::shared_ptr<RootNode> &root) {
   // Control analyzer analysis inappropriate continues and breaks
   ControlAnalyzer control_analyzer;
   control_analyzer.analyze(root);
+
+  // Dirty work is just dirty work
+  DirtyWorkPass dirty_work;
+  dirty_work.run(std::dynamic_pointer_cast<RootNode>(root), first.root_scope);
 }
 
 } // namespace rc
