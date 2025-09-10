@@ -19,8 +19,8 @@
 
 namespace rc {
 
-PrettyPrintVisitor::PrettyPrintVisitor(int indent_level)
-    : indent_level_(indent_level) {}
+PrettyPrintVisitor::PrettyPrintVisitor(int indent_level, bool use_colors)
+    : indent_level_(indent_level), use_colors_(use_colors), in_list_context_(false) {}
 
 std::string PrettyPrintVisitor::get_result() const { return output_.str(); }
 
@@ -28,6 +28,7 @@ void PrettyPrintVisitor::reset() {
   output_.str("");
   output_.clear();
   indent_level_ = 0;
+  in_list_context_ = false;
 }
 
 void PrettyPrintVisitor::visit(BaseNode &node) {
@@ -109,72 +110,68 @@ void PrettyPrintVisitor::visit(BaseNode &node) {
 
 // Expression visitors
 void PrettyPrintVisitor::visit(NameExpression &node) {
-  print_inline("NameExpr(" + node.name + ")");
+  print_inline(node_color("NameExpr") + colorize("(", Colors::BRACE) + 
+               identifier_color(node.name) + colorize(")", Colors::BRACE));
 }
 
 void PrettyPrintVisitor::visit(LiteralExpression &node) {
-  print_inline("LiteralExpr(" + node.value + ", " + format_type(node.type) +
-               ")");
+  print_inline(node_color("LiteralExpr") + colorize("(", Colors::BRACE) + 
+               literal_color(node.value) + colorize(", ", Colors::SEPARATOR) + 
+               format_type(node.type) + colorize(")", Colors::BRACE));
 }
 
 void PrettyPrintVisitor::visit(PrefixExpression &node) {
-  print_inline("PrefixExpr(");
-  print_inline(format_token(node.op) + ", ");
+  print_inline(node_color("PrefixExpr") + colorize("(", Colors::BRACE));
+  print_inline(format_token(node.op) + colorize(", ", Colors::SEPARATOR));
   RC_SAFE_ACCEPT(node.right);
-  print_inline(")");
+  print_inline(colorize(")", Colors::BRACE));
 }
 
 void PrettyPrintVisitor::visit(BinaryExpression &node) {
-  print_inline("BinaryExpr(");
+  print_inline(node_color("BinaryExpr") + colorize("(", Colors::BRACE));
   RC_SAFE_ACCEPT(node.left);
-  print_inline(", " + format_token(node.op) + ", ");
+  print_inline(colorize(", ", Colors::SEPARATOR) + format_token(node.op) + colorize(", ", Colors::SEPARATOR));
   RC_SAFE_ACCEPT(node.right);
-  print_inline(")");
+  print_inline(colorize(")", Colors::BRACE));
 }
 
 void PrettyPrintVisitor::visit(GroupExpression &node) {
-  print_inline("GroupExpr(");
+  print_inline(node_color("GroupExpr") + colorize("(", Colors::BRACE));
   RC_SAFE_ACCEPT(node.inner);
-  print_inline(")");
+  print_inline(colorize(")", Colors::BRACE));
 }
 
 void PrettyPrintVisitor::visit(IfExpression &node) {
-  print_line("IfExpr {");
-  increase_indent();
+  print_node_start("IfExpr");
 
-  print_indent();
-  print_inline("condition: ");
+  print_field_start("condition");
   RC_SAFE_ACCEPT(node.condition);
-  output_ << std::endl;
+  print_field_end();
 
-  print_indent();
-  print_inline("then_block: ");
+  print_field_start("then_block");
   RC_SAFE_ACCEPT(node.then_block);
-  output_ << std::endl;
+  print_field_end();
 
   if (node.else_block.has_value()) {
-    print_indent();
-    print_inline("else_block: ");
+    print_field_start("else_block");
     RC_SAFE_ACCEPT(node.else_block.value());
-    output_ << std::endl;
+    print_field_end();
   }
 
-  decrease_indent();
-  print_indent();
-  print_inline("}");
+  print_node_end();
 }
 
 void PrettyPrintVisitor::visit(CallExpression &node) {
-  print_inline("CallExpr(");
+  print_inline(node_color("CallExpr") + colorize("(", Colors::BRACE));
   RC_SAFE_ACCEPT(node.function_name);
-  print_inline(", [");
+  print_inline(colorize(", [", Colors::BRACKET));
   for (size_t i = 0; i < node.arguments.size(); ++i) {
     RC_SAFE_ACCEPT(node.arguments[i]);
     if (i < node.arguments.size() - 1) {
-      print_inline(", ");
+      print_inline(colorize(", ", Colors::SEPARATOR));
     }
   }
-  print_inline("])");
+  print_inline(colorize("])", Colors::BRACKET) + colorize(")", Colors::BRACE));
 }
 
 void PrettyPrintVisitor::visit(MethodCallExpression &node) {
@@ -249,35 +246,31 @@ void PrettyPrintVisitor::visit(UnderscoreExpression &node) {
 }
 
 void PrettyPrintVisitor::visit(BlockExpression &node) {
-  print_line("BlockExpr {");
-  increase_indent();
+  print_node_start("BlockExpr");
 
   if (!node.statements.empty()) {
-    print_line("statements: [");
-    increase_indent();
+    print_list_start("statements");
     for (const auto &stmt : node.statements) {
       print_indent();
+      in_list_context_ = true;
       if (stmt) {
         stmt->accept(*this);
       } else {
-        print_inline("<null>");
+        print_inline(colorize("<null>", Colors::DIM));
       }
-      output_ << std::endl;
+      in_list_context_ = false;
+      print_newline();
     }
-    decrease_indent();
-    print_line("]");
+    print_list_end();
   }
 
   if (node.final_expr.has_value()) {
-    print_indent();
-    print_inline("final_expr: ");
+    print_field_start("final_expr");
     RC_SAFE_ACCEPT(node.final_expr.value());
-    output_ << std::endl;
+    print_field_end();
   }
 
-  decrease_indent();
-  print_indent();
-  print_inline("}");
+  print_node_end();
 }
 
 void PrettyPrintVisitor::visit(LoopExpression &node) {
@@ -447,28 +440,29 @@ void PrettyPrintVisitor::visit(BlockStatement &node) {
 }
 
 void PrettyPrintVisitor::visit(LetStatement &node) {
-  print_inline("LetStmt {");
-  print_inline(" pattern: ");
-  // Use pattern visitors by visiting a small shim node
+  print_inline(node_color("LetStmt") + colorize(" { ", Colors::BRACE));
+  print_inline(field_color("pattern") + colorize(": ", Colors::SEPARATOR));
   if (node.pattern) {
-    // We have pattern nodes that aren't BaseNode; dispatch manually
     RC_SAFE_ACCEPT(node.pattern);
   } else {
-    print_inline("<none>");
+    print_inline(colorize("<none>", Colors::DIM));
   }
-  print_inline(", type: " + format_type(node.type));
-  print_inline(", expr: ");
+  print_inline(colorize(", ", Colors::SEPARATOR) + field_color("type") + 
+               colorize(": ", Colors::SEPARATOR) + format_type(node.type));
+  print_inline(colorize(", ", Colors::SEPARATOR) + field_color("expr") + 
+               colorize(": ", Colors::SEPARATOR));
   RC_SAFE_ACCEPT(node.expr);
-  print_inline(" }");
+  print_inline(colorize(" }", Colors::BRACE));
 }
 
 void PrettyPrintVisitor::visit(ExpressionStatement &node) {
-  print_inline("ExprStmt {");
-  print_inline(" expr: ");
+  print_inline(node_color("ExprStmt") + colorize(" { ", Colors::BRACE));
+  print_inline(field_color("expr") + colorize(": ", Colors::SEPARATOR));
   RC_SAFE_ACCEPT(node.expression);
-  print_inline(", semicolon: " +
-               std::string(node.has_semicolon ? "true" : "false"));
-  print_inline(" }");
+  print_inline(colorize(", ", Colors::SEPARATOR) + field_color("semicolon") + 
+               colorize(": ", Colors::SEPARATOR) + 
+               literal_color(node.has_semicolon ? "true" : "false"));
+  print_inline(colorize(" }", Colors::BRACE));
 }
 
 void PrettyPrintVisitor::visit(EmptyStatement &node) {
@@ -478,38 +472,37 @@ void PrettyPrintVisitor::visit(EmptyStatement &node) {
 
 // Top-level declaration visitors
 void PrettyPrintVisitor::visit(FunctionDecl &node) {
-  print_line("FunctionDecl {");
-  increase_indent();
-  print_line("name: " + node.name);
+  print_node_start("FunctionDecl");
+  
+  print_field("name", identifier_color(node.name));
 
   if (node.params.has_value()) {
-    print_line("params: [");
-    increase_indent();
+    print_list_start("params");
     for (const auto &param : node.params.value()) {
-      print_line("(");
+      print_indent();
+      print_inline(colorize("(", Colors::BRACE));
+      in_list_context_ = true;
       RC_SAFE_ACCEPT(param.first);
-      print_line(": " + format_type(param.second) + ")");
+      in_list_context_ = false;
+      print_inline(colorize(" : ", Colors::SEPARATOR) + format_type(param.second) + colorize(")", Colors::BRACE));
+      print_newline();
     }
-    decrease_indent();
-    print_line("]");
+    print_list_end();
   } else {
-    print_line("params: None");
+    print_field("params", colorize("None", Colors::DIM));
   }
 
-  print_line("return_type: " + format_type(node.return_type));
+  print_field("return_type", format_type(node.return_type));
 
   if (node.body.has_value()) {
-    print_indent();
-    print_inline("body: ");
+    print_field_start("body");
     RC_SAFE_ACCEPT(node.body.value());
-    output_ << std::endl;
+    print_field_end();
   } else {
-    print_line("body: None");
+    print_field("body", colorize("None", Colors::DIM));
   }
 
-  decrease_indent();
-  print_indent();
-  print_inline("}");
+  print_node_end();
 }
 
 void PrettyPrintVisitor::visit(ConstantItem &node) {
@@ -675,25 +668,23 @@ void PrettyPrintVisitor::visit(ImplDecl &node) {
 }
 
 void PrettyPrintVisitor::visit(RootNode &node) {
-  print_line("RootNode {");
-  increase_indent();
-  print_line("children: [");
-  increase_indent();
-
+  print_node_start("RootNode");
+  
+  print_list_start("children");
   for (const auto &child : node.children) {
     print_indent();
+    in_list_context_ = true; // Set context before visiting child
     if (child) {
       child->accept(*this);
     } else {
-      print_inline("<null>");
+      print_inline(colorize("<null>", Colors::DIM));
     }
-    output_ << std::endl;
+    in_list_context_ = false; // Reset context after visiting child
+    print_newline();
   }
+  print_list_end();
 
-  decrease_indent();
-  print_line("]");
-  decrease_indent();
-  print_line("}");
+  print_node_end();
 }
 
 // Pattern visitors
@@ -832,8 +823,103 @@ void PrettyPrintVisitor::print_inline(const std::string &text) {
   output_ << text;
 }
 
+void PrettyPrintVisitor::print_newline() {
+  output_ << std::endl;
+}
+
+// Enhanced formatting methods
+void PrettyPrintVisitor::print_node_start(const std::string &node_name) {
+  if (!in_list_context_) {
+    print_indent();
+  }
+  output_ << node_color(node_name) << colorize(" {", Colors::BRACE) << std::endl;
+  increase_indent();
+}
+
+void PrettyPrintVisitor::print_node_start_inline(const std::string &node_name) {
+  output_ << node_color(node_name) << colorize(" {", Colors::BRACE) << std::endl;
+  increase_indent();
+}
+
+void PrettyPrintVisitor::print_node_end() {
+  decrease_indent();
+  if (!in_list_context_) {
+    print_indent();
+  }
+  output_ << colorize("}", Colors::BRACE);
+}
+
+void PrettyPrintVisitor::print_node_end_inline() {
+  decrease_indent();
+  output_ << colorize("}", Colors::BRACE);
+}
+
+void PrettyPrintVisitor::print_field(const std::string &field_name, const std::string &value) {
+  print_indent();
+  output_ << field_color(field_name) << colorize(": ", Colors::SEPARATOR) << value << std::endl;
+}
+
+void PrettyPrintVisitor::print_field_start(const std::string &field_name) {
+  print_indent();
+  output_ << field_color(field_name) << colorize(": ", Colors::SEPARATOR);
+}
+
+void PrettyPrintVisitor::print_field_end() {
+  output_ << std::endl;
+}
+
+void PrettyPrintVisitor::print_list_start(const std::string &list_name) {
+  print_indent();
+  output_ << field_color(list_name) << colorize(": [", Colors::BRACKET) << std::endl;
+  increase_indent();
+}
+
+void PrettyPrintVisitor::print_list_end() {
+  decrease_indent();
+  print_indent();
+  output_ << colorize("]", Colors::BRACKET) << std::endl;
+}
+
+void PrettyPrintVisitor::print_list_item_start() {
+  // Do nothing - let the item handle its own indentation
+}
+
+void PrettyPrintVisitor::print_list_item_end() {
+  // Do nothing - let the item handle its own newlines
+}
+
+// Color helper methods
+std::string PrettyPrintVisitor::colorize(const std::string &text, const std::string &color) const {
+  if (!use_colors_) return text;
+  return color + text + Colors::RESET;
+}
+
+std::string PrettyPrintVisitor::node_color(const std::string &text) const {
+  return colorize(text, Colors::NODE_NAME);
+}
+
+std::string PrettyPrintVisitor::field_color(const std::string &text) const {
+  return colorize(text, Colors::FIELD_NAME);
+}
+
+std::string PrettyPrintVisitor::type_color(const std::string &text) const {
+  return colorize(text, Colors::TYPE_NAME);
+}
+
+std::string PrettyPrintVisitor::literal_color(const std::string &text) const {
+  return colorize(text, Colors::LITERAL);
+}
+
+std::string PrettyPrintVisitor::operator_color(const std::string &text) const {
+  return colorize(text, Colors::OPERATOR);
+}
+
+std::string PrettyPrintVisitor::identifier_color(const std::string &text) const {
+  return colorize(text, Colors::IDENTIFIER);
+}
+
 std::string PrettyPrintVisitor::format_type(const LiteralType &type) {
-  return to_string(type);
+  return type_color(to_string(type));
 }
 
 std::string PrettyPrintVisitor::format_token(const Token &token) {
@@ -842,12 +928,12 @@ std::string PrettyPrintVisitor::format_token(const Token &token) {
   if (!token.lexeme.empty() && token.lexeme != result) {
     result += "(" + token.lexeme + ")";
   }
-  return result;
+  return operator_color(result);
 }
 
 // Utility function
 std::string pretty_print(BaseNode &node, int indent_level) {
-  PrettyPrintVisitor visitor(indent_level);
+  PrettyPrintVisitor visitor(indent_level, true);
   node.accept(visitor);
   return visitor.get_result();
 }
