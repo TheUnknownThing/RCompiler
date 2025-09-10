@@ -779,7 +779,10 @@ Parser::parse_if_expression() {
 
         // Condition uses Pratt expressions
         LOG_DEBUG("Parsing if condition");
-        auto cond = any_expression().parse(toks, pos);
+        auto cond = tok(TokenType::L_PAREN)
+                        .thenR(any_expression())
+                        .thenL(tok(TokenType::R_PAREN))
+                        .parse(toks, pos);
         if (!cond) {
           pos = saved;
           LOG_ERROR("Failed to parse if condition");
@@ -1598,8 +1601,7 @@ inline PrattTable default_table(rc::Parser *p) {
         ++pos; // consume ']'
         return std::make_shared<rc::IndexExpression>(left, index);
       });
-  
-  
+
   // 75: as
   tbl.infix_left(rc::TokenType::AS, 75, bin);
 
