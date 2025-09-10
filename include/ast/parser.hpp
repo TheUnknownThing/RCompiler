@@ -601,35 +601,37 @@ Parser::parse_block_expression() {
         auto item = any_top_level_item();
 
         // we allow if / loop / while statements without semicolon
-        auto control_no_semi_stmt = parsec::Parser<std::shared_ptr<
-            BaseNode>>([this](const std::vector<rc::Token> &toks, size_t &pos)
-                           -> parsec::ParseResult<std::shared_ptr<BaseNode>> {
-          size_t saved_local = pos;
+        auto control_no_semi_stmt = parsec::Parser<std::shared_ptr<BaseNode>>(
+            [this](const std::vector<rc::Token> &toks, size_t &pos)
+                -> parsec::ParseResult<std::shared_ptr<BaseNode>> {
+              size_t saved_local = pos;
 
-          if (auto e = parse_if_expression().parse(toks, pos)) {
-            LOG_DEBUG("Parsed control-flow statement (if) without semicolon");
-            return std::shared_ptr<BaseNode>(
-                std::make_shared<ExpressionStatement>(*e, false));
-          }
-          pos = saved_local;
+              if (auto e = parse_if_expression().parse(toks, pos)) {
+                LOG_DEBUG(
+                    "Parsed control-flow statement (if) without semicolon");
+                return std::shared_ptr<BaseNode>(
+                    std::make_shared<ExpressionStatement>(*e, false));
+              }
+              pos = saved_local;
 
-          if (auto e = parse_loop_expression().parse(toks, pos)) {
-            LOG_DEBUG("Parsed control-flow statement (loop) without semicolon");
-            return std::shared_ptr<BaseNode>(
-                std::make_shared<ExpressionStatement>(*e, false));
-          }
-          pos = saved_local;
+              if (auto e = parse_loop_expression().parse(toks, pos)) {
+                LOG_DEBUG(
+                    "Parsed control-flow statement (loop) without semicolon");
+                return std::shared_ptr<BaseNode>(
+                    std::make_shared<ExpressionStatement>(*e, false));
+              }
+              pos = saved_local;
 
-          if (auto e = parse_while_expression().parse(toks, pos)) {
-            LOG_DEBUG(
-                "Parsed control-flow statement (while) without semicolon");
-            return std::shared_ptr<BaseNode>(
-                std::make_shared<ExpressionStatement>(*e, false));
-          }
-          pos = saved_local;
+              if (auto e = parse_while_expression().parse(toks, pos)) {
+                LOG_DEBUG(
+                    "Parsed control-flow statement (while) without semicolon");
+                return std::shared_ptr<BaseNode>(
+                    std::make_shared<ExpressionStatement>(*e, false));
+              }
+              pos = saved_local;
 
-          return std::nullopt;
-        });
+              return std::nullopt;
+            });
 
         int stmt_count = 0;
 
@@ -858,7 +860,9 @@ Parser::parse_while_expression() {
 
         auto while_parser =
             tok(TokenType::WHILE)
+                .thenR(tok(TokenType::L_PAREN))
                 .thenR(any_expression())
+                .thenL(tok(TokenType::R_PAREN))
                 .combine(parse_block_expression(),
                          [](const auto &cond, const auto &body) {
                            return std::make_shared<WhileExpression>(cond, body);
@@ -1594,6 +1598,10 @@ inline PrattTable default_table(rc::Parser *p) {
         ++pos; // consume ']'
         return std::make_shared<rc::IndexExpression>(left, index);
       });
+  
+  
+  // 75: as
+  tbl.infix_left(rc::TokenType::AS, 75, bin);
 
   // 70: * / %
   tbl.infix_left(rc::TokenType::STAR, 70, bin);

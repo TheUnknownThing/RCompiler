@@ -509,9 +509,8 @@ public:
   void visit(ArrayExpression &node) override {
     if (node.repeat) {
       auto el = evaluate(node.repeat->first.get());
-      // actually, we removed repeat here.
-      // cache_expr(&node, SemType::array(el, 0));
-      throw SemanticException("array repeat syntax removed");
+      // TODO: validate the repeat count constant.
+      cache_expr(&node, SemType::array(el, 0));
     } else {
       if (node.elements.empty()) {
         cache_expr(&node, SemType::array(
