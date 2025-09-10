@@ -10,6 +10,7 @@
 #include "ast/nodes/topLevel.hpp"
 #include "semantic/error/exceptions.hpp"
 #include "semantic/scope.hpp"
+#include "semantic/types.hpp"
 #include "utils/logger.hpp"
 
 namespace rc {
@@ -78,6 +79,11 @@ public:
       }
     }
     sig.return_type = resolve_type(node.return_type);
+    if (sig.name == "main") {
+      if (!(sig.return_type == SemType::primitive(SemPrimitiveKind::UNIT))) {
+        throw SemanticException("main function must have return type '()'");
+      }
+    }
     if (auto *ci = lookup_current_value_item(node.name, ItemKind::Function)) {
       ci->metadata = std::move(sig);
     }

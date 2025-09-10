@@ -54,7 +54,8 @@ struct CollectedItem {
 
   // The below items are populated in the second pass
 
-  std::variant<std::monostate, FunctionMetaData, ConstantMetaData, StructMetaData, EnumMetaData>
+  std::variant<std::monostate, FunctionMetaData, ConstantMetaData,
+               StructMetaData, EnumMetaData>
       metadata;
 
   bool has_function_meta() const {
@@ -129,9 +130,8 @@ public:
   }
 
   ScopeNode *add_child_scope(std::string name, const BaseNode *owner_node) {
-    childNodes.push_back(
-        std::make_unique<ScopeNode>(std::move(name), this, owner_node));
-    return childNodes.back().get();
+    childNodes.push_back(new ScopeNode(std::move(name), this, owner_node));
+    return childNodes.back();
   }
 
   std::vector<CollectedItem> items() const {
@@ -158,16 +158,14 @@ public:
     return &it->second;
   }
 
-  const std::vector<std::unique_ptr<ScopeNode>> &children() const {
-    return childNodes;
-  }
+  const std::vector<ScopeNode *> &children() const { return childNodes; }
 
   const ScopeNode *find_child_scope_by_owner(const BaseNode *owner_node) const {
     if (!owner_node)
       return nullptr;
     for (const auto &c : childNodes) {
       if (c->owner == owner_node)
-        return c.get();
+        return c;
     }
     return nullptr;
   }
@@ -176,7 +174,7 @@ public:
       return nullptr;
     for (const auto &c : childNodes) {
       if (c->owner == owner_node)
-        return c.get();
+        return c;
     }
     return nullptr;
   }
@@ -184,7 +182,7 @@ public:
 private:
   std::map<std::string, CollectedItem> value_items_;
   std::map<std::string, CollectedItem> type_items_;
-  std::vector<std::unique_ptr<ScopeNode>> childNodes;
+  std::vector<ScopeNode *> childNodes;
 };
 
 inline ScopeNode *enterScope(ScopeNode *&current, const std::string &name,

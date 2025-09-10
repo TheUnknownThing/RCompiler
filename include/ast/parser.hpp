@@ -28,7 +28,8 @@ public:
   Parser(std::vector<Token> tokens);
   std::shared_ptr<RootNode> parse();
 
-  inline parsec::Parser<std::shared_ptr<Expression>> any_expression();
+  parsec::Parser<std::shared_ptr<Expression>> any_expression();
+  parsec::Parser<std::shared_ptr<Expression>> expression_without_block();
 
   parsec::Parser<std::shared_ptr<Expression>> parse_block_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_if_expression();
@@ -80,7 +81,6 @@ inline Parser::Parser(std::vector<Token> tokens)
 }
 
 inline parsec::Parser<std::shared_ptr<BaseItem>> Parser::any_top_level_item() {
-  LOG_DEBUG("Creating parser for any top-level item");
   return parsec::Parser<std::shared_ptr<BaseItem>>(
       [this](const std::vector<Token> &toks,
              size_t &pos) -> parsec::ParseResult<std::shared_ptr<BaseItem>> {
@@ -589,8 +589,7 @@ Parser::parse_block_expression() {
         std::vector<std::shared_ptr<BaseNode>> stmts;
         std::optional<std::shared_ptr<Expression>> tail_expr;
 
-        auto expr = any_expression(); // TODO, fix should not be any_expression,
-                                      // should be `ExprWithoutBlock`
+        auto expr = expression_without_block();
         auto empty_stmt = tok(TokenType::SEMICOLON).map([](auto) {
           return std::shared_ptr<BaseNode>(std::make_shared<EmptyStatement>());
         });
@@ -600,6 +599,39 @@ Parser::parse_block_expression() {
               std::make_shared<ExpressionStatement>(e, true));
         });
         auto item = any_top_level_item();
+
+        // we allow if / loop / while statements without semicolon
+        auto control_no_semi_stmt = parsec::Parser<std::shared_ptr<BaseNode>>(
+            [this](const std::vector<rc::Token> &toks, size_t &pos)
+                -> parsec::ParseResult<std::shared_ptr<BaseNode>> {
+              size_t saved_local = pos;
+
+              if (auto e = parse_if_expression().parse(toks, pos)) {
+                LOG_DEBUG(
+                    "Parsed control-flow statement (if) without semicolon");
+                return std::shared_ptr<BaseNode>(
+                    std::make_shared<ExpressionStatement>(*e, false));
+              }
+              pos = saved_local;
+
+              if (auto e = parse_loop_expression().parse(toks, pos)) {
+                LOG_DEBUG(
+                    "Parsed control-flow statement (loop) without semicolon");
+                return std::shared_ptr<BaseNode>(
+                    std::make_shared<ExpressionStatement>(*e, false));
+              }
+              pos = saved_local;
+
+              if (auto e = parse_while_expression().parse(toks, pos)) {
+                LOG_DEBUG(
+                    "Parsed control-flow statement (while) without semicolon");
+                return std::shared_ptr<BaseNode>(
+                    std::make_shared<ExpressionStatement>(*e, false));
+              }
+              pos = saved_local;
+
+              return std::nullopt;
+            });
 
         int stmt_count = 0;
 
@@ -629,6 +661,14 @@ Parser::parse_block_expression() {
             continue;
           }
           pos = before;
+          if (auto s = control_no_semi_stmt.parse(toks, pos)) {
+            stmts.push_back(*s);
+            stmt_count++;
+            LOG_DEBUG("Parsed statement #" + std::to_string(stmt_count) +
+                      " in block (expr-no-semi)");
+            continue;
+          }
+          pos = before;
           if (auto s = item.parse(toks, pos)) {
             stmts.push_back(*s);
             stmt_count++;
@@ -641,6 +681,8 @@ Parser::parse_block_expression() {
         }
 
         size_t before_tail = pos;
+        LOG_DEBUG("Attempting to parse tail expression at position " +
+                  std::to_string(pos));
         if (auto e = expr.parse(toks, pos)) {
           tail_expr = *e;
           LOG_DEBUG("Block has tail expression");
@@ -650,8 +692,13 @@ Parser::parse_block_expression() {
         }
 
         if (!tok(TokenType::R_BRACE).parse(toks, pos)) {
+          if (tail_expr) {
+            LOG_ERROR("Expected '}' after tail expression; did you forget a "
+                      "';' to terminate expression-statement?");
+          } else {
+            LOG_ERROR("Missing closing brace for block expression");
+          }
           pos = saved;
-          LOG_ERROR("Missing closing brace for block expression");
           return std::nullopt;
         }
 
@@ -732,7 +779,10 @@ Parser::parse_if_expression() {
 
         // Condition uses Pratt expressions
         LOG_DEBUG("Parsing if condition");
-        auto cond = any_expression().parse(toks, pos);
+        auto cond = tok(TokenType::L_PAREN)
+                        .thenR(any_expression())
+                        .thenL(tok(TokenType::R_PAREN))
+                        .parse(toks, pos);
         if (!cond) {
           pos = saved;
           LOG_ERROR("Failed to parse if condition");
@@ -813,7 +863,9 @@ Parser::parse_while_expression() {
 
         auto while_parser =
             tok(TokenType::WHILE)
+                .thenR(tok(TokenType::L_PAREN))
                 .thenR(any_expression())
+                .thenL(tok(TokenType::R_PAREN))
                 .combine(parse_block_expression(),
                          [](const auto &cond, const auto &body) {
                            return std::make_shared<WhileExpression>(cond, body);
@@ -1233,6 +1285,32 @@ inline parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
       });
 }
 
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::expression_without_block() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        size_t saved = pos;
+        LOG_DEBUG("Attempting to parse expression without block at position " +
+                  std::to_string(pos));
+
+        if (auto e = pratt_table_.parse_expression(toks, pos)) {
+          if (std::dynamic_pointer_cast<BlockExpression>(e)) {
+            pos = saved;
+            LOG_DEBUG(
+                "Parsed expression is a block, which is not allowed here.");
+            return std::nullopt;
+          }
+          LOG_DEBUG("Successfully parsed expression without block.");
+          return e;
+        }
+
+        pos = saved;
+        LOG_DEBUG("Failed to parse expression without block.");
+        return std::nullopt;
+      });
+}
+
 inline parsec::Parser<std::pair<std::shared_ptr<BasePattern>, LiteralType>>
 Parser::pattern_and_type_parser() {
   using namespace parsec;
@@ -1385,7 +1463,7 @@ inline PrattTable default_table(rc::Parser *p) {
   add_simple_literal(rc::TokenType::INTEGER_LITERAL,
                      rc::PrimitiveLiteralType::I32);
   add_simple_literal(rc::TokenType::STRING_LITERAL,
-                     rc::PrimitiveLiteralType::STRING);
+                     rc::PrimitiveLiteralType::RAW_STRING);
   add_simple_literal(rc::TokenType::C_STRING_LITERAL,
                      rc::PrimitiveLiteralType::C_STRING);
   add_simple_literal(rc::TokenType::CHAR_LITERAL,
@@ -1523,6 +1601,9 @@ inline PrattTable default_table(rc::Parser *p) {
         ++pos; // consume ']'
         return std::make_shared<rc::IndexExpression>(left, index);
       });
+
+  // 75: as
+  tbl.infix_left(rc::TokenType::AS, 75, bin);
 
   // 70: * / %
   tbl.infix_left(rc::TokenType::STAR, 70, bin);

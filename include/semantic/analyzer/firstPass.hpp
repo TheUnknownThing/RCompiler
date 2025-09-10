@@ -3,7 +3,10 @@
 #include <memory>
 #include <string>
 
+#include "ast/nodes/expr.hpp"
+#include "ast/nodes/stmt.hpp"
 #include "ast/nodes/topLevel.hpp"
+#include "semantic/analyzer/builtin.hpp"
 #include "semantic/scope.hpp"
 #include "utils/logger.hpp"
 
@@ -11,13 +14,21 @@ namespace rc {
 
 class FirstPassBuilder : public BaseVisitor {
 public:
+  ScopeNode *prelude_scope;
   ScopeNode *root_scope;
 
   FirstPassBuilder() = default;
 
   void build(const std::shared_ptr<RootNode> &root) {
     LOG_INFO("[FirstPass] Building initial scope tree");
-    root_scope = new ScopeNode("", nullptr, root.get());
+
+    prelude_scope = create_prelude_scope();
+    LOG_INFO("[FirstPass] Created prelude scope with " +
+             std::to_string(prelude_scope->items().size()) +
+             " builtin functions");
+
+    root_scope = new ScopeNode("root", prelude_scope, root.get());
+    prelude_scope->add_child_scope("root", root.get());
     current_scope = root_scope;
     if (root) {
       size_t idx = 0;
@@ -35,6 +46,7 @@ public:
   }
 
   void visit(BaseNode &node) override {
+    // Items
     if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
       visit(*decl);
     } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
@@ -45,7 +57,17 @@ public:
       visit(*decl);
     } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
       visit(*decl);
-    } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
+    }
+    // Statements
+    else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
+      visit(*stmt);
+    } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
+      visit(*stmt);
+    } else if (auto *stmt = dynamic_cast<EmptyStatement *>(&node)) {
+      visit(*stmt);
+    }
+    // Expressions
+    else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
       visit(*expr);
     } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
       visit(*expr);
@@ -94,6 +116,21 @@ public:
     LOG_DEBUG("[FirstPass] Exit trait scope '" + node.name + "'");
   }
 
+  // Statement visitors
+  void visit(LetStatement &node) override {
+    if (node.expr) {
+      node.expr->accept(*this);
+    }
+  }
+
+  void visit(ExpressionStatement &node) override {
+    if (node.expression) {
+      node.expression->accept(*this);
+    }
+  }
+
+  void visit(EmptyStatement &) override {}
+
   void visit(BlockExpression &node) override {
     enterScope(current_scope, "block", &node);
     LOG_DEBUG("[FirstPass] Enter block scope");
@@ -102,14 +139,16 @@ public:
         continue;
       stmt->accept(*this);
     }
-    exitScope(current_scope);
-    LOG_DEBUG("[FirstPass] Exit block scope");
     if (node.final_expr) {
       node.final_expr.value()->accept(*this);
     }
+    exitScope(current_scope);
+    LOG_DEBUG("[FirstPass] Exit block scope");
   }
 
   void visit(IfExpression &node) override {
+    if (node.condition)
+      node.condition->accept(*this);
     if (node.then_block)
       node.then_block->accept(*this);
     if (node.else_block)
@@ -120,7 +159,10 @@ public:
     if (node.body)
       node.body->accept(*this);
   }
+
   void visit(WhileExpression &node) override {
+    if (node.condition)
+      node.condition->accept(*this);
     if (node.body)
       node.body->accept(*this);
   }

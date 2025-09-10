@@ -108,4 +108,10 @@ if (BUILD_TESTING)
   add_test_executable(integration_lexer_with_preprocessor tests/integration/lexer_w_preprocessor.cpp)
   add_test(NAME integration_lexer_with_preprocessor COMMAND integration_lexer_with_preprocessor)
   set_tests_properties(integration_lexer_with_preprocessor PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tests/integration" LABELS "integration;stable")
+
+  # Semantic analysis benchmark test
+  add_test(NAME semantic_benchmark 
+           COMMAND ${CMAKE_SOURCE_DIR}/scripts/semantic_benchmark.sh -q
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  set_tests_properties(semantic_benchmark PROPERTIES LABELS "semantic;benchmark")
 endif()

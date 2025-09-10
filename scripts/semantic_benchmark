@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+
+"""
+RCompiler Semantic Analysis Benchmark Script
+Tests semantic analysis by comparing compiler exit codes with expected results
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+
+# Colors
+class Colors:
+    RED = '\033[0;31m'
+    GREEN = '\033[0;32m'
+    YELLOW = '\033[1;33m'
+    BLUE = '\033[0;34m'
+    NC = '\033[0m'
+
+def print_success(msg: str) -> None:
+    print(f"{Colors.GREEN}✓ {msg}{Colors.NC}")
+
+def print_error(msg: str) -> None:
+    print(f"{Colors.RED}✗ {msg}{Colors.NC}")
+
+def print_info(msg: str) -> None:
+    print(f"{Colors.BLUE}ℹ {msg}{Colors.NC}")
+
+class TestResult:
+    def __init__(self, name: str, stage: str, expected: str, actual: int, 
+                 output: str = "", passed: bool = False):
+        self.name = name
+        self.stage = stage
+        self.expected = expected
+        self.actual = actual
+        self.output = output
+        self.passed = passed
+        self.full_name = f"{stage}/{name}"
+
+class BenchmarkRunner:
+    def __init__(self, args):
+        self.build_dir = Path("build")
+        self.testcases_dir = Path("testcases")
+        self.compiler_exec = "rcompiler"
+        self.verbose = args.verbose
+        self.quiet = args.quiet
+        self.stage_filter = args.stage
+        
+        self.passed_tests: List[TestResult] = []
+        self.failed_tests: List[TestResult] = []
+
+    def check_environment(self) -> None:
+        """Check if required tools and files exist"""
+        compiler_path = self.build_dir / self.compiler_exec
+        if not compiler_path.is_file():
+            print_error(f"Compiler not found: {compiler_path}")
+            print("Run: cmake --build build")
+            sys.exit(1)
+        
+        if not self.testcases_dir.is_dir():
+            print_error(f"Testcases directory not found: {self.testcases_dir}")
+            sys.exit(1)
+
+    def find_testcases(self) -> List[Path]:
+        """Find all testcase directories matching the stage filter"""
+        testcases = []
+        
+        for metadata_file in self.testcases_dir.rglob("testcase_info.json"):
+            testdir = metadata_file.parent
+            testname = testdir.name
+            stage = testdir.parent.name
+            
+            # Filter by stage
+            if self.stage_filter and stage != self.stage_filter:
+                continue
+            
+            # Check if .rx file exists
+            rx_file = testdir / f"{testname}.rx"
+            if rx_file.is_file():
+                testcases.append(testdir)
+        
+        return sorted(testcases, key=lambda p: f"{p.parent.name}/{p.name}")
+
+    def get_expected_exit_code(self, metadata_file: Path) -> Optional[str]:
+        """Extract expected exit code from testcase metadata"""
+        try:
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+                return metadata.get('compileexitcode', 'UNKNOWN')
+        except (json.JSONDecodeError, FileNotFoundError):
+            return None
+
+    def run_compiler(self, rx_file: Path) -> Tuple[int, str]:
+        """Run the compiler and return exit code and output"""
+        compiler_path = self.build_dir / self.compiler_exec
+        try:
+            with open(rx_file, 'r') as f:
+                result = subprocess.run(
+                    [str(compiler_path)],
+                    stdin=f,
+                    capture_output=True,
+                    text=True
+                )
+                return result.returncode, result.stderr + result.stdout
+        except subprocess.SubprocessError as e:
+            return 1, str(e)
+
+    def run_test(self, testdir: Path) -> TestResult:
+        """Run a single test and return the result"""
+        testname = testdir.name
+        stage = testdir.parent.name
+        rx_file = testdir / f"{testname}.rx"
+        metadata_file = testdir / "testcase_info.json"
+        
+        # Get expected exit code
+        expected = self.get_expected_exit_code(metadata_file)
+        if expected is None or expected == "UNKNOWN":
+            return TestResult(testname, stage, "UNKNOWN", -1, 
+                            "Could not read expected exit code", False)
+        
+        # Run compiler
+        actual, output = self.run_compiler(rx_file)
+        
+        # Determine if test passed
+        passed = False
+        if expected == 0 and actual == 0:
+            passed = True
+        elif expected == -1 and actual != 0:
+            passed = True
+        
+        return TestResult(testname, stage, expected, actual, output, passed)
+
+    def run_all_tests(self) -> None:
+        """Run all tests and collect results"""
+        testcases = self.find_testcases()
+        
+        if not testcases:
+            print_error(f"No testcases found for stage: {self.stage_filter}")
+            sys.exit(1)
+        
+        print_info(f"Running {len(testcases)} testcases for stage: {self.stage_filter}")
+        
+        for testdir in testcases:
+            result = self.run_test(testdir)
+            
+            if result.passed:
+                self.passed_tests.append(result)
+                if not self.quiet:
+                    print_success(result.full_name)
+            else:
+                self.failed_tests.append(result)
+                if not self.quiet:
+                    error_msg = f"{result.full_name} (expected: {result.expected}, got: {result.actual})"
+                    print_error(error_msg)
+                    if self.verbose and result.output:
+                        # Show first 5 lines of output
+                        output_lines = result.output.strip().split('\n')[:5]
+                        for line in output_lines:
+                            print(f"  {line}")
+
+    def print_summary(self) -> None:
+        """Print organized test results summary"""
+        total_tests = len(self.passed_tests) + len(self.failed_tests)
+        pass_rate = (len(self.passed_tests) * 100 // total_tests) if total_tests > 0 else 0
+        
+        print()
+        print("=" * 60)
+        print(f"RESULTS: {len(self.passed_tests)}/{total_tests} passed ({pass_rate}%)")
+        print("=" * 60)
+        
+        # Show passed tests (sorted)
+        if self.passed_tests:
+            print(f"\n{Colors.GREEN}PASSED TESTS ({len(self.passed_tests)}):{Colors.NC}")
+            for result in sorted(self.passed_tests, key=lambda r: r.full_name):
+                print(f"  ✓ {result.full_name}")
+        
+        # Show failed tests (sorted)
+        if self.failed_tests:
+            print(f"\n{Colors.RED}FAILED TESTS ({len(self.failed_tests)}):{Colors.NC}")
+            for result in sorted(self.failed_tests, key=lambda r: r.full_name):
+                print(f"  ✗ {result.full_name} (expected: {result.expected}, got: {result.actual})")
+                if self.verbose and result.output:
+                    output_preview = result.output.strip().split('\n')[0]
+                    print(f"    → {output_preview}")
+        
+        print()
+        
+        if not self.failed_tests:
+            print_success("All tests passed!")
+            sys.exit(0)
+        else:
+            print_error(f"{len(self.failed_tests)} tests failed")
+            sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Test semantic analysis against testcases",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                    # Test semantic-1 with summary
+  %(prog)s -v                 # Test with verbose output
+  %(prog)s -s semantic-2      # Test different stage
+  %(prog)s -q                 # Quiet mode
+        """
+    )
+    
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Show compiler output')
+    parser.add_argument('-s', '--stage', default='semantic-1',
+                        help='Test stage (default: semantic-1)')
+    parser.add_argument('-q', '--quiet', action='store_true',
+                        help='Only show summary')
+    
+    args = parser.parse_args()
+    
+    runner = BenchmarkRunner(args)
+    runner.check_environment()
+    runner.run_all_tests()
+    runner.print_summary()
+
+if __name__ == "__main__":
+    main()
