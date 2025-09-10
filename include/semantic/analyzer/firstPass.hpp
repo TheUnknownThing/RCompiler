@@ -12,6 +12,7 @@ namespace rc {
 
 class FirstPassBuilder : public BaseVisitor {
 public:
+  ScopeNode *prelude_scope;
   ScopeNode *root_scope;
 
   FirstPassBuilder() = default;
@@ -19,12 +20,13 @@ public:
   void build(const std::shared_ptr<RootNode> &root) {
     LOG_INFO("[FirstPass] Building initial scope tree");
 
-    auto *prelude_scope = create_prelude_scope();
+    prelude_scope = create_prelude_scope();
     LOG_INFO("[FirstPass] Created prelude scope with " +
              std::to_string(prelude_scope->items().size()) +
              " builtin functions");
 
-    root_scope = new ScopeNode("", prelude_scope, root.get());
+    root_scope = new ScopeNode("root", prelude_scope, root.get());
+    prelude_scope->add_child_scope("root", root.get());
     current_scope = root_scope;
     if (root) {
       size_t idx = 0;

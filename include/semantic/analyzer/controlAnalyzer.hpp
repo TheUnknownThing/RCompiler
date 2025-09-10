@@ -8,6 +8,7 @@
 #include "ast/nodes/stmt.hpp"
 #include "ast/nodes/topLevel.hpp"
 #include "semantic/error/exceptions.hpp"
+#include "utils/logger.hpp"
 
 #include <memory>
 
@@ -85,11 +86,15 @@ private:
 inline ControlAnalyzer::ControlAnalyzer() : loop_depth(0) {}
 
 inline bool ControlAnalyzer::analyze(const std::shared_ptr<BaseNode> &node) {
+  LOG_INFO("[ControlAnalyzer] Starting control flow analysis");
   loop_depth = 0;
   function_return_stack.clear();
-  if (!node)
-    return true;
+  if (!node) {
+    LOG_WARN("[ControlAnalyzer] No AST node provided for analysis");
+    return false;
+  }
   node->accept(*this);
+  LOG_INFO("[ControlAnalyzer] Control flow analysis completed");
   return true;
 }
 
@@ -388,8 +393,7 @@ inline void ControlAnalyzer::visit(ExpressionStatement &node) {
 inline void ControlAnalyzer::visit(EmptyStatement &node) { (void)node; }
 
 // Pattern visitors
-inline void ControlAnalyzer::visit(IdentifierPattern &) {
-}
+inline void ControlAnalyzer::visit(IdentifierPattern &) {}
 
 inline void ControlAnalyzer::visit(LiteralPattern &node) { (void)node; }
 

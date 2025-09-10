@@ -50,7 +50,6 @@ inline void SemanticAnalyzer::analyze(const std::shared_ptr<RootNode> &root) {
   // Control analyzer analysis inappropriate continues and breaks
   ControlAnalyzer control_analyzer;
   control_analyzer.analyze(root);
-  std::cout << "[Semantic] Control flow analysis completed." << std::endl;
 }
 
 } // namespace rc
