@@ -4,6 +4,7 @@
 #include <string>
 
 #include "ast/nodes/topLevel.hpp"
+#include "semantic/analyzer/builtin.hpp"
 #include "semantic/scope.hpp"
 #include "utils/logger.hpp"
 
@@ -17,7 +18,13 @@ public:
 
   void build(const std::shared_ptr<RootNode> &root) {
     LOG_INFO("[FirstPass] Building initial scope tree");
-    root_scope = new ScopeNode("", nullptr, root.get());
+
+    auto *prelude_scope = create_prelude_scope();
+    LOG_INFO("[FirstPass] Created prelude scope with " +
+             std::to_string(prelude_scope->items().size()) +
+             " builtin functions");
+
+    root_scope = new ScopeNode("", prelude_scope, root.get());
     current_scope = root_scope;
     if (root) {
       size_t idx = 0;

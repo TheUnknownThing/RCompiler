@@ -1385,7 +1385,7 @@ inline PrattTable default_table(rc::Parser *p) {
   add_simple_literal(rc::TokenType::INTEGER_LITERAL,
                      rc::PrimitiveLiteralType::I32);
   add_simple_literal(rc::TokenType::STRING_LITERAL,
-                     rc::PrimitiveLiteralType::STRING);
+                     rc::PrimitiveLiteralType::RAW_STRING);
   add_simple_literal(rc::TokenType::C_STRING_LITERAL,
                      rc::PrimitiveLiteralType::C_STRING);
   add_simple_literal(rc::TokenType::CHAR_LITERAL,

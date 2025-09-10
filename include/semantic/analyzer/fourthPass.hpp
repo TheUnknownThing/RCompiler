@@ -13,6 +13,7 @@
 #include "ast/nodes/pattern.hpp"
 #include "ast/nodes/stmt.hpp"
 #include "ast/nodes/topLevel.hpp"
+#include "semantic/analyzer/builtin.hpp"
 #include "semantic/error/exceptions.hpp"
 #include "semantic/scope.hpp"
 #include "semantic/types.hpp"
@@ -346,6 +347,21 @@ public:
 
   void visit(MethodCallExpression &node) override {
     auto recv_type = evaluate(node.receiver.get());
+    
+    // Check for builtin methods first
+    if (is_builtin_method(recv_type, node.method_name.name)) {
+      const size_t argc = node.arguments.size();
+
+      if (argc != 0) {
+        throw TypeError(
+          "builtin method " + node.method_name.name + " expected 0 arguments, got " + std::to_string(argc));
+      }
+      
+      auto return_type = get_builtin_method_return_type(recv_type, node.method_name.name);
+      cache_expr(&node, return_type);
+      return;
+    }
+    
     if (!recv_type.is_named()) {
       throw TypeError("method call on non-struct type: " +
                       to_string(recv_type));
