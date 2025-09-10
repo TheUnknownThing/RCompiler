@@ -14,24 +14,24 @@ namespace rc {
 
 // Color constants for pretty printing
 namespace Colors {
-  const std::string RESET = "\033[0m";
-  const std::string BOLD = "\033[1m";
-  const std::string DIM = "\033[2m";
-  
-  // Node type colors
-  const std::string NODE_NAME = "\033[1;34m";    // Bold Blue
-  const std::string FIELD_NAME = "\033[1;32m";   // Bold Green
-  const std::string TYPE_NAME = "\033[1;33m";    // Bold Yellow
-  const std::string LITERAL = "\033[1;35m";      // Bold Magenta
-  const std::string OPERATOR = "\033[1;31m";     // Bold Red
-  const std::string IDENTIFIER = "\033[36m";     // Cyan
-  const std::string KEYWORD = "\033[1;37m";      // Bold White
-  
-  // Structural colors
-  const std::string BRACE = "\033[37m";          // White
-  const std::string BRACKET = "\033[37m";        // White
-  const std::string SEPARATOR = "\033[90m";      // Dark Gray
-}
+const std::string RESET = "\033[0m";
+const std::string BOLD = "\033[1m";
+const std::string DIM = "\033[2m";
+
+// Node type colors
+const std::string NODE_NAME = "\033[1;34m";  // Bold Blue
+const std::string FIELD_NAME = "\033[1;32m"; // Bold Green
+const std::string TYPE_NAME = "\033[1;33m";  // Bold Yellow
+const std::string LITERAL = "\033[1;35m";    // Bold Magenta
+const std::string OPERATOR = "\033[1;31m";   // Bold Red
+const std::string IDENTIFIER = "\033[36m";   // Cyan
+const std::string KEYWORD = "\033[1;37m";    // Bold White
+
+// Structural colors
+const std::string BRACE = "\033[37m";     // White
+const std::string BRACKET = "\033[37m";   // White
+const std::string SEPARATOR = "\033[90m"; // Dark Gray
+} // namespace Colors
 
 class PrettyPrintVisitor : public BaseVisitor {
 public:

@@ -4,11 +4,22 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 namespace Logger {
 
 enum class Level { NONE = 0, ERROR = 1, WARN = 2, INFO = 3, DEBUG = 4 };
+
+// ANSI color codes
+namespace Color {
+constexpr const char *RESET = "\033[0m";
+constexpr const char *RED = "\033[31m";
+constexpr const char *YELLOW = "\033[33m";
+constexpr const char *GREEN = "\033[32m";
+constexpr const char *BLUE = "\033[34m";
+constexpr const char *GRAY = "\033[90m";
+} // namespace Color
 
 constexpr Level getCurrentLevel() {
 #ifdef LOGGING_LEVEL_NONE
@@ -41,6 +52,21 @@ inline const char *getLevelString(Level level) {
   }
 }
 
+inline const char *getLevelColor(Level level) {
+  switch (level) {
+  case Level::ERROR:
+    return Color::RED;
+  case Level::WARN:
+    return Color::YELLOW;
+  case Level::INFO:
+    return Color::GREEN;
+  case Level::DEBUG:
+    return Color::BLUE;
+  default:
+    return Color::RESET;
+  }
+}
+
 inline std::string getTimestamp() {
   auto now = std::chrono::system_clock::now();
   auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -56,9 +82,9 @@ inline std::string getTimestamp() {
 
 inline void log(Level level, const std::string &message) {
   if (static_cast<int>(level) <= static_cast<int>(getCurrentLevel())) {
-      std::cerr << "[" << getTimestamp() << "] "
-                << "[" << getLevelString(level) << "] "
-                << message << std::endl;
+    std::cerr << Color::GRAY << "[" << getTimestamp() << "] "
+              << getLevelColor(level) << "[" << getLevelString(level) << "] "
+              << Color::RESET << message << std::endl;
   }
 }
 

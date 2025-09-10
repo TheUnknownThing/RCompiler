@@ -1,6 +1,6 @@
 #define LOGGING_LEVEL_DEBUG
 
-#include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -13,39 +13,46 @@
 #include "semantic/types.hpp"
 #include "utils/logger.hpp"
 
-int main() {
+int main(int argc, char *argv[]) {
   try {
-    rc::Preprocessor preprocessor("");
+    std::string filename = "";
+    if (argc > 1) {
+      filename = argv[1];
+    }
+    rc::Preprocessor preprocessor(filename);
     auto preprocessed_code = preprocessor.preprocess();
 
     rc::Lexer lexer(preprocessed_code);
     auto tks = lexer.tokenize();
 
-    std::cout << "[Tokens]" << std::endl;
+    LOG_INFO("[Tokens] Processed complete. Total tokens: " +
+             std::to_string(tks.size()));
 
     size_t pos = 0;
     for (const auto &token : tks) {
-      std::cout << "Pos:" << pos++ << "\t Type: " << token.type
-                << "\t\t Lexeme: " << token.lexeme << "\n";
+      std::ostringstream oss;
+      oss << "Pos:" << pos++ << "\t Type: " << token.type
+          << "\t Lexeme: " << token.lexeme;
+      LOG_DEBUG(oss.str());
     }
 
     rc::Parser parser(tks);
     auto ast = parser.parse();
 
     if (ast) {
-      std::cout << "\nParsed" << ast->children.size() << " top-level items."
-                << std::endl;
-      std::cout << "\n[AST Pretty Print]" << std::endl;
-      std::cout << rc::pretty_print(*ast) << std::endl;
+      LOG_INFO(std::string("Parsed ") + std::to_string(ast->children.size()) +
+               " top-level items.");
+      LOG_DEBUG("[AST Pretty Print]");
+      LOG_DEBUG("\n" + rc::pretty_print(*ast));
 
       rc::SemanticAnalyzer analyzer;
       analyzer.analyze(ast);
     } else {
-      std::cout << "Failed!" << std::endl;
+      LOG_ERROR("Failed!");
     }
 
   } catch (const std::exception &e) {
-    std::cout << "Error: " << e.what() << std::endl;
+    LOG_ERROR(std::string("Error: ") + e.what());
     return 1;
   }
 
