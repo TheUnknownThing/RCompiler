@@ -1453,17 +1453,47 @@ inline PrattTable default_table(rc::Parser *p) {
   auto add_simple_literal = [&tbl](rc::TokenType tt,
                                    rc::PrimitiveLiteralType plt) {
     tbl.prefix(
-        tt, [plt](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
+        tt,
+        [&plt, tt](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
           const rc::Token &prev = toks[pos - 1];
+          if (tt == rc::TokenType::INTEGER_LITERAL) {
+            try {
+              auto [value, has_suffix, suffix] =
+                  validate_int_literal(prev.lexeme);
+
+              if (has_suffix) {
+                if (suffix == "i32") {
+                  plt = rc::PrimitiveLiteralType::I32;
+                } else if (suffix == "u32") {
+                  plt = rc::PrimitiveLiteralType::U32;
+                } else if (suffix == "isize") {
+                  plt = rc::PrimitiveLiteralType::ISIZE;
+                } else if (suffix == "usize") {
+                  plt = rc::PrimitiveLiteralType::USIZE;
+                } else {
+                  throw std::invalid_argument("Unknown integer suffix '" +
+                                              suffix + "'");
+                }
+              }
+
+              return std::make_shared<rc::LiteralExpression>(
+                  std::to_string(value), rc::LiteralType(plt));
+
+            } catch (const std::exception &e) {
+              LOG_ERROR("Invalid integer literal '" + prev.lexeme +
+                        "': " + e.what());
+              return nullptr;
+            }
+          }
           return std::make_shared<rc::LiteralExpression>(prev.lexeme,
                                                          rc::LiteralType(plt));
         });
   };
 
   add_simple_literal(rc::TokenType::INTEGER_LITERAL,
-                     rc::PrimitiveLiteralType::I32);
+                     rc::PrimitiveLiteralType::ANY_INT);
   add_simple_literal(rc::TokenType::STRING_LITERAL,
-                     rc::PrimitiveLiteralType::RAW_STRING);
+                     rc::PrimitiveLiteralType::STRING);
   add_simple_literal(rc::TokenType::C_STRING_LITERAL,
                      rc::PrimitiveLiteralType::C_STRING);
   add_simple_literal(rc::TokenType::CHAR_LITERAL,

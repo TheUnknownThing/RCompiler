@@ -23,7 +23,10 @@ enum class PrimitiveLiteralType {
   CHAR,
   BOOL,
   NEVER,
-  UNIT
+  UNIT,
+
+  // integer literal without suffix, can be any integer type
+  ANY_INT
 };
 
 struct LiteralType {

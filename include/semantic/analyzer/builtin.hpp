@@ -56,12 +56,12 @@ inline ScopeNode *create_prelude_scope() {
 
   // print(s: &str) -> ()
   add_builtin_function(
-      "print", {SemType::primitive(SemPrimitiveKind::RAW_STRING)}, {"s"},
+      "print", {SemType::primitive(SemPrimitiveKind::STRING)}, {"s"},
       SemType::primitive(SemPrimitiveKind::UNIT), prelude);
 
   // println(s: &str) -> ()
   add_builtin_function(
-      "println", {SemType::primitive(SemPrimitiveKind::RAW_STRING)}, {"s"},
+      "println", {SemType::primitive(SemPrimitiveKind::STRING)}, {"s"},
       SemType::primitive(SemPrimitiveKind::UNIT), prelude);
 
   // printInt(n: i32) -> ()
