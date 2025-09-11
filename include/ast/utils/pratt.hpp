@@ -47,14 +47,13 @@ public:
 
   void infix_left(rc::TokenType t, int precedence,
                   std::function<ExprPtr(ExprPtr, rc::Token, ExprPtr)> build) {
-    LedEntry e;
-    e.bp = {precedence, precedence + 1};
+    Bp bp = {precedence, precedence + 1};
     infix_[OpKey{t}] =
-        LedEntry{e.bp,
-                 [this, build, &e](ExprPtr left, const rc::Token &op,
+        LedEntry{bp,
+                 [this, build, bp](ExprPtr left, const rc::Token &op,
                                    const std::vector<rc::Token> &toks,
                                    size_t &pos) -> ExprPtr {
-                   ExprPtr right = parse_expression(toks, pos, e.bp.second);
+                   ExprPtr right = parse_expression(toks, pos, bp.second);
                    if (!right)
                      return nullptr;
                    return build(std::move(left), op, std::move(right));
@@ -63,14 +62,13 @@ public:
 
   void infix_right(rc::TokenType t, int precedence,
                    std::function<ExprPtr(ExprPtr, rc::Token, ExprPtr)> build) {
-    LedEntry e;
-    e.bp = {precedence, precedence};
+    Bp bp = {precedence, precedence};
     infix_[OpKey{t}] =
-        LedEntry{e.bp,
-                 [this, build, &e](ExprPtr left, const rc::Token &op,
+        LedEntry{bp,
+                 [this, build, bp](ExprPtr left, const rc::Token &op,
                                    const std::vector<rc::Token> &toks,
                                    size_t &pos) -> ExprPtr {
-                   ExprPtr right = parse_expression(toks, pos, e.bp.second);
+                   ExprPtr right = parse_expression(toks, pos, bp.second);
                    if (!right)
                      return nullptr;
                    return build(std::move(left), op, std::move(right));

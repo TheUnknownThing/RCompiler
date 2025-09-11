@@ -1454,22 +1454,23 @@ inline PrattTable default_table(rc::Parser *p) {
                                    rc::PrimitiveLiteralType plt) {
     tbl.prefix(
         tt,
-        [&plt, tt](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
+        [tt, plt](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
           const rc::Token &prev = toks[pos - 1];
           if (tt == rc::TokenType::INTEGER_LITERAL) {
             try {
               auto [value, has_suffix, suffix] =
                   validate_int_literal(prev.lexeme);
 
+              auto t = plt;
               if (has_suffix) {
                 if (suffix == "i32") {
-                  plt = rc::PrimitiveLiteralType::I32;
+                  t = rc::PrimitiveLiteralType::I32;
                 } else if (suffix == "u32") {
-                  plt = rc::PrimitiveLiteralType::U32;
+                  t = rc::PrimitiveLiteralType::U32;
                 } else if (suffix == "isize") {
-                  plt = rc::PrimitiveLiteralType::ISIZE;
+                  t = rc::PrimitiveLiteralType::ISIZE;
                 } else if (suffix == "usize") {
-                  plt = rc::PrimitiveLiteralType::USIZE;
+                  t = rc::PrimitiveLiteralType::USIZE;
                 } else {
                   throw std::invalid_argument("Unknown integer suffix '" +
                                               suffix + "'");
@@ -1477,7 +1478,7 @@ inline PrattTable default_table(rc::Parser *p) {
               }
 
               return std::make_shared<rc::LiteralExpression>(
-                  std::to_string(value), rc::LiteralType(plt));
+                  std::to_string(value), rc::LiteralType(t));
 
             } catch (const std::exception &e) {
               LOG_ERROR("Invalid integer literal '" + prev.lexeme +
