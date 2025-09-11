@@ -15,12 +15,16 @@
 
 namespace rc {
 struct ConstValue {
-  // Storage for different types of constant values
+  struct AnyIntValue {
+    std::int64_t value;
+  }; // why? because we need to distinguish any_int from isize
+
   using Storage =
       std::variant<std::int32_t,                     // i32
                    std::uint32_t,                    // u32
                    std::int64_t,                     // isize
                    std::uint64_t,                    // usize
+                   AnyIntValue,                      // any_int literal
                    std::string,                      // string literals
                    char,                             // char
                    bool,                             // bool
@@ -34,7 +38,11 @@ struct ConstValue {
   explicit ConstValue(Storage s, SemType t)
       : storage(std::move(s)), type(std::move(t)) {}
 
-  // Factory methods for creating constant values
+  static ConstValue any_int(std::int64_t val) {
+    return ConstValue{AnyIntValue{val},
+                      SemType::primitive(SemPrimitiveKind::ANY_INT)};
+  }
+
   static ConstValue i32(std::int32_t val) {
     return ConstValue{val, SemType::primitive(SemPrimitiveKind::I32)};
   }
@@ -85,13 +93,30 @@ struct ConstValue {
   }
 
   // Type checkers
-  bool is_i32() const { return std::holds_alternative<std::int32_t>(storage); }
-  bool is_u32() const { return std::holds_alternative<std::uint32_t>(storage); }
+  bool is_any_int() const {
+    return std::holds_alternative<AnyIntValue>(storage) &&
+           type.is_primitive() &&
+           type.as_primitive().kind == SemPrimitiveKind::ANY_INT;
+  }
+  bool is_i32() const {
+    return std::holds_alternative<std::int32_t>(storage) &&
+           type.is_primitive() &&
+           type.as_primitive().kind == SemPrimitiveKind::I32;
+  }
+  bool is_u32() const {
+    return std::holds_alternative<std::uint32_t>(storage) &&
+           type.is_primitive() &&
+           type.as_primitive().kind == SemPrimitiveKind::U32;
+  }
   bool is_isize() const {
-    return std::holds_alternative<std::int64_t>(storage);
+    return std::holds_alternative<std::int64_t>(storage) &&
+           type.is_primitive() &&
+           type.as_primitive().kind == SemPrimitiveKind::ISIZE;
   }
   bool is_usize() const {
-    return std::holds_alternative<std::uint64_t>(storage);
+    return std::holds_alternative<std::uint64_t>(storage) &&
+           type.is_primitive() &&
+           type.as_primitive().kind == SemPrimitiveKind::USIZE;
   }
   bool is_string() const {
     return std::holds_alternative<std::string>(storage);
@@ -111,6 +136,9 @@ struct ConstValue {
   }
 
   // Accessors
+  std::int64_t as_any_int() const {
+    return std::get<AnyIntValue>(storage).value;
+  }
   std::int32_t as_i32() const { return std::get<std::int32_t>(storage); }
   std::uint32_t as_u32() const { return std::get<std::uint32_t>(storage); }
   std::int64_t as_isize() const { return std::get<std::int64_t>(storage); }
@@ -151,10 +179,6 @@ public:
       return evaluate_prefix(*prefix);
     } else if (auto *binary = dynamic_cast<const BinaryExpression *>(expr)) {
       return evaluate_binary(*binary);
-    } else if (auto *group = dynamic_cast<const GroupExpression *>(expr)) {
-      if (group->inner) {
-        return evaluate(group->inner.get(), current_scope);
-      }
     } else if (auto *array = dynamic_cast<const ArrayExpression *>(expr)) {
       return evaluate_array(*array);
     } else if (auto *tuple = dynamic_cast<const TupleExpression *>(expr)) {
@@ -175,10 +199,75 @@ public:
 private:
   ScopeNode *current_scope = nullptr;
 
+  static bool is_integer_value(const ConstValue &v) {
+    return v.is_any_int() || v.is_i32() || v.is_u32() || v.is_isize() ||
+           v.is_usize();
+  }
+
+  static ConstValue any_int_to(const ConstValue &v, SemPrimitiveKind target) {
+    if (!v.is_any_int())
+      return v;
+    switch (target) {
+    case SemPrimitiveKind::I32:
+      if (v.as_any_int() < std::numeric_limits<std::int32_t>::min() ||
+          v.as_any_int() > std::numeric_limits<std::int32_t>::max()) {
+        throw SemanticException("integer literal out of range for i32");
+      }
+      return ConstValue::i32(static_cast<std::int32_t>(v.as_any_int()));
+    case SemPrimitiveKind::U32:
+      if (v.as_any_int() < 0 ||
+          v.as_any_int() > std::numeric_limits<std::uint32_t>::max()) {
+        throw SemanticException("integer literal out of range for u32");
+      }
+      return ConstValue::u32(static_cast<std::uint32_t>(v.as_any_int()));
+    case SemPrimitiveKind::ISIZE:
+      if (v.as_any_int() < std::numeric_limits<std::int64_t>::min() ||
+          v.as_any_int() > std::numeric_limits<std::int64_t>::max()) {
+        throw SemanticException("integer literal out of range for isize");
+      }
+      return ConstValue::isize(static_cast<std::int64_t>(v.as_any_int()));
+    case SemPrimitiveKind::USIZE:
+      if (v.as_any_int() < 0 || static_cast<std::uint64_t>(v.as_any_int()) >
+                                    std::numeric_limits<std::uint64_t>::max()) {
+        throw SemanticException("integer literal out of range for usize");
+      }
+      return ConstValue::usize(static_cast<std::uint64_t>(v.as_any_int()));
+    default:
+      break;
+    }
+    return v;
+  }
+
+  static std::optional<SemPrimitiveKind>
+  int_result_kind(const ConstValue &left, const ConstValue &right) {
+    if (!is_integer_value(left) || !is_integer_value(right))
+      return std::nullopt;
+
+    auto lk = left.type.as_primitive().kind;
+    auto rk = right.type.as_primitive().kind;
+
+    if (lk == rk)
+      return lk;
+
+    if (lk == SemPrimitiveKind::ANY_INT && rk != SemPrimitiveKind::ANY_INT)
+      return rk;
+    if (rk == SemPrimitiveKind::ANY_INT && lk != SemPrimitiveKind::ANY_INT)
+      return lk;
+
+    if (lk == SemPrimitiveKind::ANY_INT && rk == SemPrimitiveKind::ANY_INT)
+      return SemPrimitiveKind::ANY_INT;
+
+    return std::nullopt;
+  }
+
   std::optional<ConstValue> evaluate_literal(const LiteralExpression &node) {
     try {
       if (node.type.is_base()) {
         switch (node.type.as_base()) {
+        case PrimitiveLiteralType::ANY_INT: {
+          std::int64_t val = std::stoll(node.value);
+          return ConstValue::any_int(val);
+        }
         case PrimitiveLiteralType::I32: {
           std::int32_t val = std::stoi(node.value);
           return ConstValue::i32(val);
@@ -272,6 +361,9 @@ private:
       if (operand->is_isize()) {
         return ConstValue::isize(-operand->as_isize());
       }
+      if (operand->is_any_int()) {
+        return ConstValue::any_int(-operand->as_any_int());
+      }
       break;
     }
     case TokenType::NOT: {
@@ -338,11 +430,19 @@ private:
       auto value = evaluate(node.repeat->first.get(), current_scope);
       auto size_expr = evaluate(node.repeat->second.get(), current_scope);
 
-      if (!value || !size_expr || !size_expr->is_usize()) {
+      if (!value || !size_expr) {
         return std::nullopt;
       }
 
-      std::uint64_t size = size_expr->as_usize();
+      std::uint64_t size = 0;
+      if (size_expr->is_usize()) {
+        size = size_expr->as_usize();
+      } else if (size_expr->is_any_int()) {
+        size = static_cast<std::uint64_t>(size_expr->as_any_int());
+      } else {
+        return std::nullopt;
+      }
+
       std::vector<ConstValue> elements;
       elements.reserve(size);
 
@@ -400,11 +500,18 @@ private:
     auto target = evaluate(node.target.get(), current_scope);
     auto index = evaluate(node.index.get(), current_scope);
 
-    if (!target || !index || !index->is_usize()) {
+    if (!target || !index) {
       return std::nullopt;
     }
 
-    std::uint64_t idx = index->as_usize();
+    std::uint64_t idx = 0;
+    if (index->is_usize()) {
+      idx = index->as_usize();
+    } else if (index->is_any_int()) {
+      idx = static_cast<std::uint64_t>(index->as_any_int());
+    } else {
+      return std::nullopt;
+    }
 
     if (target->is_array()) {
       const auto &elements = target->as_array();
@@ -455,109 +562,166 @@ private:
   // Arithmetic operation helpers
   std::optional<ConstValue> evaluate_add(const ConstValue &left,
                                          const ConstValue &right) {
-    if (left.is_i32() && right.is_i32()) {
-      return ConstValue::i32(left.as_i32() + right.as_i32());
+    auto kind = int_result_kind(left, right);
+    if (!kind)
+      return std::nullopt;
+
+    if (*kind == SemPrimitiveKind::ANY_INT) {
+      return ConstValue::any_int(left.as_any_int() + right.as_any_int());
     }
-    if (left.is_u32() && right.is_u32()) {
-      return ConstValue::u32(left.as_u32() + right.as_u32());
-    }
-    if (left.is_isize() && right.is_isize()) {
-      return ConstValue::isize(left.as_isize() + right.as_isize());
-    }
-    if (left.is_usize() && right.is_usize()) {
-      return ConstValue::usize(left.as_usize() + right.as_usize());
+
+    auto l = any_int_to(left, *kind);
+    auto r = any_int_to(right, *kind);
+
+    switch (*kind) {
+    case SemPrimitiveKind::I32:
+      return ConstValue::i32(l.as_i32() + r.as_i32());
+    case SemPrimitiveKind::U32:
+      return ConstValue::u32(l.as_u32() + r.as_u32());
+    case SemPrimitiveKind::ISIZE:
+      return ConstValue::isize(l.as_isize() + r.as_isize());
+    case SemPrimitiveKind::USIZE:
+      return ConstValue::usize(l.as_usize() + r.as_usize());
+    default:
+      break;
     }
     return std::nullopt;
   }
 
   std::optional<ConstValue> evaluate_sub(const ConstValue &left,
                                          const ConstValue &right) {
-    if (left.is_i32() && right.is_i32()) {
-      return ConstValue::i32(left.as_i32() - right.as_i32());
+    auto kind = int_result_kind(left, right);
+    if (!kind)
+      return std::nullopt;
+
+    if (*kind == SemPrimitiveKind::ANY_INT) {
+      return ConstValue::any_int(left.as_any_int() - right.as_any_int());
     }
-    if (left.is_u32() && right.is_u32()) {
-      return ConstValue::u32(left.as_u32() - right.as_u32());
-    }
-    if (left.is_isize() && right.is_isize()) {
-      return ConstValue::isize(left.as_isize() - right.as_isize());
-    }
-    if (left.is_usize() && right.is_usize()) {
-      return ConstValue::usize(left.as_usize() - right.as_usize());
+
+    auto l = any_int_to(left, *kind);
+    auto r = any_int_to(right, *kind);
+    switch (*kind) {
+    case SemPrimitiveKind::I32:
+      return ConstValue::i32(l.as_i32() - r.as_i32());
+    case SemPrimitiveKind::U32:
+      return ConstValue::u32(l.as_u32() - r.as_u32());
+    case SemPrimitiveKind::ISIZE:
+      return ConstValue::isize(l.as_isize() - r.as_isize());
+    case SemPrimitiveKind::USIZE:
+      return ConstValue::usize(l.as_usize() - r.as_usize());
+    default:
+      break;
     }
     return std::nullopt;
   }
 
   std::optional<ConstValue> evaluate_mul(const ConstValue &left,
                                          const ConstValue &right) {
-    if (left.is_i32() && right.is_i32()) {
-      return ConstValue::i32(left.as_i32() * right.as_i32());
+    auto kind = int_result_kind(left, right);
+    if (!kind)
+      return std::nullopt;
+
+    if (*kind == SemPrimitiveKind::ANY_INT) {
+      return ConstValue::any_int(left.as_any_int() * right.as_any_int());
     }
-    if (left.is_u32() && right.is_u32()) {
-      return ConstValue::u32(left.as_u32() * right.as_u32());
-    }
-    if (left.is_isize() && right.is_isize()) {
-      return ConstValue::isize(left.as_isize() * right.as_isize());
-    }
-    if (left.is_usize() && right.is_usize()) {
-      return ConstValue::usize(left.as_usize() * right.as_usize());
+
+    auto l = any_int_to(left, *kind);
+    auto r = any_int_to(right, *kind);
+    switch (*kind) {
+    case SemPrimitiveKind::I32:
+      return ConstValue::i32(l.as_i32() * r.as_i32());
+    case SemPrimitiveKind::U32:
+      return ConstValue::u32(l.as_u32() * r.as_u32());
+    case SemPrimitiveKind::ISIZE:
+      return ConstValue::isize(l.as_isize() * r.as_isize());
+    case SemPrimitiveKind::USIZE:
+      return ConstValue::usize(l.as_usize() * r.as_usize());
+    default:
+      break;
     }
     return std::nullopt;
   }
 
   std::optional<ConstValue> evaluate_div(const ConstValue &left,
                                          const ConstValue &right) {
-    if (left.is_i32() && right.is_i32()) {
-      if (right.as_i32() == 0) {
+    auto kind = int_result_kind(left, right);
+    if (!kind)
+      return std::nullopt;
+
+    if (*kind == SemPrimitiveKind::ANY_INT) {
+      if (right.as_any_int() == 0) {
         throw SemanticException("division by zero");
       }
-      return ConstValue::i32(left.as_i32() / right.as_i32());
+      return ConstValue::any_int(left.as_any_int() / right.as_any_int());
     }
-    if (left.is_u32() && right.is_u32()) {
-      if (right.as_u32() == 0) {
+
+    auto l = any_int_to(left, *kind);
+    auto r = any_int_to(right, *kind);
+    switch (*kind) {
+    case SemPrimitiveKind::I32:
+      if (r.as_i32() == 0) {
         throw SemanticException("division by zero");
       }
-      return ConstValue::u32(left.as_u32() / right.as_u32());
-    }
-    if (left.is_isize() && right.is_isize()) {
-      if (right.as_isize() == 0) {
+      return ConstValue::i32(l.as_i32() / r.as_i32());
+    case SemPrimitiveKind::U32:
+      if (r.as_u32() == 0) {
         throw SemanticException("division by zero");
       }
-      return ConstValue::isize(left.as_isize() / right.as_isize());
-    }
-    if (left.is_usize() && right.is_usize()) {
-      if (right.as_usize() == 0) {
+      return ConstValue::u32(l.as_u32() / r.as_u32());
+    case SemPrimitiveKind::ISIZE:
+      if (r.as_isize() == 0) {
         throw SemanticException("division by zero");
       }
-      return ConstValue::usize(left.as_usize() / right.as_usize());
+      return ConstValue::isize(l.as_isize() / r.as_isize());
+    case SemPrimitiveKind::USIZE:
+      if (r.as_usize() == 0) {
+        throw SemanticException("division by zero");
+      }
+      return ConstValue::usize(l.as_usize() / r.as_usize());
+    default:
+      break;
     }
     return std::nullopt;
   }
 
   std::optional<ConstValue> evaluate_mod(const ConstValue &left,
                                          const ConstValue &right) {
-    if (left.is_i32() && right.is_i32()) {
-      if (right.as_i32() == 0) {
+    auto kind = int_result_kind(left, right);
+    if (!kind)
+      return std::nullopt;
+
+    if (*kind == SemPrimitiveKind::ANY_INT) {
+      if (right.as_any_int() == 0) {
         throw SemanticException("modulo by zero");
       }
-      return ConstValue::i32(left.as_i32() % right.as_i32());
+      return ConstValue::any_int(left.as_any_int() % right.as_any_int());
     }
-    if (left.is_u32() && right.is_u32()) {
-      if (right.as_u32() == 0) {
+
+    auto l = any_int_to(left, *kind);
+    auto r = any_int_to(right, *kind);
+    switch (*kind) {
+    case SemPrimitiveKind::I32:
+      if (r.as_i32() == 0) {
         throw SemanticException("modulo by zero");
       }
-      return ConstValue::u32(left.as_u32() % right.as_u32());
-    }
-    if (left.is_isize() && right.is_isize()) {
-      if (right.as_isize() == 0) {
+      return ConstValue::i32(l.as_i32() % r.as_i32());
+    case SemPrimitiveKind::U32:
+      if (r.as_u32() == 0) {
         throw SemanticException("modulo by zero");
       }
-      return ConstValue::isize(left.as_isize() % right.as_isize());
-    }
-    if (left.is_usize() && right.is_usize()) {
-      if (right.as_usize() == 0) {
+      return ConstValue::u32(l.as_u32() % r.as_u32());
+    case SemPrimitiveKind::ISIZE:
+      if (r.as_isize() == 0) {
         throw SemanticException("modulo by zero");
       }
-      return ConstValue::usize(left.as_usize() % right.as_usize());
+      return ConstValue::isize(l.as_isize() % r.as_isize());
+    case SemPrimitiveKind::USIZE:
+      if (r.as_usize() == 0) {
+        throw SemanticException("modulo by zero");
+      }
+      return ConstValue::usize(l.as_usize() % r.as_usize());
+    default:
+      break;
     }
     return std::nullopt;
   }
@@ -581,6 +745,28 @@ private:
     }
     if (left.is_char() && right.is_char()) {
       return ConstValue::bool_val(left.as_char() == right.as_char());
+    }
+    if (is_integer_value(left) && is_integer_value(right)) {
+      auto kind = int_result_kind(left, right);
+      if (!kind)
+        return std::nullopt;
+      if (*kind == SemPrimitiveKind::ANY_INT) {
+        return ConstValue::bool_val(left.as_any_int() == right.as_any_int());
+      }
+      auto l = any_int_to(left, *kind);
+      auto r = any_int_to(right, *kind);
+      switch (*kind) {
+      case SemPrimitiveKind::I32:
+        return ConstValue::bool_val(l.as_i32() == r.as_i32());
+      case SemPrimitiveKind::U32:
+        return ConstValue::bool_val(l.as_u32() == r.as_u32());
+      case SemPrimitiveKind::ISIZE:
+        return ConstValue::bool_val(l.as_isize() == r.as_isize());
+      case SemPrimitiveKind::USIZE:
+        return ConstValue::bool_val(l.as_usize() == r.as_usize());
+      default:
+        break;
+      }
     }
     return std::nullopt;
   }
@@ -610,6 +796,28 @@ private:
     }
     if (left.is_char() && right.is_char()) {
       return ConstValue::bool_val(left.as_char() < right.as_char());
+    }
+    if (is_integer_value(left) && is_integer_value(right)) {
+      auto kind = int_result_kind(left, right);
+      if (!kind)
+        return std::nullopt;
+      if (*kind == SemPrimitiveKind::ANY_INT) {
+        return ConstValue::bool_val(left.as_any_int() < right.as_any_int());
+      }
+      auto l = any_int_to(left, *kind);
+      auto r = any_int_to(right, *kind);
+      switch (*kind) {
+      case SemPrimitiveKind::I32:
+        return ConstValue::bool_val(l.as_i32() < r.as_i32());
+      case SemPrimitiveKind::U32:
+        return ConstValue::bool_val(l.as_u32() < r.as_u32());
+      case SemPrimitiveKind::ISIZE:
+        return ConstValue::bool_val(l.as_isize() < r.as_isize());
+      case SemPrimitiveKind::USIZE:
+        return ConstValue::bool_val(l.as_usize() < r.as_usize());
+      default:
+        break;
+      }
     }
     return std::nullopt;
   }

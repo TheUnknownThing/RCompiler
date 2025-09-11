@@ -24,6 +24,7 @@ struct SemNamedItemType; // struct/enum/trait reference resolved to NameItem
 struct SemUnknownType;
 
 enum class SemPrimitiveKind {
+  ANY_INT,
   I32,
   U32,
   ISIZE,
@@ -70,8 +71,9 @@ struct SemUnknownType {
 };
 
 struct SemType {
-  using Storage = std::variant<SemPrimitiveType, SemTupleType, SemArrayType,
-                               SemSliceType, SemReferenceType, SemNamedItemType, SemUnknownType>;
+  using Storage =
+      std::variant<SemPrimitiveType, SemTupleType, SemArrayType, SemSliceType,
+                   SemReferenceType, SemNamedItemType, SemUnknownType>;
   Storage storage;
 
   SemType() : storage(SemPrimitiveType{SemPrimitiveKind::UNKNOWN}) {}
@@ -91,7 +93,8 @@ struct SemType {
     return SemType{SemSliceType{std::make_shared<SemType>(std::move(elem))}};
   }
   static SemType reference(SemType target, bool is_mutable) {
-    return SemType{SemReferenceType{std::make_shared<SemType>(std::move(target)), is_mutable}};
+    return SemType{SemReferenceType{
+        std::make_shared<SemType>(std::move(target)), is_mutable}};
   }
   static SemType named(const CollectedItem *ci) {
     return SemType{SemNamedItemType{ci}};
@@ -167,6 +170,8 @@ inline bool operator==(const SemType &a, const SemType &b) {
 
 inline std::string to_string(SemPrimitiveKind k) {
   switch (k) {
+  case SemPrimitiveKind::ANY_INT:
+    return "any_int";
   case SemPrimitiveKind::I32:
     return "i32";
   case SemPrimitiveKind::U32:

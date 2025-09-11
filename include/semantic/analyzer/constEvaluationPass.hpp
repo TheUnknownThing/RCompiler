@@ -6,6 +6,7 @@
 
 #include "ast/nodes/topLevel.hpp"
 #include "semantic/analyzer/constEvaluator.hpp"
+#include "semantic/error/exceptions.hpp"
 #include "semantic/scope.hpp"
 #include "utils/logger.hpp"
 
@@ -81,12 +82,14 @@ public:
           LOG_DEBUG("[ConstEvaluationPass] Successfully evaluated constant '" +
                     node.name + "'");
         } else {
-          LOG_DEBUG("[ConstEvaluationPass] Could not evaluate constant '" +
-                    node.name + "' - not a constant expression");
+          throw SemanticException(
+              "[ConstEvaluationPass] Could not evaluate constant '" +
+              node.name + "' - not a constant expression");
         }
       } catch (const std::exception &e) {
         LOG_ERROR("[ConstEvaluationPass] Error evaluating constant '" +
                   node.name + "': " + e.what());
+        throw;
       }
     }
   }
