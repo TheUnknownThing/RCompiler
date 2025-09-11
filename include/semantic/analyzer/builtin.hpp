@@ -158,7 +158,7 @@ inline SemType get_builtin_method_return_type(const SemType &receiver_type,
   }
 
   if (method_name == "len") {
-    return SemType::primitive(SemPrimitiveKind::U32);
+    return SemType::primitive(SemPrimitiveKind::USIZE);
   }
 
   throw SemanticException("Unknown builtin method: " + method_name);

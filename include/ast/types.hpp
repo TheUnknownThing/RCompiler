@@ -188,20 +188,6 @@ inline bool operator<(const LiteralType &a, const LiteralType &b) {
   return false; // same rank but no comparable case
 }
 
-inline const std::map<std::string, PrimitiveLiteralType> base_literal_type_map =
-    {{"i32", PrimitiveLiteralType::I32},
-     {"u32", PrimitiveLiteralType::U32},
-     {"isize", PrimitiveLiteralType::ISIZE},
-     {"usize", PrimitiveLiteralType::USIZE},
-     {"string", PrimitiveLiteralType::STRING},
-     {"raw_string", PrimitiveLiteralType::RAW_STRING},
-     {"c_string", PrimitiveLiteralType::C_STRING},
-     {"raw_c_string", PrimitiveLiteralType::RAW_C_STRING},
-     {"char", PrimitiveLiteralType::CHAR},
-     {"bool", PrimitiveLiteralType::BOOL},
-     {"never", PrimitiveLiteralType::NEVER},
-     {"unit", PrimitiveLiteralType::UNIT}};
-
 inline const std::map<PrimitiveLiteralType, std::string>
     literal_type_reverse_map = {
         {PrimitiveLiteralType::I32, "i32"},
@@ -215,7 +201,8 @@ inline const std::map<PrimitiveLiteralType, std::string>
         {PrimitiveLiteralType::CHAR, "char"},
         {PrimitiveLiteralType::BOOL, "bool"},
         {PrimitiveLiteralType::NEVER, "!"},
-        {PrimitiveLiteralType::UNIT, "unit"}};
+        {PrimitiveLiteralType::UNIT, "unit"},
+        {PrimitiveLiteralType::ANY_INT, "any_int"}};
 
 inline const std::map<std::string, LiteralType> literal_type_map = {
     {"i32", LiteralType::base(PrimitiveLiteralType::I32)},
@@ -229,11 +216,8 @@ inline const std::map<std::string, LiteralType> literal_type_map = {
     {"char", LiteralType::base(PrimitiveLiteralType::CHAR)},
     {"bool", LiteralType::base(PrimitiveLiteralType::BOOL)},
     {"never", LiteralType::base(PrimitiveLiteralType::NEVER)},
-    {"unit", LiteralType::base(PrimitiveLiteralType::UNIT)}};
-
-inline const std::set<std::string> valid_literal_types = {
-    "i32",      "u32",          "isize", "usize", "string", "raw_string",
-    "c_string", "raw_c_string", "char",  "bool",  "never",  "unit"};
+    {"unit", LiteralType::base(PrimitiveLiteralType::UNIT)},
+    {"any_int", LiteralType::base(PrimitiveLiteralType::ANY_INT)}};
 
 inline std::string to_string(const LiteralType &t) {
   if (t.is_base()) {
