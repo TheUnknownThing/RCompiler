@@ -52,7 +52,7 @@ public:
             .combine(identifier,
                      [](auto flags, auto id) -> std::shared_ptr<BasePattern> {
                        return std::make_shared<IdentifierPattern>(
-                           id, flags.second, flags.first);
+                           id, flags.first, flags.second);
                      });
 
     p_grouped_ = tok(rc::TokenType::L_PAREN)

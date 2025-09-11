@@ -49,6 +49,7 @@ class BenchmarkRunner:
         self.verbose = args.verbose
         self.quiet = args.quiet
         self.stage_filter = args.stage
+        self.testpoint = args.testpoint  # New: specific testpoint filter
         
         self.passed_tests: List[TestResult] = []
         self.failed_tests: List[TestResult] = []
@@ -66,7 +67,7 @@ class BenchmarkRunner:
             sys.exit(1)
 
     def find_testcases(self) -> List[Path]:
-        """Find all testcase directories matching the stage filter"""
+        """Find all testcase directories matching the stage and testpoint filters"""
         testcases = []
         
         for metadata_file in self.testcases_dir.rglob("testcase_info.json"):
@@ -76,6 +77,10 @@ class BenchmarkRunner:
             
             # Filter by stage
             if self.stage_filter and stage != self.stage_filter:
+                continue
+            
+            # Filter by testpoint (if specified)
+            if self.testpoint and testname != self.testpoint:
                 continue
             
             # Check if .rx file exists
@@ -139,10 +144,16 @@ class BenchmarkRunner:
         testcases = self.find_testcases()
         
         if not testcases:
-            print_error(f"No testcases found for stage: {self.stage_filter}")
+            if self.testpoint:
+                print_error(f"No testcase '{self.testpoint}' found in stage: {self.stage_filter}")
+            else:
+                print_error(f"No testcases found for stage: {self.stage_filter}")
             sys.exit(1)
         
-        print_info(f"Running {len(testcases)} testcases for stage: {self.stage_filter}")
+        if self.testpoint:
+            print_info(f"Running testcase '{self.testpoint}' for stage: {self.stage_filter}")
+        else:
+            print_info(f"Running {len(testcases)} testcases for stage: {self.stage_filter}")
         
         for testdir in testcases:
             result = self.run_test(testdir)
@@ -156,11 +167,18 @@ class BenchmarkRunner:
                 if not self.quiet:
                     error_msg = f"{result.full_name} (expected: {result.expected}, got: {result.actual})"
                     print_error(error_msg)
-                    if self.verbose and result.output:
-                        # Show first 5 lines of output
-                        output_lines = result.output.strip().split('\n')[:5]
-                        for line in output_lines:
-                            print(f"  {line}")
+                    
+            # For single testpoint, always show output if verbose or if test failed
+            if self.testpoint and (self.verbose or not result.passed) and result.output:
+                print(f"\nCompiler output for {result.full_name}:")
+                print("-" * 40)
+                print(result.output)
+                print("-" * 40)
+            elif not self.testpoint and self.verbose and result.output and not result.passed:
+                # Show first 5 lines of output for failed tests in multi-test mode
+                output_lines = result.output.strip().split('\n')[:5]
+                for line in output_lines:
+                    print(f"  {line}")
 
     def print_summary(self) -> None:
         """Print organized test results summary"""
@@ -206,9 +224,13 @@ Examples:
   %(prog)s -v                 # Test with verbose output
   %(prog)s -s semantic-2      # Test different stage
   %(prog)s -q                 # Quiet mode
+  %(prog)s array2             # Test specific testpoint 'array2' in semantic-1 with verbose output
+  %(prog)s array2 -s semantic-2  # Test 'array2' in semantic-2
         """
     )
     
+    parser.add_argument('testpoint', nargs='?', 
+                        help='Specific testpoint to run (enables verbose output automatically)')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Show compiler output')
     parser.add_argument('-s', '--stage', default='semantic-1',
@@ -217,6 +239,10 @@ Examples:
                         help='Only show summary')
     
     args = parser.parse_args()
+    
+    # If testpoint is specified, automatically enable verbose output
+    if args.testpoint:
+        args.verbose = True
     
     runner = BenchmarkRunner(args)
     runner.check_environment()

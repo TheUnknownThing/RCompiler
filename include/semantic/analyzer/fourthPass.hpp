@@ -263,6 +263,11 @@ public:
       return;
     }
 
+    if (node.op.type == TokenType::AS) {
+      handle_as_cast(node);
+      return;
+    }
+
     cache_expr(&node, eval_binary(node));
   }
 
@@ -347,21 +352,22 @@ public:
 
   void visit(MethodCallExpression &node) override {
     auto recv_type = evaluate(node.receiver.get());
-    
+
     // Check for builtin methods first
     if (is_builtin_method(recv_type, node.method_name.name)) {
       const size_t argc = node.arguments.size();
 
       if (argc != 0) {
-        throw TypeError(
-          "builtin method " + node.method_name.name + " expected 0 arguments, got " + std::to_string(argc));
+        throw TypeError("builtin method " + node.method_name.name +
+                        " expected 0 arguments, got " + std::to_string(argc));
       }
-      
-      auto return_type = get_builtin_method_return_type(recv_type, node.method_name.name);
+
+      auto return_type =
+          get_builtin_method_return_type(recv_type, node.method_name.name);
       cache_expr(&node, return_type);
       return;
     }
-    
+
     if (!recv_type.is_named()) {
       throw TypeError("method call on non-struct type: " +
                       to_string(recv_type));
@@ -1118,6 +1124,67 @@ private:
     }
 
     throw SemanticException("unsupported pattern");
+  }
+
+  SemType primitive_kind_from_name(Expression *e) {
+    auto *ne = dynamic_cast<NameExpression *>(e);
+    if (!ne) {
+      throw SemanticException("type name must be an identifier");
+    }
+    const std::string &name = ne->name;
+    if (name == "i32")
+      return SemType::primitive(SemPrimitiveKind::I32);
+    if (name == "u32")
+      return SemType::primitive(SemPrimitiveKind::U32);
+    if (name == "isize")
+      return SemType::primitive(SemPrimitiveKind::ISIZE);
+    if (name == "usize")
+      return SemType::primitive(SemPrimitiveKind::USIZE);
+    if (name == "string")
+      return SemType::primitive(SemPrimitiveKind::STRING);
+    if (name == "raw_string")
+      return SemType::primitive(SemPrimitiveKind::RAW_STRING);
+    if (name == "c_string")
+      return SemType::primitive(SemPrimitiveKind::C_STRING);
+    if (name == "raw_c_string")
+      return SemType::primitive(SemPrimitiveKind::RAW_C_STRING);
+    if (name == "char")
+      return SemType::primitive(SemPrimitiveKind::CHAR);
+    if (name == "bool")
+      return SemType::primitive(SemPrimitiveKind::BOOL);
+    if (name == "never")
+      return SemType::primitive(SemPrimitiveKind::NEVER);
+    if (name == "unit")
+      return SemType::primitive(SemPrimitiveKind::UNIT);
+
+    throw SemanticException("unknown primitive type name '" + name + "'");
+  }
+
+  bool is_integer_primitive_kind(SemPrimitiveKind k) const {
+    return is_integer(k);
+  }
+
+  bool is_integer_type(const SemType &t) const {
+    return t.is_primitive() && is_integer_primitive_kind(t.as_primitive().kind);
+  }
+
+  bool is_cast_allowed(const SemType &src, const SemType &dst) const {
+    if (src == dst)
+      return true;
+    if (is_integer_type(src) && is_integer_type(dst))
+      return true;
+    return false;
+  }
+
+  void handle_as_cast(BinaryExpression &node) {
+    SemType src = evaluate(node.left.get());
+    SemType dst = primitive_kind_from_name(node.right.get());
+
+    if (!is_cast_allowed(src, dst)) {
+      throw TypeError("invalid cast from '" + to_string(src) + "' to '" +
+                      to_string(dst) + "'");
+    }
+    cache_expr(&node, dst);
   }
 };
 

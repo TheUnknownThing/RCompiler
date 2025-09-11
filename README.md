@@ -42,7 +42,7 @@ See [whitelist.md](whitelist.md) for the concrete, implementable subset of the R
 - [x] Parser
     - Parse expr, stmts, items
 
-- [ ] Semantic Check (WIP)
+- [x] Semantic Check
 
     TBD in this part:
     - mut / ref check
