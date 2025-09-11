@@ -170,7 +170,7 @@ public:
       const auto &meta = item->as_constant_meta();
       SemType declared = meta.type;
       auto got = evaluate(node.value.value().get());
-      if (!(got == declared)) {
+      if (!can_assign(declared, got)) {
         throw TypeError("constant '" + node.name +
                         "' type mismatch: expected '" + to_string(declared) +
                         "' got '" + to_string(got) + "'");
@@ -192,7 +192,7 @@ public:
       throw SemanticException("let initializer expression is required");
     }
     auto rhs_t = evaluate(node.expr.get());
-    if (!(rhs_t == annotated)) {
+    if (!can_assign(annotated, rhs_t)) {
       throw TypeError("let initializer type mismatch: expected '" +
                       to_string(annotated) + "' got '" + to_string(rhs_t) +
                       "'");
@@ -284,11 +284,18 @@ public:
                                   : SemType::primitive(SemPrimitiveKind::UNIT);
     auto else_t = node.else_block ? evaluate(node.else_block.value().get())
                                   : SemType::primitive(SemPrimitiveKind::UNIT);
-    if (!(then_t == else_t)) {
-      throw TypeError("if branches have incompatible types: '" +
-                      to_string(then_t) + "' vs '" + to_string(else_t) + "'");
+
+    if (then_t == else_t) {
+      cache_expr(&node, then_t);
+      return;
     }
-    cache_expr(&node, then_t);
+    if (auto u = unify_integers(then_t, else_t)) {
+      cache_expr(&node, *u);
+      return;
+    }
+
+    throw TypeError("if branches have incompatible types: '" +
+                    to_string(then_t) + "' vs '" + to_string(else_t) + "'");
   }
 
   void visit(MatchExpression &) override {
@@ -303,7 +310,7 @@ public:
       throw SemanticException("return outside of function");
     }
     const auto expected = function_return_stack.back();
-    if (!(rt == expected)) {
+    if (!can_assign(expected, rt)) {
       throw TypeError("return type mismatch: expected '" + to_string(expected) +
                       "' got '" + to_string(rt) + "'");
     }
@@ -340,7 +347,7 @@ public:
     for (size_t i = 0; i < argc; ++i) {
       auto at = evaluate(node.arguments[i].get());
       const auto &expected = fn->param_types[i];
-      if (!(at == expected)) {
+      if (!can_assign(expected, at)) {
         throw TypeError("argument type mismatch in call to " + fn->name +
                         " at position " + std::to_string(i) + ": expected " +
                         to_string(expected) + " got " + to_string(at));
@@ -411,7 +418,7 @@ public:
     for (size_t i = 0; i < argc; ++i) {
       auto at = evaluate(node.arguments[i].get());
       const auto &expected = params[i + arg_index_offset];
-      if (!(at == expected)) {
+      if (!can_assign(expected, at)) {
         throw TypeError("argument type mismatch in method " +
                         node.method_name.name + " at position " +
                         std::to_string(i) + ": expected " +
@@ -523,14 +530,18 @@ public:
                               SemType::primitive(SemPrimitiveKind::UNIT), 0));
         return;
       }
-      auto first = evaluate(node.elements[0].get());
+      auto elem_type = evaluate(node.elements[0].get());
       for (size_t i = 1; i < node.elements.size(); ++i) {
         auto t = evaluate(node.elements[i].get());
-        if (!(t == first)) {
-          throw TypeError("array elements have inconsistent types");
+        if (t == elem_type)
+          continue;
+        if (auto u = unify_integers(elem_type, t)) {
+          elem_type = *u;
+          continue;
         }
+        throw TypeError("array elements have inconsistent types");
       }
-      cache_expr(&node, SemType::array(first, node.elements.size()));
+      cache_expr(&node, SemType::array(elem_type, node.elements.size()));
     }
   }
 
@@ -696,8 +707,9 @@ private:
   }
 
   bool is_integer(SemPrimitiveKind k) const {
-    return k == SemPrimitiveKind::I32 || k == SemPrimitiveKind::U32 ||
-           k == SemPrimitiveKind::ISIZE || k == SemPrimitiveKind::USIZE;
+    return k == SemPrimitiveKind::ANY_INT || k == SemPrimitiveKind::I32 ||
+           k == SemPrimitiveKind::U32 || k == SemPrimitiveKind::ISIZE ||
+           k == SemPrimitiveKind::USIZE;
   }
 
   bool is_str(SemPrimitiveKind k) const {
@@ -778,8 +790,77 @@ private:
       return SemPrimitiveKind::NEVER;
     case PrimitiveLiteralType::UNIT:
       return SemPrimitiveKind::UNIT;
+    case PrimitiveLiteralType::ANY_INT:
+      return SemPrimitiveKind::ANY_INT;
     }
     return SemPrimitiveKind::UNKNOWN;
+  }
+
+  std::optional<SemType> unify_integers(const SemType &a,
+                                        const SemType &b) const {
+    if (!(a.is_primitive() && b.is_primitive()))
+      return std::nullopt;
+    auto ak = a.as_primitive().kind;
+    auto bk = b.as_primitive().kind;
+    if (!(is_integer(ak) && is_integer(bk)))
+      return std::nullopt;
+
+    if (a == b)
+      return a;
+    if (ak == SemPrimitiveKind::ANY_INT && is_integer(bk))
+      return b;
+    if (bk == SemPrimitiveKind::ANY_INT && is_integer(ak))
+      return a;
+    return std::nullopt;
+  }
+
+  std::optional<SemType> unify_for_op(const SemType &a, const SemType &b,
+                                      bool allow_str = false) const {
+    if (auto u = unify_integers(a, b))
+      return u;
+    if (allow_str && a.is_primitive() && b.is_primitive()) {
+      auto ak = a.as_primitive().kind;
+      auto bk = b.as_primitive().kind;
+      if (is_str(ak) && ak == bk)
+        return a;
+    }
+    return std::nullopt;
+  }
+
+  bool can_assign(const SemType &dst, const SemType &src) const {
+    if (dst == src)
+      return true;
+
+    if (dst.is_primitive() && src.is_primitive()) {
+      auto dk = dst.as_primitive().kind;
+      auto sk = src.as_primitive().kind;
+      if (is_integer(dk) && sk == SemPrimitiveKind::ANY_INT)
+        return true;
+      return false;
+    }
+
+    // Array: same length, element also assignable
+    if (dst.is_array() && src.is_array()) {
+      if (dst.as_array().size != src.as_array().size)
+        return false;
+      return can_assign(*dst.as_array().element, *src.as_array().element);
+    }
+
+    // Slice: element assignable
+    if (dst.is_slice() && src.is_slice()) {
+      return can_assign(*dst.as_slice().element, *src.as_slice().element);
+    }
+
+    // Reference: same mutability, target assignable
+    if (dst.is_reference() && src.is_reference()) {
+      const auto &dr = dst.as_reference();
+      const auto &sr = src.as_reference();
+      if (dr.is_mutable != sr.is_mutable)
+        return false;
+      return can_assign(*dr.target, *sr.target);
+    }
+
+    return false;
   }
 
   SemType eval_binary(BinaryExpression &bin) {
@@ -787,30 +868,9 @@ private:
     auto rt = evaluate(bin.right.get());
     const auto op = bin.op.type;
 
-    bool left_literal = is_plain_i32_literal(bin.left.get());
-    bool right_literal = is_plain_i32_literal(bin.right.get());
-
-    auto check = [&](bool allow_str = false) -> std::optional<SemType> {
-      if (lt.is_primitive() && rt.is_primitive()) {
-        auto lk = lt.as_primitive().kind;
-        auto rk = rt.as_primitive().kind;
-        if (is_integer(lk) && is_integer(rk)) {
-          if (lk == rk && (lt == rt))
-            return lt;
-          if (left_literal && is_integer(rk))
-            return rt;
-          if (right_literal && is_integer(lk))
-            return lt;
-        }
-        if (allow_str && is_str(lk) && lk == rk)
-          return lt;
-      }
-      return std::nullopt;
-    };
-
     switch (op) {
     case TokenType::PLUS: {
-      if (auto r = check(true))
+      if (auto r = unify_for_op(lt, rt, true))
         return *r;
       break;
     }
@@ -818,14 +878,14 @@ private:
     case TokenType::STAR:
     case TokenType::SLASH:
     case TokenType::PERCENT: {
-      if (auto r = check())
+      if (auto r = unify_for_op(lt, rt))
         return *r;
       break;
     }
     case TokenType::AMPERSAND:
     case TokenType::PIPE:
     case TokenType::CARET: {
-      if (auto r = check())
+      if (auto r = unify_for_op(lt, rt))
         return *r;
       break;
     }
@@ -846,10 +906,9 @@ private:
     }
     case TokenType::EQ:
     case TokenType::NE: {
-      if (lt == rt || (lt.is_primitive() && rt.is_primitive() &&
-                       is_integer(lt.as_primitive().kind) &&
-                       is_integer(rt.as_primitive().kind) &&
-                       (left_literal || right_literal)))
+      if (lt == rt)
+        return SemType::primitive(SemPrimitiveKind::BOOL);
+      if (auto u = unify_integers(lt, rt))
         return SemType::primitive(SemPrimitiveKind::BOOL);
       break;
     }
@@ -857,12 +916,8 @@ private:
     case TokenType::LE:
     case TokenType::GT:
     case TokenType::GE: {
-      if (lt.is_primitive() && rt.is_primitive() &&
-          is_integer(lt.as_primitive().kind) &&
-          is_integer(rt.as_primitive().kind)) {
-        if (lt == rt || left_literal || right_literal)
-          return SemType::primitive(SemPrimitiveKind::BOOL);
-      }
+      if (auto u = unify_integers(lt, rt))
+        return SemType::primitive(SemPrimitiveKind::BOOL);
       break;
     }
     default:
@@ -1000,28 +1055,6 @@ private:
     }
   }
 
-  bool is_plain_i32_literal(Expression *e) const {
-    auto *lit = dynamic_cast<LiteralExpression *>(e);
-    if (!lit)
-      return false;
-    if (!(lit->type.is_base() &&
-          lit->type.as_base() == PrimitiveLiteralType::I32)) {
-      // it is due to in parser we assume bare int literals to be i32 (no
-      // suffix)
-      // TODO: maybe we need a fix here.
-      return false;
-    }
-    static const std::array<std::string, 4> suffixes = {"i32", "u32", "isize",
-                                                        "usize"};
-    for (const auto &s : suffixes) {
-      if (lit->value.size() >= s.size() &&
-          lit->value.compare(lit->value.size() - s.size(), s.size(), s) == 0) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   void handle_assignment(BinaryExpression &node) {
     require_place_writable(node.left.get(), "assignment");
 
@@ -1029,7 +1062,7 @@ private:
     auto rhs_t = evaluate(node.right.get());
 
     if (node.op.type == TokenType::ASSIGN) {
-      if (!(lhs_t == rhs_t)) {
+      if (!can_assign(lhs_t, rhs_t)) {
         throw TypeError("assignment type mismatch: expected '" +
                         to_string(lhs_t) + "', got '" + to_string(rhs_t) + "'");
       }
@@ -1047,16 +1080,13 @@ private:
         lhs_t.is_primitive() && is_integer(lhs_t.as_primitive().kind);
     bool rhs_is_int =
         rhs_t.is_primitive() && is_integer(rhs_t.as_primitive().kind);
-    bool right_literal = is_plain_i32_literal(node.right.get());
-
-    auto unify_int = [&]() -> bool {
+    auto match = [&]() -> bool {
       if (!(lhs_is_int && rhs_is_int))
         return false;
-      if (lhs_t == rhs_t)
+      auto rk = rhs_t.as_primitive().kind;
+      if (rk == SemPrimitiveKind::ANY_INT)
         return true;
-      if (right_literal)
-        return true; // allow literal to adopt lhs type
-      return false;
+      return lhs_t == rhs_t;
     };
 
     bool ok = false;
@@ -1069,7 +1099,7 @@ private:
     case TokenType::AMPERSAND:
     case TokenType::PIPE:
     case TokenType::CARET:
-      ok = unify_int();
+      ok = match();
       break;
     case TokenType::SHL:
     case TokenType::SHR:
