@@ -7,7 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "ast/nodes/pattern.hpp"
 #include "ast/nodes/topLevel.hpp"
+#include "semantic/analyzer/constEvaluator.hpp"
 #include "semantic/error/exceptions.hpp"
 #include "semantic/scope.hpp"
 #include "semantic/types.hpp"
@@ -20,12 +22,16 @@ public:
   SecondPassResolver() = default;
 
   void run(const std::shared_ptr<RootNode> &root, ScopeNode *root_scope_) {
-    LOG_INFO("[SecondPass] Starting resolution");
+    LOG_INFO("[SecondPass] Starting unified semantic analysis");
     root_scope = root_scope_;
-    if (!root_scope)
-      throw SemanticException("second pass requires root scope");
+    if (!root_scope) {
+      throw SemanticException(
+          "Unified semantic pass requires a valid root scope");
+    }
+
     scope_stack.clear();
     scope_stack.push_back(root_scope);
+
     if (root) {
       size_t idx = 0;
       for (const auto &child : root->children) {
@@ -37,19 +43,22 @@ public:
         ++idx;
       }
     }
+
     LOG_INFO("[SecondPass] Completed");
   }
 
   void visit(BaseNode &node) override {
-    if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
+    if (auto *cst = dynamic_cast<ConstantItem *>(&node)) {
+      visit(*cst);
+    } else if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
       visit(*decl);
     } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
       visit(*decl);
-    } else if (auto *cst = dynamic_cast<ConstantItem *>(&node)) {
-      visit(*cst);
     } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
       visit(*decl);
     } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
+      visit(*decl);
+    } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
       visit(*decl);
     } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
       visit(*expr);
@@ -64,26 +73,33 @@ public:
 
   void visit(FunctionDecl &node) override {
     LOG_DEBUG("[SecondPass] Resolve function '" + node.name + "'");
+
     FunctionMetaData sig;
     sig.name = node.name;
     sig.decl = &node;
-    
+
     if (node.params) {
+      // TODO: deduplicate parameter names
+      std::set<std::shared_ptr<BasePattern>> seen_param_names;
       for (const auto &p : *node.params) {
         const auto &name = p.first;
-        
-        // TODO: deduplicate names in parameters
-        
+        if (!seen_param_names.insert(name).second) {
+          throw SemanticException("duplicate parameter in function '" +
+                                  node.name + "'");
+        }
         sig.param_names.push_back(name);
         sig.param_types.push_back(resolve_type(p.second));
       }
     }
+
     sig.return_type = resolve_type(node.return_type);
+
     if (sig.name == "main") {
       if (!(sig.return_type == SemType::primitive(SemPrimitiveKind::UNIT))) {
         throw SemanticException("main function must have return type '()'");
       }
     }
+
     if (auto *ci = lookup_current_value_item(node.name, ItemKind::Function)) {
       ci->metadata = std::move(sig);
     }
@@ -94,34 +110,53 @@ public:
   }
 
   void visit(ConstantItem &node) override {
-    LOG_DEBUG("[SecondPass] Resolve constant '" + node.name + "'");
+    LOG_DEBUG("[SecondPass] Resolve and evaluate constant '" + node.name + "'");
+
+    auto *ci = lookup_current_value_item(node.name, ItemKind::Constant);
     ConstantMetaData meta;
     meta.name = node.name;
     meta.decl = &node;
     meta.type = resolve_type(node.type);
-    
-    if (auto *ci = lookup_current_value_item(node.name, ItemKind::Constant)) {
-      ci->metadata = std::move(meta);
+    ci->metadata = meta;
+
+    if (node.value) {
+      try {
+        auto evaluated = evaluator.evaluate(node.value->get(), current_scope());
+        if (evaluated) {
+          ci->as_constant_meta().evaluated_value =
+              std::make_shared<ConstValue>(std::move(*evaluated));
+          LOG_DEBUG("[SecondPass] Successfully evaluated constant '" +
+                    node.name + "'");
+        } else {
+          throw SemanticException("Could not evaluate constant '" + node.name +
+                                  "' - not a constant expression");
+        }
+      } catch (const std::exception &e) {
+        LOG_ERROR(std::string("[SecondPass] Error evaluating constant '") +
+                  node.name + "': " + e.what());
+        throw;
+      }
     }
   }
 
   void visit(StructDecl &node) override {
     LOG_DEBUG("[SecondPass] Resolve struct '" + node.name + "'");
     StructMetaData info;
+
     if (node.struct_type == StructDecl::StructType::Struct) {
       std::set<std::string> seen;
       for (const auto &field : node.fields) {
-        const auto &name = field.first;
-        if (seen.contains(name)) {
-          LOG_ERROR("[SecondPass] Duplicate struct field '" + name + "'");
-          throw SemanticException("duplicate field " + name);
+        const auto &fname = field.first;
+        if (!seen.insert(fname).second) {
+          LOG_ERROR("[SecondPass] Duplicate struct field '" + fname + "'");
+          throw SemanticException("duplicate field " + fname);
         }
-        seen.insert(name);
-        info.named_fields.emplace_back(name, resolve_type(field.second));
+        info.named_fields.emplace_back(fname, resolve_type(field.second));
       }
     } else {
-      // No Tuple Struct Now
+      // Tuple structs removed
     }
+
     if (auto *ci = lookup_current_type_item(node.name, ItemKind::Struct)) {
       ci->metadata = std::move(info);
     }
@@ -132,11 +167,10 @@ public:
     std::set<std::string> seen;
     EnumMetaData info;
     for (const auto &variant : node.variants) {
-      if (seen.contains(variant.name)) {
+      if (!seen.insert(variant.name).second) {
         LOG_ERROR("[SecondPass] Duplicate enum variant '" + variant.name + "'");
         throw SemanticException("duplicate enum variant " + variant.name);
       }
-      seen.insert(variant.name);
       info.variant_names.push_back(variant.name);
     }
     if (auto *ci = lookup_current_type_item(node.name, ItemKind::Enum)) {
@@ -146,7 +180,8 @@ public:
 
   void visit(TraitDecl &node) override {
     auto *parent_scope = current_scope();
-    auto *trait_scope = parent_scope->find_child_scope_by_owner(&node);
+    auto *trait_scope =
+        parent_scope ? parent_scope->find_child_scope_by_owner(&node) : nullptr;
 
     LOG_DEBUG("[SecondPass] Enter trait '" + node.name + "'");
     push_scope(trait_scope);
@@ -158,16 +193,29 @@ public:
     LOG_DEBUG("[SecondPass] Exit trait '" + node.name + "'");
   }
 
+  void visit(ImplDecl &node) override {
+    for (const auto &assoc : node.associated_items) {
+      if (assoc)
+        assoc->accept(*this);
+    }
+  }
+
   void visit(BlockExpression &node) override {
-    auto *block_scope = current_scope()->find_child_scope_by_owner(&node);
+    auto *block_scope = current_scope()
+                            ? current_scope()->find_child_scope_by_owner(&node)
+                            : nullptr;
     push_scope(block_scope);
+
     for (const auto &stmt : node.statements) {
       if (stmt)
         stmt->accept(*this);
     }
-    pop_scope();
-    if (node.final_expr)
+
+    if (node.final_expr) {
       node.final_expr.value()->accept(*this);
+    }
+
+    pop_scope();
   }
 
   void visit(IfExpression &node) override {
@@ -192,13 +240,20 @@ public:
 private:
   ScopeNode *root_scope = nullptr;
   std::vector<ScopeNode *> scope_stack;
+  ConstEvaluator evaluator;
 
   ScopeNode *current_scope() const { return scope_stack.back(); }
 
-  void push_scope(ScopeNode *s) { scope_stack.push_back(s); }
+  void push_scope(ScopeNode *s) {
+    if (s) {
+      scope_stack.push_back(s);
+    }
+  }
+
   void pop_scope() {
-    if (scope_stack.size() > 1)
+    if (scope_stack.size() > 1) {
       scope_stack.pop_back();
+    }
   }
 
   SemType resolve_type(const LiteralType &t) {
@@ -214,8 +269,29 @@ private:
       return SemType::tuple(std::move(elems));
     }
     if (t.is_array()) {
-      return SemType::array(resolve_type(*t.as_array().element),
-                            t.as_array().size);
+      const auto &arr = t.as_array();
+      if (!arr.size) {
+        throw SemanticException("array size expression missing");
+      }
+
+      auto cv = evaluator.evaluate(arr.size.get(), current_scope());
+      if (!cv) {
+        throw SemanticException("array size is not a constant expression");
+      }
+
+      std::uint64_t size_val = 0;
+      if (cv->is_usize()) {
+        size_val = cv->as_usize();
+      } else if (cv->is_any_int()) {
+        auto v = cv->as_any_int();
+        if (v < 0)
+          throw SemanticException("array size cannot be negative");
+        size_val = static_cast<std::uint64_t>(v);
+      } else {
+        throw SemanticException("array size must be usize");
+      }
+
+      return SemType::array(resolve_type(*arr.element), size_val);
     }
     if (t.is_slice()) {
       return SemType::slice(resolve_type(*t.as_slice().element));
@@ -230,7 +306,7 @@ private:
           return SemType::named(ci);
         throw SemanticException("unknown named item " + segs[0]);
       }
-      // qualified path, no such thing
+      // Qualified paths not supported
       throw SemanticException("qualified path not supported");
     }
     if (t.is_reference()) {
@@ -243,8 +319,9 @@ private:
   const CollectedItem *resolve_named_item(const std::string &name) const {
     for (auto *scope = current_scope(); scope; scope = scope->parent) {
       if (const auto *ci = scope->find_type_item(name)) {
-        if (ci->kind == ItemKind::Struct || ci->kind == ItemKind::Enum)
+        if (ci->kind == ItemKind::Struct || ci->kind == ItemKind::Enum) {
           return ci;
+        }
       }
     }
     return nullptr;
@@ -283,15 +360,16 @@ private:
   CollectedItem *lookup_current_value_item(const std::string &name,
                                            ItemKind kind) {
     auto *scope = current_scope();
-    auto *found = scope->find_value_item(name);
+    auto *found = scope ? scope->find_value_item(name) : nullptr;
     if (found && found->kind == kind)
       return found;
     throw SemanticException("item " + name + " not found in value namespace");
   }
+
   CollectedItem *lookup_current_type_item(const std::string &name,
                                           ItemKind kind) {
     auto *scope = current_scope();
-    auto *found = scope->find_type_item(name);
+    auto *found = scope ? scope->find_type_item(name) : nullptr;
     if (found && found->kind == kind)
       return found;
     throw SemanticException("item " + name + " not found in type namespace");

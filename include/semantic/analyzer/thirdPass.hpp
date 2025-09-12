@@ -203,8 +203,11 @@ private:
       return SemType::tuple(std::move(elems));
     }
     if (t.is_array()) {
+      if (t.as_array().actual_size < 0) {
+        throw SemanticException("array size not resolved");
+      }
       return SemType::array(resolve_type(*t.as_array().element),
-                            t.as_array().size);
+                            t.as_array().actual_size);
     }
     if (t.is_slice()) {
       return SemType::slice(resolve_type(*t.as_slice().element));
