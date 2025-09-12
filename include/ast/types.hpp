@@ -29,13 +29,15 @@ enum class PrimitiveLiteralType {
   ANY_INT
 };
 
+class Expression;
+
 struct LiteralType {
   struct Tuple {
     std::vector<LiteralType> elements;
   };
   struct Array {
     std::shared_ptr<LiteralType> element;
-    std::uint64_t size;
+    std::shared_ptr<Expression> size;
   };
   struct Slice {
     std::shared_ptr<LiteralType> element;
@@ -64,9 +66,9 @@ struct LiteralType {
   static LiteralType tuple(std::vector<LiteralType> elems) {
     return LiteralType{Tuple{std::move(elems)}};
   }
-  static LiteralType array(LiteralType elem, std::uint64_t size) {
+  static LiteralType array(LiteralType elem, std::shared_ptr<Expression> size_expr) {
     return LiteralType{
-        Array{std::make_shared<LiteralType>(std::move(elem)), size}};
+        Array{std::make_shared<LiteralType>(std::move(elem)), std::move(size_expr)}};
   }
   static LiteralType slice(LiteralType elem) {
     return LiteralType{Slice{std::make_shared<LiteralType>(std::move(elem))}};
@@ -192,8 +194,7 @@ inline std::string to_string(const LiteralType &t) {
   }
   if (t.is_array()) {
     const auto &arr = t.as_array();
-    return "[" + to_string(*arr.element) + "; " + std::to_string(arr.size) +
-           "]";
+    return "[" + to_string(*arr.element) + "; <expr>]";
   }
   if (t.is_slice()) {
     const auto &sl = t.as_slice();
