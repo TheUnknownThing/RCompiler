@@ -179,6 +179,7 @@ public:
   std::optional<
       std::pair<std::shared_ptr<Expression>, std::shared_ptr<Expression>>>
       repeat; // (expr ; count)
+  int64_t actual_size = -1; // this size can only be set in const eval
 
   ArrayExpression(std::vector<std::shared_ptr<Expression>> elems)
       : elements(std::move(elems)), repeat(std::nullopt) {}

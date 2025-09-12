@@ -522,8 +522,10 @@ public:
   void visit(ArrayExpression &node) override {
     if (node.repeat) {
       auto el = evaluate(node.repeat->first.get());
-      // TODO: validate the repeat count constant.
-      cache_expr(&node, SemType::array(el, 0));
+      if (node.actual_size < 0) {
+        throw SemanticException("ArrayExpr size not resolved");
+      }
+      cache_expr(&node, SemType::array(el, node.actual_size));
     } else {
       if (node.elements.empty()) {
         cache_expr(&node, SemType::array(

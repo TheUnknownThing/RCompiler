@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "ast/nodes/expr.hpp"
 #include "ast/nodes/pattern.hpp"
 #include "ast/nodes/stmt.hpp"
 #include "ast/nodes/topLevel.hpp"
@@ -68,11 +69,13 @@ public:
     } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
       visit(*expr);
     }
-    // we only care about type resolution of letstmt and impldecl here
+    // we only care about arr type resolution below
     else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
       visit(*stmt);
     } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
       visit(*decl);
+    } else if (auto *expr = dynamic_cast<ArrayExpression *>(&node)) {
+      visit(*expr);
     }
   }
 
@@ -86,7 +89,7 @@ public:
     if (node.params) {
       // TODO: deduplicate parameter names
       std::set<std::shared_ptr<BasePattern>> seen_param_names;
-      for (const auto &p : *node.params) {
+      for (auto &p : *node.params) {
         const auto &name = p.first;
         if (!seen_param_names.insert(name).second) {
           throw SemanticException("duplicate parameter in function '" +
@@ -150,7 +153,7 @@ public:
 
     if (node.struct_type == StructDecl::StructType::Struct) {
       std::set<std::string> seen;
-      for (const auto &field : node.fields) {
+      for (auto &field : node.fields) {
         const auto &fname = field.first;
         if (!seen.insert(fname).second) {
           LOG_ERROR("[SecondPass] Duplicate struct field '" + fname + "'");
@@ -209,23 +212,17 @@ public:
               if (pt.is_array() && pt.as_array().size < 0) {
                 throw SemanticException("array size not resolved");
               }
-              p.second.as_array().actual_size =
-                  pt.is_array() ? pt.as_array().size : -1;
             }
           }
           SemType rt = resolve_type(fn->return_type);
           if (rt.is_array() && rt.as_array().size < 0) {
             throw SemanticException("array size not resolved");
           }
-          fn->return_type.as_array().actual_size =
-              rt.is_array() ? rt.as_array().size : -1;
         } else if (auto *cst = dynamic_cast<ConstantItem *>(assoc.get())) {
           SemType ct = resolve_type(cst->type);
           if (ct.is_array() && ct.as_array().size < 0) {
             throw SemanticException("array size not resolved");
           }
-          cst->type.as_array().actual_size =
-              ct.is_array() ? ct.as_array().size : -1;
         }
       }
     }
@@ -269,10 +266,39 @@ public:
   void visit(LetStatement &node) override {
     SemType annotated = resolve_type(node.type);
     if (node.type.is_array()) {
-      node.type.as_array().actual_size = annotated.as_array().size;
+      LOG_DEBUG("[SecondPass] Let statement with array type of size " +
+                std::to_string(annotated.as_array().size));
     }
     if (node.expr) {
       node.expr->accept(*this);
+    }
+  }
+
+  void visit(ArrayExpression &node) override {
+    if (node.repeat) {
+      auto cv = evaluator.evaluate(node.repeat->second.get(), current_scope());
+      if (!cv) {
+        throw SemanticException("array size is not a constant expression");
+      }
+
+      std::uint64_t size_val = 0;
+      if (cv->is_usize()) {
+        size_val = cv->as_usize();
+      } else if (cv->is_any_int()) {
+        auto v = cv->as_any_int();
+        if (v < 0)
+          throw SemanticException("array size cannot be negative");
+        size_val = static_cast<std::uint64_t>(v);
+      } else {
+        throw SemanticException("array size must be usize");
+      }
+
+      LOG_DEBUG("[SecondPass] Resolved ArrayExpr size: " +
+                std::to_string(size_val));
+
+      node.actual_size = static_cast<int64_t>(size_val);
+
+      node.repeat->first->accept(*this);
     }
   }
 
@@ -297,14 +323,14 @@ private:
     }
   }
 
-  SemType resolve_type(const LiteralType &t) {
+  SemType resolve_type(LiteralType &t) {
     if (t.is_base()) {
       return SemType::primitive(map_primitive(t.as_base()));
     }
     if (t.is_tuple()) {
       std::vector<SemType> elems;
       elems.reserve(t.as_tuple().size());
-      for (const auto &el : t.as_tuple()) {
+      for (auto &el : t.as_tuple()) {
         elems.push_back(resolve_type(el));
       }
       return SemType::tuple(std::move(elems));
@@ -331,6 +357,11 @@ private:
       } else {
         throw SemanticException("array size must be usize");
       }
+
+      t.as_array().actual_size = size_val;
+
+      LOG_DEBUG("[SecondPass] Resolved array size: " +
+                std::to_string(size_val));
 
       return SemType::array(resolve_type(*arr.element), size_val);
     }
@@ -394,6 +425,8 @@ private:
       return SemPrimitiveKind::NEVER;
     case PrimitiveLiteralType::UNIT:
       return SemPrimitiveKind::UNIT;
+    case PrimitiveLiteralType::ANY_INT:
+      break;
     }
     return SemPrimitiveKind::UNKNOWN;
   }
