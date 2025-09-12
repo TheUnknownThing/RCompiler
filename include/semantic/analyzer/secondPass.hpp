@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "ast/nodes/pattern.hpp"
+#include "ast/nodes/stmt.hpp"
 #include "ast/nodes/topLevel.hpp"
 #include "semantic/analyzer/constEvaluator.hpp"
 #include "semantic/error/exceptions.hpp"
@@ -58,8 +59,6 @@ public:
       visit(*decl);
     } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
       visit(*decl);
-    } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
-      visit(*decl);
     } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
       visit(*expr);
     } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
@@ -68,6 +67,12 @@ public:
       visit(*expr);
     } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
       visit(*expr);
+    }
+    // we only care about type resolution of letstmt and impldecl here
+    else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
+      visit(*stmt);
+    } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
+      visit(*decl);
     }
   }
 
@@ -194,9 +199,35 @@ public:
   }
 
   void visit(ImplDecl &node) override {
-    for (const auto &assoc : node.associated_items) {
-      if (assoc)
+    for (auto &assoc : node.associated_items) {
+      if (assoc) {
         assoc->accept(*this);
+        if (auto *fn = dynamic_cast<FunctionDecl *>(assoc.get())) {
+          if (fn->params) {
+            for (auto &p : *fn->params) {
+              SemType pt = resolve_type(p.second);
+              if (pt.is_array() && pt.as_array().size < 0) {
+                throw SemanticException("array size not resolved");
+              }
+              p.second.as_array().actual_size =
+                  pt.is_array() ? pt.as_array().size : -1;
+            }
+          }
+          SemType rt = resolve_type(fn->return_type);
+          if (rt.is_array() && rt.as_array().size < 0) {
+            throw SemanticException("array size not resolved");
+          }
+          fn->return_type.as_array().actual_size =
+              rt.is_array() ? rt.as_array().size : -1;
+        } else if (auto *cst = dynamic_cast<ConstantItem *>(assoc.get())) {
+          SemType ct = resolve_type(cst->type);
+          if (ct.is_array() && ct.as_array().size < 0) {
+            throw SemanticException("array size not resolved");
+          }
+          cst->type.as_array().actual_size =
+              ct.is_array() ? ct.as_array().size : -1;
+        }
+      }
     }
   }
 
@@ -233,6 +264,16 @@ public:
   void visit(WhileExpression &node) override {
     if (node.body)
       node.body->accept(*this);
+  }
+
+  void visit(LetStatement &node) override {
+    SemType annotated = resolve_type(node.type);
+    if (node.type.is_array()) {
+      node.type.as_array().actual_size = annotated.as_array().size;
+    }
+    if (node.expr) {
+      node.expr->accept(*this);
+    }
   }
 
   void visit(RootNode &) override {}
