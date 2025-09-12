@@ -62,6 +62,10 @@ public:
   parsec::Parser<
       std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
   argument_list_parser();
+  parsec::Parser<std::pair<
+      std::optional<SelfParam>,
+      std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>>
+  parse_function_parameters();
   parsec::Parser<std::vector<std::shared_ptr<Expression>>>
   expression_list_parser();
 
@@ -199,27 +203,36 @@ inline std::shared_ptr<BaseNode> Parser::parse_statement() {
 }
 
 inline parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
-  auto argument_list = argument_list_parser();
+  auto params = optional(parse_function_parameters());
   auto return_type = tok(TokenType::ARROW).thenR(typ);
 
   auto header =
       tok(TokenType::FN)
           .thenR(parsec::identifier)
-          .combine(optional(argument_list),
-                   [](const auto &name, const auto &params) {
-                     LOG_DEBUG("Parsing function: " + name + " with " +
-                               std::to_string(params ? params->size() : 0) +
-                               " parameters");
-                     return std::make_pair(name, params);
+          .combine(params,
+                   [](const auto &name, const auto &param_info) {
+                     LOG_DEBUG("Parsing function: " + name);
+                     return std::make_pair(name, param_info);
                    })
-          .combine(optional(return_type), [](const auto &pm_list,
+          .combine(optional(return_type), [](const auto &name_params,
                                              const auto &ty) {
             auto ret_ty = ty.value_or(LiteralType(PrimitiveLiteralType::UNIT));
-            return std::tuple<std::string,
+
+            std::optional<SelfParam> self_param;
+            std::optional<std::vector<
+                std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
+                regular_params;
+
+            if (name_params.second.has_value()) {
+              self_param = name_params.second->first;
+              regular_params = name_params.second->second;
+            }
+
+            return std::tuple<std::string, std::optional<SelfParam>,
                               std::optional<std::vector<std::pair<
                                   std::shared_ptr<BasePattern>, LiteralType>>>,
-                              LiteralType>{pm_list.first, pm_list.second,
-                                           ret_ty};
+                              LiteralType>{name_params.first, self_param,
+                                           regular_params, ret_ty};
           });
 
   auto body_block = parse_block_expression().map([](auto e) {
@@ -246,7 +259,7 @@ inline parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
   return header.combine(body, [](auto h, auto b) {
     LOG_DEBUG("Successfully parsed function: " + std::get<0>(h));
     return std::make_shared<FunctionDecl>(std::get<0>(h), std::get<1>(h),
-                                          std::get<2>(h), b);
+                                          std::get<2>(h), std::get<3>(h), b);
   });
 }
 
@@ -1321,15 +1334,78 @@ Parser::pattern_and_type_parser() {
       });
 }
 
+inline parsec::Parser<std::pair<
+    std::optional<SelfParam>,
+    std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>>
+Parser::parse_function_parameters() {
+
+  auto parse_shorthand_self = []() -> parsec::Parser<SelfParam> {
+    auto ref_parser = optional(tok(TokenType::AMPERSAND));
+    auto mut_parser = optional(tok(TokenType::MUT));
+    auto self_parser = tok(TokenType::SELF);
+
+    return ref_parser
+        .combine(mut_parser,
+                 [](auto ref, auto mut_tok) {
+                   return std::make_pair(ref.has_value(), mut_tok.has_value());
+                 })
+        .combine(self_parser, [](auto flags, auto) {
+          return SelfParam(flags.first, flags.second);
+        });
+  };
+
+  auto parse_typed_self = []() -> parsec::Parser<SelfParam> {
+    auto mut_parser = optional(tok(TokenType::MUT));
+    auto self_parser = tok(TokenType::SELF);
+    auto colon_type = tok(TokenType::COLON).thenR(typ);
+
+    return mut_parser
+        .combine(self_parser,
+                 [](auto mut_tok, auto) { return mut_tok.has_value(); })
+        .combine(colon_type, [](auto is_mut, auto ty) {
+          return SelfParam(false, is_mut, ty);
+        });
+  };
+
+  auto parse_self_param = [parse_shorthand_self,
+                           parse_typed_self]() -> parsec::Parser<SelfParam> {
+    auto shorthand = parse_shorthand_self();
+    auto typed = parse_typed_self();
+
+    return parsec::Parser<SelfParam>(
+        [shorthand, typed](const std::vector<rc::Token> &toks,
+                           size_t &pos) -> parsec::ParseResult<SelfParam> {
+          size_t saved = pos;
+          if (auto s = shorthand.parse(toks, pos))
+            return *s;
+          pos = saved;
+          if (auto t = typed.parse(toks, pos))
+            return *t;
+          return std::nullopt;
+        });
+  };
+
+  auto self_param = optional(parse_self_param());
+  auto regular_params = argument_list_parser();
+
+  return tok(TokenType::L_PAREN)
+      .thenR(self_param)
+      .thenL(optional(tok(TokenType::COMMA)))
+      .combine(regular_params,
+               [](const auto &self, const auto &args) {
+                 LOG_DEBUG("Parsed function parameters");
+                 return std::make_pair(self, args);
+               })
+      .thenL(tok(TokenType::R_PAREN));
+}
+
 inline parsec::Parser<
     std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
 Parser::argument_list_parser() {
   using namespace parsec;
   auto pattern_and_type = pattern_and_type_parser();
 
-  return tok(TokenType::L_PAREN)
-      .thenR(many(pattern_and_type.thenL(optional(tok(TokenType::COMMA)))))
-      .thenL(tok(TokenType::R_PAREN))
+  return many(pattern_and_type.thenL(optional(tok(TokenType::COMMA))))
       .map([](auto args) {
         LOG_DEBUG("Parsed argument list with " + std::to_string(args.size()) +
                   " arguments");

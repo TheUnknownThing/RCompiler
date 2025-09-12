@@ -46,9 +46,13 @@ struct LiteralType {
   struct Union {
     std::vector<LiteralType> alternatives;
   };
+  struct Reference {
+    std::shared_ptr<LiteralType> target;
+    bool is_mutable;
+  };
 
-  using Storage =
-      std::variant<PrimitiveLiteralType, Tuple, Array, Slice, Path, Union>;
+  using Storage = std::variant<PrimitiveLiteralType, Tuple, Array, Slice, Path,
+                               Union, Reference>;
 
   Storage storage;
 
@@ -73,6 +77,10 @@ struct LiteralType {
   static LiteralType union_of(std::vector<LiteralType> alts) {
     return LiteralType{Union{std::move(alts)}};
   }
+  static LiteralType reference(LiteralType target, bool is_mutable) {
+    return LiteralType{Reference{
+        std::make_shared<LiteralType>(std::move(target)), is_mutable}};
+  }
 
   bool is_base() const {
     return std::holds_alternative<PrimitiveLiteralType>(storage);
@@ -81,6 +89,9 @@ struct LiteralType {
   bool is_array() const { return std::holds_alternative<Array>(storage); }
   bool is_slice() const { return std::holds_alternative<Slice>(storage); }
   bool is_path() const { return std::holds_alternative<Path>(storage); }
+  bool is_reference() const {
+    return std::holds_alternative<Reference>(storage);
+  }
 
   PrimitiveLiteralType as_base() const {
     return std::get<PrimitiveLiteralType>(storage);
@@ -103,6 +114,8 @@ struct LiteralType {
   std::vector<LiteralType> &as_union() {
     return std::get<Union>(storage).alternatives;
   }
+  const Reference &as_reference() const { return std::get<Reference>(storage); }
+  Reference &as_reference() { return std::get<Reference>(storage); }
 };
 
 inline bool operator==(const LiteralType &a, const LiteralType &b) {
@@ -123,69 +136,11 @@ inline bool operator==(const LiteralType &a, const LiteralType &b) {
   if (a.is_path()) {
     return a.as_path().segments == b.as_path().segments;
   }
+  if (a.is_reference() && b.is_reference()) {
+    return *a.as_reference().target == *b.as_reference().target &&
+           a.as_reference().is_mutable == b.as_reference().is_mutable;
+  }
   return false;
-}
-
-inline bool operator<(const LiteralType &a, const LiteralType &b) {
-  auto rank = [](const LiteralType &t) -> int {
-    if (t.is_base())
-      return 0;
-    if (t.is_tuple())
-      return 1;
-    if (t.is_array())
-      return 2;
-    if (t.is_slice())
-      return 3;
-    if (t.is_path())
-      return 4;
-    return 6;
-  };
-  int ra = rank(a), rb = rank(b);
-  if (ra != rb)
-    return ra < rb;
-
-  if (a.is_base() && b.is_base())
-    return static_cast<int>(a.as_base()) < static_cast<int>(b.as_base());
-
-  if (a.is_tuple() && b.is_tuple()) {
-    const auto &ae = a.as_tuple();
-    const auto &be = b.as_tuple();
-    const auto n = std::min(ae.size(), be.size());
-    for (size_t i = 0; i < n; ++i) {
-      if (ae[i] < be[i])
-        return true;
-      if (be[i] < ae[i])
-        return false;
-    }
-    return ae.size() < be.size();
-  }
-
-  if (a.is_array() && b.is_array()) {
-    const auto &ae = a.as_array();
-    const auto &be = b.as_array();
-    if (*ae.element == *be.element)
-      return ae.size < be.size;
-    return *ae.element < *be.element;
-  }
-
-  if (a.is_slice() && b.is_slice()) {
-    return *a.as_slice().element < *b.as_slice().element;
-  }
-
-  if (a.is_path() && b.is_path()) {
-    const auto &ap = a.as_path().segments;
-    const auto &bp = b.as_path().segments;
-    const auto n = std::min(ap.size(), bp.size());
-    for (size_t i = 0; i < n; ++i) {
-      if (ap[i] < bp[i])
-        return true;
-      if (bp[i] < ap[i])
-        return false;
-    }
-    return ap.size() < bp.size();
-  }
-
-  return false; // same rank but no comparable case
 }
 
 inline const std::map<PrimitiveLiteralType, std::string>
@@ -253,6 +208,11 @@ inline std::string to_string(const LiteralType &t) {
       out += segments[i];
     }
     return out.empty() ? std::string("<path>") : out;
+  }
+  if (t.is_reference()) {
+    const auto &ref = t.as_reference();
+    return "&" + std::string(ref.is_mutable ? "mut " : "") +
+           to_string(*ref.target);
   }
 
   return "<unknown>";

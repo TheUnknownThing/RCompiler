@@ -760,6 +760,10 @@ private:
       }
       throw SemanticException("qualified paths not supported in types");
     }
+    if (type.is_reference()) {
+      return SemType::reference(resolve_type(*type.as_reference().target),
+                                type.as_reference().is_mutable);
+    }
 
     return SemType::primitive(SemPrimitiveKind::UNKNOWN);
   }

@@ -233,6 +233,10 @@ private:
       // qualified path, no such thing
       throw SemanticException("qualified path not supported");
     }
+    if (t.is_reference()) {
+      return SemType::reference(resolve_type(*t.as_reference().target),
+                                t.as_reference().is_mutable);
+    }
     throw SemanticException("unknown type");
   }
 

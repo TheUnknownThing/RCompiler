@@ -13,8 +13,8 @@
 #include <variant>
 #include <vector>
 
-#include "../../lexer/lexer.hpp"
-#include "../types.hpp"
+#include "lexer/lexer.hpp"
+#include "ast/types.hpp"
 
 namespace parsec {
 
@@ -377,6 +377,21 @@ inline Parser<rc::LiteralType> typ =
       if (pos < toks.size() && toks[pos].type == rc::TokenType::NOT) {
         pos++;
         return rc::LiteralType::base(rc::PrimitiveLiteralType::NEVER);
+      }
+
+      if (pos < toks.size() && toks[pos].type == rc::TokenType::AMPERSAND) {
+        pos++;
+        bool is_mutable = false;
+        if (pos < toks.size() && toks[pos].type == rc::TokenType::MUT) {
+          is_mutable = true;
+          pos++;
+        }
+        auto target = typ.parse(toks, pos);
+        if (!target) {
+          pos = saved_pos;
+          return std::nullopt;
+        }
+        return rc::LiteralType::reference(*target, is_mutable);
       }
 
       // primitive type or path type

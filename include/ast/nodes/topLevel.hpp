@@ -15,22 +15,36 @@ public:
   virtual void accept(class BaseVisitor &visitor) = 0;
 };
 
+struct SelfParam {
+  bool is_reference = false;
+  bool is_mutable = false;
+  std::optional<LiteralType> explicit_type;
+
+  SelfParam(bool ref = false, bool mut_val = false,
+            std::optional<LiteralType> ty = std::nullopt)
+      : is_reference(ref), is_mutable(mut_val), explicit_type(ty) {}
+};
+
 class FunctionDecl : public BaseItem {
 public:
   std::string name;
-  std::optional<std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>> params;
+  std::optional<SelfParam> self_param;
+  std::optional<
+      std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
+      params;
   LiteralType return_type;
   std::optional<std::shared_ptr<Expression>>
       body; // BlockExpression or semicolon
 
   FunctionDecl(
-      const std::string &nameTok,
-      const std::optional<std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
+      const std::string &nameTok, const std::optional<SelfParam> &self_param,
+      const std::optional<
+          std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
           &params,
       LiteralType return_type,
       std::optional<std::shared_ptr<Expression>> body = std::nullopt)
-      : name(nameTok), params(params), return_type(return_type),
-        body(std::move(body)) {}
+      : name(nameTok), self_param(self_param), params(params),
+        return_type(return_type), body(std::move(body)) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
