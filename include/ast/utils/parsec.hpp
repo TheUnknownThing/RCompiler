@@ -324,7 +324,7 @@ parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
     // () as unit type
     if (pos < toks.size() && toks[pos].type == rc::TokenType::R_PAREN) {
       pos++;
-      return rc::LiteralType::tuple(std::move(elements));
+      return rc::LiteralType(rc::PrimitiveLiteralType::UNIT);
     }
 
     auto first = parse_type_impl(toks, pos, parse_expr);

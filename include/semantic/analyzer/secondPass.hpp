@@ -104,7 +104,9 @@ public:
 
     if (sig.name == "main") {
       if (!(sig.return_type == SemType::primitive(SemPrimitiveKind::UNIT))) {
-        throw SemanticException("main function must have return type '()'");
+        throw SemanticException(
+            "main function must have return type '()', got '" +
+            to_string(sig.return_type) + "'");
       }
     }
 
@@ -204,7 +206,7 @@ public:
   void visit(ImplDecl &node) override {
     for (auto &assoc : node.associated_items) {
       if (assoc) {
-        assoc->accept(*this);
+        // assoc->accept(*this);
         if (auto *fn = dynamic_cast<FunctionDecl *>(assoc.get())) {
           if (fn->params) {
             for (auto &p : *fn->params) {
