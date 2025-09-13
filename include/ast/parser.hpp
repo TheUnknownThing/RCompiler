@@ -1499,9 +1499,40 @@ inline PrattTable default_table(rc::Parser *p) {
       return nullptr;
     return std::make_shared<rc::PrefixExpression>(op, std::move(right));
   };
+  auto deref_op = [&tbl](const std::vector<rc::Token> &toks,
+                         size_t &pos) -> ExprPtr {
+    rc::Token op = toks[pos - 1];
+    ExprPtr right = tbl.parse_expression(toks, pos, 100); // Unary precedence
+    if (!right)
+      return nullptr;
+    return std::make_shared<rc::DerefExpression>(op, std::move(right));
+  };
+  auto borrow_expr = [&tbl](const std::vector<rc::Token> &toks,
+                            size_t &pos) -> ExprPtr {
+    rc::Token op = toks[pos - 1];
+
+    if (pos < toks.size() && toks[pos].type == rc::TokenType::MUT) {
+      pos++; // Consume 'mut' token
+
+      ExprPtr right = tbl.parse_expression(toks, pos, 100);
+      if (!right) {
+        return nullptr;
+      }
+      return std::make_shared<rc::BorrowExpression>(op, std::move(right), true);
+    } else {
+      ExprPtr right = tbl.parse_expression(toks, pos, 100);
+      if (!right) {
+        return nullptr;
+      }
+      return std::make_shared<rc::BorrowExpression>(op, std::move(right));
+    }
+  };
   tbl.prefix(rc::TokenType::PLUS, prefix_op);
   tbl.prefix(rc::TokenType::MINUS, prefix_op);
   tbl.prefix(rc::TokenType::NOT, prefix_op);
+  tbl.prefix(rc::TokenType::AND, borrow_expr);
+  tbl.prefix(rc::TokenType::AMPERSAND, borrow_expr);
+  tbl.prefix(rc::TokenType::STAR, deref_op);
 
   auto bin = [](ExprPtr l, rc::Token op, ExprPtr r) {
     return std::make_shared<rc::BinaryExpression>(std::move(l), std::move(op),
