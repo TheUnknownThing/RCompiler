@@ -4,12 +4,11 @@
 
 #include "ast/nodes/topLevel.hpp"
 #include "semantic/analyzer/controlAnalyzer.hpp"
-#include "semantic/analyzer/constEvaluationPass.hpp"
+#include "semantic/analyzer/dirtyWorkPass.hpp"
 #include "semantic/analyzer/firstPass.hpp"
+#include "semantic/analyzer/fourthPass.hpp"
 #include "semantic/analyzer/secondPass.hpp"
 #include "semantic/analyzer/thirdPass.hpp"
-#include "semantic/analyzer/fourthPass.hpp"
-#include "semantic/analyzer/dirtyWorkPass.hpp"
 
 namespace rc {
 
@@ -32,13 +31,9 @@ inline void SemanticAnalyzer::analyze(const std::shared_ptr<RootNode> &root) {
     rc::print_scope_tree(*first.root_scope);
   }
 
-  // Second pass resolves semantic type of items
+  // Second pass resolves semantic type and evaluates constant expressions
   SecondPassResolver second;
   second.run(std::dynamic_pointer_cast<RootNode>(root), first.root_scope);
-
-  // Constant evaluation pass
-  ConstEvaluationPass const_eval;
-  const_eval.run(std::dynamic_pointer_cast<RootNode>(root), first.root_scope);
 
   // Third pass promotes impl to struct level
   ThirdPassPromoter third;

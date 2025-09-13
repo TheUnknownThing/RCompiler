@@ -50,11 +50,10 @@ public:
     if (it != expr_cache.end())
       return it->second;
     expr->accept(*this);
+    if (expr_cache.find(expr) == expr_cache.end()) {
+      throw SemanticException("expression not cached after evaluation");
+    }
     return expr_cache.at(expr);
-  }
-
-  const std::unordered_map<const BaseNode *, SemType> &results() const {
-    return expr_cache;
   }
 
   void visit(BaseNode &node) override {
@@ -154,6 +153,18 @@ public:
       pending_params = std::make_pair(meta.param_names, meta.param_types);
       node.body.value()->accept(*this);
       pending_params.reset();
+      auto *block_expr =
+          dynamic_cast<BlockExpression *>(node.body.value().get());
+      if (block_expr && block_expr->final_expr) {
+        // validate final expression type
+        auto ret_typ = expr_cache.at(block_expr->final_expr.value().get());
+        if (!can_assign(meta.return_type, ret_typ)) {
+          throw TypeError("function '" + node.name +
+                          "' return type mismatch: expected '" +
+                          to_string(meta.return_type) + "' got '" +
+                          to_string(ret_typ) + "'");
+        }
+      }
     }
 
     function_return_stack.pop_back();
@@ -314,47 +325,52 @@ public:
       throw TypeError("return type mismatch: expected '" + to_string(expected) +
                       "' got '" + to_string(rt) + "'");
     }
-    cache_expr(&node, SemType::primitive(SemPrimitiveKind::NEVER));
+    cache_expr(&node, rt);
   }
 
   void visit(CallExpression &node) override {
-    auto *nameExpr = dynamic_cast<NameExpression *>(node.function_name.get());
-    if (!nameExpr) {
-      throw SemanticException("call target must be a function name");
-    }
-
-    const FunctionMetaData *fn = nullptr;
-    for (auto *s = current_scope_node; s; s = s->parent) {
-      if (auto *it = s->find_value_item(nameExpr->name)) {
-        if (it->kind == ItemKind::Function && it->has_function_meta()) {
-          fn = &it->as_function_meta();
-          break;
+    if (auto *nameExpr =
+            dynamic_cast<NameExpression *>(node.function_name.get())) {
+      const FunctionMetaData *fn = nullptr;
+      for (auto *s = current_scope_node; s; s = s->parent) {
+        if (auto *it = s->find_value_item(nameExpr->name)) {
+          if (it->kind == ItemKind::Function && it->has_function_meta()) {
+            fn = &it->as_function_meta();
+            break;
+          }
         }
       }
-    }
-    if (!fn) {
-      throw SemanticException("unknown function '" + nameExpr->name + "'");
-    }
-
-    const size_t argc = node.arguments.size();
-    if (fn->param_types.size() != argc) {
-      throw TypeError("function '" + fn->name +
-                      "' argument count mismatch: expected " +
-                      std::to_string(fn->param_types.size()) + ", got " +
-                      std::to_string(argc));
-    }
-
-    for (size_t i = 0; i < argc; ++i) {
-      auto at = evaluate(node.arguments[i].get());
-      const auto &expected = fn->param_types[i];
-      if (!can_assign(expected, at)) {
-        throw TypeError("argument type mismatch in call to " + fn->name +
-                        " at position " + std::to_string(i) + ": expected " +
-                        to_string(expected) + " got " + to_string(at));
+      if (!fn) {
+        throw SemanticException("unknown function '" + nameExpr->name + "'");
       }
+
+      const size_t argc = node.arguments.size();
+      if (fn->param_types.size() != argc) {
+        throw TypeError("function '" + fn->name +
+                        "' argument count mismatch: expected " +
+                        std::to_string(fn->param_types.size()) + ", got " +
+                        std::to_string(argc));
+      }
+
+      for (size_t i = 0; i < argc; ++i) {
+        auto at = evaluate(node.arguments[i].get());
+        const auto &expected = fn->param_types[i];
+        if (!can_assign(expected, at)) {
+          throw TypeError("argument type mismatch in call to " + fn->name +
+                          " at position " + std::to_string(i) + ": expected " +
+                          to_string(expected) + " got " + to_string(at));
+        }
+      }
+
+      cache_expr(&node, fn->return_type);
+      return;
+    } else if (auto *pathExpr =
+                   dynamic_cast<PathExpression *>(node.function_name.get())) {
+      resolve_path_function_call(*pathExpr, node);
+      return;
     }
 
-    cache_expr(&node, fn->return_type);
+    throw SemanticException("unsupported call target");
   }
 
   void visit(MethodCallExpression &node) override {
@@ -486,6 +502,8 @@ public:
         extract_pattern_bindings(*names[i], types[i]);
       }
       pending_params.reset();
+
+      LOG_DEBUG("[FourthPass] Successfully added function bindings");
     }
 
     for (const auto &st : node.statements) {
@@ -522,8 +540,10 @@ public:
   void visit(ArrayExpression &node) override {
     if (node.repeat) {
       auto el = evaluate(node.repeat->first.get());
-      // TODO: validate the repeat count constant.
-      cache_expr(&node, SemType::array(el, 0));
+      if (node.actual_size < 0) {
+        throw SemanticException("ArrayExpr size not resolved");
+      }
+      cache_expr(&node, SemType::array(el, node.actual_size));
     } else {
       if (node.elements.empty()) {
         cache_expr(&node, SemType::array(
@@ -565,14 +585,77 @@ public:
   void visit(TupleExpression &) override {}
 
   void visit(BreakExpression &node) override {
-    cache_expr(&node, SemType::primitive(SemPrimitiveKind::NEVER));
+    auto t = SemType::primitive(SemPrimitiveKind::UNIT);
+    if (node.expr.has_value()) {
+      t = evaluate(node.expr.value().get());
+    }
+    cache_expr(&node, t);
   }
 
   void visit(ContinueExpression &node) override {
     cache_expr(&node, SemType::primitive(SemPrimitiveKind::NEVER));
   }
 
-  void visit(PathExpression &) override {}
+  void visit(PathExpression &node) override {
+    // as we already handled path function call, so here we handle it as value
+    if (node.leading_colons) {
+      throw SemanticException("leading colons in paths are not supported");
+    }
+    if (node.segments.empty()) {
+      throw SemanticException("empty path in call");
+    }
+    for (const auto &seg : node.segments) {
+      if (seg.call.has_value()) {
+        throw SemanticException("path segment expressions are not supported");
+      }
+    }
+
+    if (node.segments.size() != 2) {
+      throw SemanticException("only TypeName::value calls are supported");
+    }
+
+    const std::string &type_name = node.segments[0].ident;
+    const std::string &val_name = node.segments[1].ident;
+
+    const CollectedItem *type_item = nullptr;
+    for (auto *s = current_scope_node; s; s = s->parent) {
+      if (auto *it = s->find_type_item(type_name)) {
+        type_item = it;
+        break;
+      }
+    }
+    if (!type_item) {
+      throw SemanticException("unknown type '" + type_name + "'");
+    }
+    if (type_item->has_struct_meta()) {
+      const auto &meta = type_item->as_struct_meta();
+
+      const ConstantMetaData *found = nullptr;
+      for (const auto &m : meta.constants) {
+        if (m.name == val_name) {
+          found = &m;
+          break;
+        }
+      }
+      if (!found) {
+        throw TypeError("unknown constant " + val_name);
+      }
+
+      cache_expr(&node, found->type);
+    } else if (type_item->has_enum_meta()) {
+      const auto &meta = type_item->as_enum_meta();
+
+      for (const auto &variant : meta.variant_names) {
+        if (variant == val_name) {
+          cache_expr(&node, SemType::named(type_item));
+          return;
+        }
+      }
+      throw TypeError("unknown enum variant " + val_name);
+    } else {
+      throw TypeError("type '" + type_name + "' is not a struct or enum");
+    }
+  }
 
   void visit(QualifiedPathExpression &) override {
     throw SemanticException("qualified path expression not supported yet");
@@ -741,8 +824,11 @@ private:
       return SemType::tuple(std::move(elem_types));
     }
     if (type.is_array()) {
+      if (type.as_array().actual_size < 0) {
+        throw SemanticException("array size not resolved");
+      }
       return SemType::array(resolve_type(*type.as_array().element),
-                            type.as_array().size);
+                            type.as_array().actual_size);
     }
     if (type.is_slice()) {
       return SemType::slice(resolve_type(*type.as_slice().element));
@@ -1219,6 +1305,83 @@ private:
                       to_string(dst) + "'");
     }
     cache_expr(&node, dst);
+  }
+
+  void resolve_path_function_call(const PathExpression &pe,
+                                  CallExpression &node) {
+    if (pe.leading_colons) {
+      throw SemanticException("leading colons in paths are not supported");
+    }
+    if (pe.segments.empty()) {
+      throw SemanticException("empty path in call");
+    }
+    for (const auto &seg : pe.segments) {
+      if (seg.call.has_value()) {
+        throw SemanticException("path segment expressions are not supported");
+      }
+    }
+
+    if (pe.segments.size() != 2) {
+      throw SemanticException("only TypeName::function calls are supported");
+    }
+
+    const std::string &type_name = pe.segments[0].ident;
+    const std::string &fn_name = pe.segments[1].ident;
+
+    const CollectedItem *type_item = nullptr;
+    for (auto *s = current_scope_node; s; s = s->parent) {
+      if (auto *it = s->find_type_item(type_name)) {
+        type_item = it;
+        break;
+      }
+    }
+    if (!type_item) {
+      throw SemanticException("unknown type '" + type_name + "'");
+    }
+    if (!type_item->has_struct_meta()) {
+      throw TypeError("type '" + type_name + "' is not a struct");
+    }
+
+    const auto &meta = type_item->as_struct_meta();
+
+    const FunctionMetaData *found = nullptr;
+    for (const auto &m : meta.methods) {
+      if (m.name == fn_name) {
+        found = &m;
+        break;
+      }
+    }
+    if (!found) {
+      throw TypeError("unknown method " + fn_name);
+    }
+
+    const auto argc = node.arguments.size();
+    const auto &params = found->param_types;
+
+    if (params.size() == argc + 1) {
+      if (params[0] == SemType::named(type_item)) {
+        throw TypeError("cannot call instance method " + fn_name +
+                        " as associated function; use method call syntax");
+      }
+    }
+
+    if (params.size() != argc) {
+      throw TypeError(
+          "function '" + fn_name + "' argument count mismatch: expected " +
+          std::to_string(params.size()) + ", got " + std::to_string(argc));
+    }
+
+    for (size_t i = 0; i < argc; ++i) {
+      auto at = evaluate(node.arguments[i].get());
+      const auto &expected = params[i];
+      if (!can_assign(expected, at)) {
+        throw TypeError("argument type mismatch in call to " + fn_name +
+                        " at position " + std::to_string(i) + ": expected " +
+                        to_string(expected) + " got " + to_string(at));
+      }
+    }
+
+    cache_expr(&node, found->return_type);
   }
 };
 

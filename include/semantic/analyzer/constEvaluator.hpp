@@ -7,6 +7,7 @@
 #include <variant>
 #include <vector>
 
+#include "ast/nodes/base.hpp"
 #include "ast/nodes/expr.hpp"
 #include "semantic/error/exceptions.hpp"
 #include "semantic/scope.hpp"
@@ -161,7 +162,8 @@ struct ConstValue {
 
 class ConstEvaluator {
 public:
-  ConstEvaluator() = default;
+  explicit ConstEvaluator(BaseVisitor *second_pass_visitor = nullptr)
+      : second_pass_visitor(second_pass_visitor) {}
 
   std::optional<ConstValue> evaluate(const Expression *expr,
                                      ScopeNode *semantic_scope) {
@@ -198,6 +200,8 @@ public:
 
 private:
   ScopeNode *current_scope = nullptr;
+
+  BaseVisitor *second_pass_visitor = nullptr;
 
   static bool is_integer_value(const ConstValue &v) {
     return v.is_any_int() || v.is_i32() || v.is_u32() || v.is_isize() ||
@@ -318,6 +322,8 @@ private:
         if (auto *item = scope->find_value_item(node.name)) {
           if (item->kind == ItemKind::Constant && item->has_constant_meta()) {
             const auto &meta = item->as_constant_meta();
+            LOG_DEBUG("[ConstEvaluator] Found constant reference: " +
+                      node.name);
             // this constant has already been evaluated, use its value
             if (meta.evaluated_value) {
               return *meta.evaluated_value;
@@ -331,18 +337,14 @@ private:
                 return *meta.evaluated_value;
               }
             }
-            LOG_ERROR("[ConstEvaluator] Found constant reference but could not "
-                      "evaluate: " +
-                      node.name);
             throw SemanticException("could not evaluate constant: " +
                                     node.name);
           }
         }
       }
+      throw SemanticException("name not found or not constant: " + node.name);
     }
-
-    LOG_ERROR("[ConstEvaluator] Name not found or not constant: " + node.name);
-    throw SemanticException("name not found or not constant: " + node.name);
+    throw SemanticException("no current scope to resolve name: " + node.name);
   }
 
   std::optional<ConstValue> evaluate_prefix(const PrefixExpression &node) {

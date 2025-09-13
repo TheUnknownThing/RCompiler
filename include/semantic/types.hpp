@@ -207,7 +207,7 @@ inline std::string to_string(const SemType &t) {
     return to_string(t.as_primitive().kind);
   if (t.is_tuple()) {
     const auto &els = t.as_tuple().elements;
-    std::string out = "(";
+    std::string out = "tuple(";
     for (size_t i = 0; i < els.size(); ++i) {
       if (i)
         out += ", ";

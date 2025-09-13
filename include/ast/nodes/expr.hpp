@@ -1,9 +1,9 @@
 #pragma once
 
+#include "ast/nodes/pattern.hpp"
 #include "ast/types.hpp"
 #include "base.hpp"
 #include "lexer/lexer.hpp"
-#include "ast/nodes/pattern.hpp"
 
 #include <map>
 #include <memory>
@@ -60,6 +60,26 @@ public:
   std::shared_ptr<Expression> right;
 
   PrefixExpression(rc::Token o, std::shared_ptr<Expression> r)
+      : op(std::move(o)), right(std::move(r)) {}
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class BorrowExpression : public Expression {
+public:
+  rc::Token op; // & or &&
+  bool is_mutable = false;
+  std::shared_ptr<Expression> right;
+
+  BorrowExpression(rc::Token o, std::shared_ptr<Expression> r, bool mut = false)
+      : op(std::move(o)), is_mutable(mut), right(std::move(r)) {}
+  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
+};
+
+class DerefExpression : public Expression {
+public:
+  rc::Token op; // *
+  std::shared_ptr<Expression> right;
+  DerefExpression(rc::Token o, std::shared_ptr<Expression> r)
       : op(std::move(o)), right(std::move(r)) {}
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
@@ -178,7 +198,8 @@ public:
   std::vector<std::shared_ptr<Expression>> elements; // when not repeated
   std::optional<
       std::pair<std::shared_ptr<Expression>, std::shared_ptr<Expression>>>
-      repeat; // (expr ; count)
+      repeat;               // (expr ; count)
+  int64_t actual_size = -1; // this size can only be set in const eval
 
   ArrayExpression(std::vector<std::shared_ptr<Expression>> elems)
       : elements(std::move(elems)), repeat(std::nullopt) {}

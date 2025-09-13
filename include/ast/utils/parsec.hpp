@@ -13,8 +13,8 @@
 #include <variant>
 #include <vector>
 
-#include "lexer/lexer.hpp"
 #include "ast/types.hpp"
+#include "lexer/lexer.hpp"
 
 namespace parsec {
 
@@ -270,153 +270,139 @@ inline Parser<std::string> int_literal =
       return std::nullopt;
     });
 
-inline Parser<rc::LiteralType> typ =
-    Parser<rc::LiteralType>([](const std::vector<rc::Token> &toks,
-                               size_t &pos) -> ParseResult<rc::LiteralType> {
-      size_t saved_pos = pos;
+using ExprParseFn = std::function<ParseResult<std::shared_ptr<rc::Expression>>(
+    const std::vector<rc::Token> &, size_t &)>;
 
-      // [...]
-      if (pos < toks.size() && toks[pos].type == rc::TokenType::L_BRACKET) {
-        pos++;
-        auto elem_ty = typ.parse(toks, pos);
-        if (!elem_ty) {
-          pos = saved_pos;
-          return std::nullopt;
-        }
+inline ParseResult<rc::LiteralType>
+parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
+                const ExprParseFn &parse_expr) {
+  size_t saved_pos = pos;
 
-        if (pos < toks.size() && toks[pos].type == rc::TokenType::SEMICOLON) {
-          pos++;
-          if (pos < toks.size() &&
-              toks[pos].type == rc::TokenType::INTEGER_LITERAL) {
-            std::string s = toks[pos++].lexeme;
-            // strip known integer suffixes
-            auto strip_suffix = [](std::string &str) {
-              static const char *suffixes[] = {"i32", "isize", "u32", "usize"};
-              for (auto suf : suffixes) {
-                std::string suffix{suf};
-                if (str.size() >= suffix.size() &&
-                    str.compare(str.size() - suffix.size(), suffix.size(),
-                                suffix) == 0) {
-                  str.erase(str.size() - suffix.size());
-                  break;
-                }
-              }
-            };
-            strip_suffix(s);
-            s.erase(std::remove(s.begin(), s.end(), '_'), s.end());
-            int base = 10;
-            if (s.rfind("0x", 0) == 0 || s.rfind("0X", 0) == 0) {
-              base = 16;
-              s.erase(0, 2);
-            } else if (s.rfind("0o", 0) == 0 || s.rfind("0O", 0) == 0) {
-              base = 8;
-              s.erase(0, 2);
-            } else if (s.rfind("0b", 0) == 0 || s.rfind("0B", 0) == 0) {
-              base = 2;
-              s.erase(0, 2);
-            }
-            std::uint64_t size_val = 0;
-            try {
-              size_val = s.empty() ? 0ULL
-                                   : static_cast<std::uint64_t>(
-                                         std::stoull(s, nullptr, base));
-            } catch (...) {
-              pos = saved_pos;
-              return std::nullopt;
-            }
-            if (pos < toks.size() &&
-                toks[pos].type == rc::TokenType::R_BRACKET) {
-              pos++; // consume ']'
-              return rc::LiteralType::array(*elem_ty, size_val);
-            }
-          }
-          pos = saved_pos;
-          return std::nullopt;
-        } else if (pos < toks.size() &&
-                   toks[pos].type == rc::TokenType::R_BRACKET) {
-          // slice
-          pos++;
-          return rc::LiteralType::slice(*elem_ty);
-        }
-        pos = saved_pos;
-      }
-
-      // tuple type
-      if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
-        pos++; // consume '('
-        std::vector<rc::LiteralType> elements;
-
-        // () as unit type
-        if (pos < toks.size() && toks[pos].type == rc::TokenType::R_PAREN) {
-          pos++;
-          return rc::LiteralType::tuple(std::move(elements));
-        }
-
-        auto first = typ.parse(toks, pos);
-        if (first) {
-          elements.push_back(*first);
-
-          while (pos < toks.size() && toks[pos].type == rc::TokenType::COMMA) {
-            pos++; // consume ','
-            auto next = typ.parse(toks, pos);
-            if (!next) {
-              pos = saved_pos;
-              return std::nullopt;
-            }
-            elements.push_back(*next);
-          }
-
-          if (pos < toks.size() && toks[pos].type == rc::TokenType::R_PAREN) {
-            pos++; // consume ')'
-            return rc::LiteralType::tuple(std::move(elements));
-          }
-        }
-        pos = saved_pos;
-      }
-
-      if (pos < toks.size() && toks[pos].type == rc::TokenType::NOT) {
-        pos++;
-        return rc::LiteralType::base(rc::PrimitiveLiteralType::NEVER);
-      }
-
-      if (pos < toks.size() && toks[pos].type == rc::TokenType::AMPERSAND) {
-        pos++;
-        bool is_mutable = false;
-        if (pos < toks.size() && toks[pos].type == rc::TokenType::MUT) {
-          is_mutable = true;
-          pos++;
-        }
-        auto target = typ.parse(toks, pos);
-        if (!target) {
-          pos = saved_pos;
-          return std::nullopt;
-        }
-        return rc::LiteralType::reference(*target, is_mutable);
-      }
-
-      // primitive type or path type
-      if (pos < toks.size() &&
-          toks[pos].type == rc::TokenType::NON_KEYWORD_IDENTIFIER) {
-        std::vector<std::string> segments;
-        segments.push_back(toks[pos++].lexeme);
-        while (pos + 1 < toks.size() &&
-               toks[pos].type == rc::TokenType::COLON_COLON &&
-               toks[pos + 1].type == rc::TokenType::NON_KEYWORD_IDENTIFIER) {
-          pos++;
-          segments.push_back(toks[pos++].lexeme);
-        }
-
-        if (segments.size() == 1) {
-          const std::string &name = segments.front();
-          auto it = rc::literal_type_map.find(name);
-          if (it != rc::literal_type_map.end()) {
-            return it->second;
-          }
-        }
-        return rc::LiteralType::path(std::move(segments));
-      }
-
+  // Array or slice: [ T ; expr ] or [ T ]
+  if (pos < toks.size() && toks[pos].type == rc::TokenType::L_BRACKET) {
+    pos++; // consume '['
+    auto elem_ty = parse_type_impl(toks, pos, parse_expr);
+    if (!elem_ty) {
+      pos = saved_pos;
       return std::nullopt;
-    });
+    }
+
+    // Array form: [ T ; expr ]
+    if (pos < toks.size() && toks[pos].type == rc::TokenType::SEMICOLON) {
+      pos++; // consume ';'
+      size_t expr_start = pos;
+      auto size_expr = parse_expr
+                           ? parse_expr(toks, pos)
+                           : ParseResult<std::shared_ptr<rc::Expression>>{};
+      if (!size_expr) {
+        // failed to parse expression; backtrack entire [ T ; expr ... ]
+        pos = saved_pos;
+        return std::nullopt;
+      }
+      if (pos >= toks.size() || toks[pos].type != rc::TokenType::R_BRACKET) {
+        pos = saved_pos;
+        return std::nullopt;
+      }
+      pos++; // consume ']'
+      return rc::LiteralType::array(std::move(*elem_ty), *size_expr);
+    }
+
+    // Slice form: [ T ]
+    if (pos < toks.size() && toks[pos].type == rc::TokenType::R_BRACKET) {
+      pos++; // consume ']'
+      return rc::LiteralType::slice(std::move(*elem_ty));
+    }
+
+    pos = saved_pos;
+  }
+
+  // Tuple type
+  if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
+    pos++; // consume '('
+    std::vector<rc::LiteralType> elements;
+
+    // () as unit type
+    if (pos < toks.size() && toks[pos].type == rc::TokenType::R_PAREN) {
+      pos++;
+      return rc::LiteralType(rc::PrimitiveLiteralType::UNIT);
+    }
+
+    auto first = parse_type_impl(toks, pos, parse_expr);
+    if (first) {
+      elements.push_back(*first);
+
+      while (pos < toks.size() && toks[pos].type == rc::TokenType::COMMA) {
+        pos++; // consume ','
+        auto next = parse_type_impl(toks, pos, parse_expr);
+        if (!next) {
+          pos = saved_pos;
+          return std::nullopt;
+        }
+        elements.push_back(*next);
+      }
+
+      if (pos < toks.size() && toks[pos].type == rc::TokenType::R_PAREN) {
+        pos++; // consume ')'
+        return rc::LiteralType::tuple(std::move(elements));
+      }
+    }
+    pos = saved_pos;
+  }
+
+  // Never type '!'
+  if (pos < toks.size() && toks[pos].type == rc::TokenType::NOT) {
+    pos++;
+    return rc::LiteralType::base(rc::PrimitiveLiteralType::NEVER);
+  }
+
+  // Reference type: & [mut] T
+  if (pos < toks.size() && toks[pos].type == rc::TokenType::AMPERSAND) {
+    pos++;
+    bool is_mutable = false;
+    if (pos < toks.size() && toks[pos].type == rc::TokenType::MUT) {
+      is_mutable = true;
+      pos++;
+    }
+    auto target = parse_type_impl(toks, pos, parse_expr);
+    if (!target) {
+      pos = saved_pos;
+      return std::nullopt;
+    }
+    return rc::LiteralType::reference(std::move(*target), is_mutable);
+  }
+
+  // Primitive type or path type
+  if (pos < toks.size() &&
+      toks[pos].type == rc::TokenType::NON_KEYWORD_IDENTIFIER) {
+    std::vector<std::string> segments;
+    segments.push_back(toks[pos++].lexeme);
+    while (pos + 1 < toks.size() &&
+           toks[pos].type == rc::TokenType::COLON_COLON &&
+           toks[pos + 1].type == rc::TokenType::NON_KEYWORD_IDENTIFIER) {
+      pos++; // consume '::'
+      segments.push_back(toks[pos++].lexeme);
+    }
+
+    if (segments.size() == 1) {
+      const std::string &name = segments.front();
+      auto it = rc::literal_type_map.find(name);
+      if (it != rc::literal_type_map.end()) {
+        return it->second;
+      }
+    }
+    return rc::LiteralType::path(std::move(segments));
+  }
+
+  return std::nullopt;
+}
+
+// Build a type parser with an injected expression parser (for array sizes).
+inline Parser<rc::LiteralType> typ_with_expr(ExprParseFn parse_expr) {
+  return Parser<rc::LiteralType>(
+      [parse_expr](const std::vector<rc::Token> &toks,
+                   size_t &pos) -> ParseResult<rc::LiteralType> {
+        return parse_type_impl(toks, pos, parse_expr);
+      });
+}
 
 } // namespace parsec

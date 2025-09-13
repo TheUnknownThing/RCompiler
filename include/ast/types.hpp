@@ -38,6 +38,8 @@ struct LiteralType {
   struct Array {
     std::shared_ptr<LiteralType> element;
     std::shared_ptr<Expression> size;
+
+    int64_t actual_size = -1; // this size can only be set in const eval
   };
   struct Slice {
     std::shared_ptr<LiteralType> element;
@@ -66,9 +68,10 @@ struct LiteralType {
   static LiteralType tuple(std::vector<LiteralType> elems) {
     return LiteralType{Tuple{std::move(elems)}};
   }
-  static LiteralType array(LiteralType elem, std::shared_ptr<Expression> size_expr) {
-    return LiteralType{
-        Array{std::make_shared<LiteralType>(std::move(elem)), std::move(size_expr)}};
+  static LiteralType array(LiteralType elem,
+                           std::shared_ptr<Expression> size_expr) {
+    return LiteralType{Array{std::make_shared<LiteralType>(std::move(elem)),
+                             std::move(size_expr)}};
   }
   static LiteralType slice(LiteralType elem) {
     return LiteralType{Slice{std::make_shared<LiteralType>(std::move(elem))}};

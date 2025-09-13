@@ -42,7 +42,6 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_continue_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_tuple_or_group_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_path_or_name_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_qualified_path_expression();
   parsec::Parser<std::vector<rc::StructExpression::FieldInit>>
   parse_struct_expr_fields();
 
@@ -68,6 +67,8 @@ public:
   parse_function_parameters();
   parsec::Parser<std::vector<std::shared_ptr<Expression>>>
   expression_list_parser();
+
+  parsec::Parser<LiteralType> type_parser();
 
 private:
   std::vector<Token> tokens;
@@ -204,7 +205,8 @@ inline std::shared_ptr<BaseNode> Parser::parse_statement() {
 
 inline parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
   auto params = optional(parse_function_parameters());
-  auto return_type = tok(TokenType::ARROW).thenR(typ);
+
+  auto return_type = tok(TokenType::ARROW).thenR(type_parser());
 
   auto header =
       tok(TokenType::FN)
@@ -267,7 +269,7 @@ inline parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
   using SD = StructDecl;
 
   auto field = parsec::identifier.thenL(tok(TokenType::COLON))
-                   .combine(typ, [](const auto &id, const auto &t) {
+                   .combine(type_parser(), [](const auto &id, const auto &t) {
                      LOG_DEBUG("Parsed struct field: " + id);
                      return std::make_pair(id, t);
                    });
@@ -277,7 +279,7 @@ inline parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
 
   auto tuple_fields =
       tok(TokenType::L_PAREN)
-          .thenR(many(typ.thenL(optional(tok(TokenType::COMMA)))))
+          .thenR(many(type_parser().thenL(optional(tok(TokenType::COMMA)))))
           .thenL(tok(TokenType::R_PAREN))
           .thenL(tok(TokenType::SEMICOLON));
 
@@ -489,12 +491,13 @@ inline parsec::Parser<std::shared_ptr<EnumDecl>> Parser::parse_enum() {
 inline parsec::Parser<std::shared_ptr<ConstantItem>>
 Parser::parse_const_item() {
   // const name : Type ( = expr )? ;
-  auto header = tok(TokenType::CONST)
-                    .thenR(parsec::identifier)
-                    .thenL(tok(TokenType::COLON))
-                    .combine(typ, [](const auto &name, const auto &ty) {
-                      return std::make_pair(name, ty);
-                    });
+  auto header =
+      tok(TokenType::CONST)
+          .thenR(parsec::identifier)
+          .thenL(tok(TokenType::COLON))
+          .combine(type_parser(), [](const auto &name, const auto &ty) {
+            return std::make_pair(name, ty);
+          });
 
   auto init_opt = optional(tok(TokenType::ASSIGN).thenR(any_expression()));
 
@@ -523,12 +526,12 @@ inline parsec::Parser<std::shared_ptr<ImplDecl>> Parser::parse_impl() {
 
   auto inherentImpl =
       tok(TokenType::IMPL)
-          .thenR(typ)
+          .thenR(type_parser())
           .thenL(tok(TokenType::L_BRACE))
           .combine(many(associated_item),
-                   [](const auto &typ, const auto &item) {
+                   [](const auto &tp, const auto &item) {
                      return std::make_shared<ImplDecl>(
-                         ImplDecl::ImplType::Inherent, typ, item);
+                         ImplDecl::ImplType::Inherent, tp, item);
                    })
           .thenL(tok(TokenType::R_BRACE));
 
@@ -536,7 +539,7 @@ inline parsec::Parser<std::shared_ptr<ImplDecl>> Parser::parse_impl() {
       tok(TokenType::IMPL)
           .thenR(identifier)
           .thenL(tok(TokenType::FOR))
-          .combine(typ,
+          .combine(type_parser(),
                    [](const auto &trait, const auto &forType) {
                      return std::make_pair(trait, forType);
                    })
@@ -1111,170 +1114,54 @@ Parser::parse_path_or_name_expression() {
         return std::nullopt;
       });
 
-  return parsec::Parser<std::shared_ptr<
-      Expression>>([path_ident](const std::vector<rc::Token> &toks, size_t &pos)
-                       -> parsec::ParseResult<std::shared_ptr<Expression>> {
-    size_t saved = pos;
-
-    // ::? PathExprSegment ( :: PathExprSegment )*
-    bool leading = false;
-    {
-      size_t before = pos;
-      if (tok(TokenType::COLON_COLON).parse(toks, pos)) {
-        leading = true;
-      } else {
-        pos = before;
-      }
-    }
-
-    auto first = path_ident.parse(toks, pos);
-    if (!first) {
-      pos = saved;
-      return std::nullopt;
-    }
-
-    std::vector<rc::PathExpression::Segment> segs;
-    segs.push_back(rc::PathExpression::Segment{first->first, std::nullopt});
-
-    bool saw_colon = false;
-    for (;;) {
-      size_t before = pos;
-      if (!tok(TokenType::COLON_COLON).parse(toks, pos)) {
-        pos = before;
-        break;
-      }
-      saw_colon = true;
-      auto next = path_ident.parse(toks, pos);
-      if (!next) {
-        pos = saved;
-        return std::nullopt;
-      }
-      segs.push_back(rc::PathExpression::Segment{next->first, std::nullopt});
-    }
-
-    // it is an identifier
-    if (!leading && !saw_colon && first->second) {
-      return std::make_shared<rc::NameExpression>(first->first);
-    }
-
-    return std::make_shared<rc::PathExpression>(leading, std::move(segs));
-  });
-}
-
-inline parsec::Parser<std::shared_ptr<Expression>>
-Parser::parse_qualified_path_expression() {
-  auto path_ident = parsec::Parser<std::string>(
-      [](const std::vector<rc::Token> &toks,
-         size_t &pos) -> parsec::ParseResult<std::string> {
-        size_t saved = pos;
-        if (auto id = parsec::identifier.parse(toks, pos))
-          return *id;
-        pos = saved;
-        if (tok(TokenType::SELF).parse(toks, pos))
-          return std::string("self");
-        pos = saved;
-        if (tok(TokenType::SELF_TYPE).parse(toks, pos))
-          return std::string("Self");
-        pos = saved;
-        if (tok(TokenType::SUPER).parse(toks, pos))
-          return std::string("super");
-        pos = saved;
-        if (tok(TokenType::CRATE).parse(toks, pos))
-          return std::string("crate");
-        pos = saved;
-        return std::nullopt;
-      });
-
   return parsec::Parser<std::shared_ptr<Expression>>(
       [path_ident](const std::vector<rc::Token> &toks, size_t &pos)
           -> parsec::ParseResult<std::shared_ptr<Expression>> {
         size_t saved = pos;
-        if (!tok(TokenType::LT).parse(toks, pos)) {
-          pos = saved;
-          return std::nullopt;
-        }
 
-        auto base_ty = typ.parse(toks, pos);
-        if (!base_ty) {
-          pos = saved;
-          return std::nullopt;
-        }
-
-        // TODO: fix Type Path here
-        std::optional<std::vector<std::string>> as_path;
+        // ::? PathExprSegment ( :: PathExprSegment )*
+        bool leading = false;
         {
-          size_t before_as = pos;
-          if (tok(TokenType::AS).parse(toks, pos)) {
-            {
-              size_t before = pos;
-              if (!tok(TokenType::COLON_COLON).parse(toks, pos))
-                pos = before;
-            }
-            auto first = path_ident.parse(toks, pos);
-            if (!first) {
-              pos = saved;
-              return std::nullopt;
-            }
-            std::vector<std::string> tpath;
-            tpath.push_back(*first);
-
-            for (;;) {
-              size_t b = pos;
-              if (!tok(TokenType::COLON_COLON).parse(toks, pos)) {
-                pos = b;
-                break;
-              }
-              auto seg = path_ident.parse(toks, pos);
-              if (!seg) {
-                pos = saved;
-                return std::nullopt;
-              }
-              tpath.push_back(*seg);
-            }
-            as_path = std::move(tpath);
+          size_t before = pos;
+          if (tok(TokenType::COLON_COLON).parse(toks, pos)) {
+            leading = true;
           } else {
-            pos = before_as;
+            pos = before;
           }
         }
 
-        if (!tok(TokenType::GT).parse(toks, pos)) {
-          pos = saved;
-          return std::nullopt;
-        }
-
-        if (!tok(TokenType::COLON_COLON).parse(toks, pos)) {
+        auto first = path_ident.parse(toks, pos);
+        if (!first) {
           pos = saved;
           return std::nullopt;
         }
 
         std::vector<rc::PathExpression::Segment> segs;
-        auto first_seg = path_ident.parse(toks, pos);
-        if (!first_seg) {
-          pos = saved;
-          return std::nullopt;
-        }
-        segs.push_back(rc::PathExpression::Segment{*first_seg, std::nullopt});
+        segs.push_back(rc::PathExpression::Segment{first->first, std::nullopt});
+
+        bool saw_colon = false;
         for (;;) {
           size_t before = pos;
           if (!tok(TokenType::COLON_COLON).parse(toks, pos)) {
             pos = before;
             break;
           }
-          auto nxt = path_ident.parse(toks, pos);
-          if (!nxt) {
+          saw_colon = true;
+          auto next = path_ident.parse(toks, pos);
+          if (!next) {
             pos = saved;
             return std::nullopt;
           }
-          segs.push_back(rc::PathExpression::Segment{*nxt, std::nullopt});
+          segs.push_back(
+              rc::PathExpression::Segment{next->first, std::nullopt});
         }
 
-        if (segs.empty()) {
-          pos = saved;
-          return std::nullopt;
+        // it is an identifier
+        if (!leading && !saw_colon && first->second) {
+          return std::make_shared<rc::NameExpression>(first->first);
         }
 
-        return std::make_shared<rc::QualifiedPathExpression>(
-            *base_ty, std::move(as_path), std::move(segs));
+        return std::make_shared<rc::PathExpression>(leading, std::move(segs));
       });
 }
 
@@ -1324,11 +1211,13 @@ Parser::expression_without_block() {
       });
 }
 
-inline parsec::Parser<std::pair<std::shared_ptr<BasePattern>, LiteralType>>
+inline parsec::Parser<std::pair<std::shared_ptr<BasePattern>, rc::LiteralType>>
 Parser::pattern_and_type_parser() {
   using namespace parsec;
+
   return pattern_parser_.pattern_no_top_alt().combine(
-      tok(TokenType::COLON).thenR(typ), [](const auto &id, const auto &t) {
+      tok(rc::TokenType::COLON).thenR(type_parser()),
+      [](const auto &id, const auto &t) {
         LOG_DEBUG("Parsed pattern with type");
         return std::make_pair(id, t);
       });
@@ -1354,10 +1243,10 @@ Parser::parse_function_parameters() {
         });
   };
 
-  auto parse_typed_self = []() -> parsec::Parser<SelfParam> {
+  auto parse_typed_self = [this]() -> parsec::Parser<SelfParam> {
     auto mut_parser = optional(tok(TokenType::MUT));
     auto self_parser = tok(TokenType::SELF);
-    auto colon_type = tok(TokenType::COLON).thenR(typ);
+    auto colon_type = tok(TokenType::COLON).thenR(type_parser());
 
     return mut_parser
         .combine(self_parser,
@@ -1428,12 +1317,20 @@ Parser::expression_list_parser() {
       });
 }
 
+inline parsec::Parser<LiteralType> Parser::type_parser() {
+  return parsec::typ_with_expr(
+      [this](const std::vector<rc::Token> &toks, size_t &pos)
+          -> parsec::ParseResult<std::shared_ptr<rc::Expression>> {
+        return this->any_expression().parse(toks, pos);
+      });
+}
+
 inline parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
   using namespace parsec;
   auto assignment = tok(TokenType::ASSIGN).thenR(any_expression());
   return tok(TokenType::LET)
       .thenR(pattern_parser_.pattern_no_top_alt())
-      .combine(tok(TokenType::COLON).thenR(typ),
+      .combine(tok(TokenType::COLON).thenR(type_parser()),
                [](const auto &id, const auto &t) {
                  auto ty = t;
                  return std::make_pair(id, ty);
@@ -1591,10 +1488,6 @@ inline PrattTable default_table(rc::Parser *p) {
              delegate_to_parsec(&rc::Parser::parse_path_or_name_expression));
   tbl.prefix(rc::TokenType::COLON_COLON,
              delegate_to_parsec(&rc::Parser::parse_path_or_name_expression));
-  // Qualified path expression starting with '<'
-  tbl.prefix(rc::TokenType::LT,
-             delegate_to_parsec(&rc::Parser::parse_qualified_path_expression));
-
   tbl.prefix(rc::TokenType::L_PAREN,
              delegate_to_parsec(&rc::Parser::parse_tuple_or_group_expression));
 
@@ -1606,9 +1499,40 @@ inline PrattTable default_table(rc::Parser *p) {
       return nullptr;
     return std::make_shared<rc::PrefixExpression>(op, std::move(right));
   };
+  auto deref_op = [&tbl](const std::vector<rc::Token> &toks,
+                         size_t &pos) -> ExprPtr {
+    rc::Token op = toks[pos - 1];
+    ExprPtr right = tbl.parse_expression(toks, pos, 100); // Unary precedence
+    if (!right)
+      return nullptr;
+    return std::make_shared<rc::DerefExpression>(op, std::move(right));
+  };
+  auto borrow_expr = [&tbl](const std::vector<rc::Token> &toks,
+                            size_t &pos) -> ExprPtr {
+    rc::Token op = toks[pos - 1];
+
+    if (pos < toks.size() && toks[pos].type == rc::TokenType::MUT) {
+      pos++; // Consume 'mut' token
+
+      ExprPtr right = tbl.parse_expression(toks, pos, 100);
+      if (!right) {
+        return nullptr;
+      }
+      return std::make_shared<rc::BorrowExpression>(op, std::move(right), true);
+    } else {
+      ExprPtr right = tbl.parse_expression(toks, pos, 100);
+      if (!right) {
+        return nullptr;
+      }
+      return std::make_shared<rc::BorrowExpression>(op, std::move(right));
+    }
+  };
   tbl.prefix(rc::TokenType::PLUS, prefix_op);
   tbl.prefix(rc::TokenType::MINUS, prefix_op);
   tbl.prefix(rc::TokenType::NOT, prefix_op);
+  tbl.prefix(rc::TokenType::AND, borrow_expr);
+  tbl.prefix(rc::TokenType::AMPERSAND, borrow_expr);
+  tbl.prefix(rc::TokenType::STAR, deref_op);
 
   auto bin = [](ExprPtr l, rc::Token op, ExprPtr r) {
     return std::make_shared<rc::BinaryExpression>(std::move(l), std::move(op),

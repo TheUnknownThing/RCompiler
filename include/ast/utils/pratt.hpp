@@ -44,7 +44,7 @@ public:
   };
 
   void prefix(rc::TokenType t, NudFn nud) { prefix_[t] = std::move(nud); }
-
+  
   void infix_left(rc::TokenType t, int precedence,
                   std::function<ExprPtr(ExprPtr, rc::Token, ExprPtr)> build) {
     Bp bp = {precedence, precedence + 1};
