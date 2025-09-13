@@ -330,43 +330,48 @@ public:
   }
 
   void visit(CallExpression &node) override {
-    auto *nameExpr = dynamic_cast<NameExpression *>(node.function_name.get());
-    if (!nameExpr) {
-      throw SemanticException("call target must be a function name");
-    }
-
-    const FunctionMetaData *fn = nullptr;
-    for (auto *s = current_scope_node; s; s = s->parent) {
-      if (auto *it = s->find_value_item(nameExpr->name)) {
-        if (it->kind == ItemKind::Function && it->has_function_meta()) {
-          fn = &it->as_function_meta();
-          break;
+    if (auto *nameExpr =
+            dynamic_cast<NameExpression *>(node.function_name.get())) {
+      const FunctionMetaData *fn = nullptr;
+      for (auto *s = current_scope_node; s; s = s->parent) {
+        if (auto *it = s->find_value_item(nameExpr->name)) {
+          if (it->kind == ItemKind::Function && it->has_function_meta()) {
+            fn = &it->as_function_meta();
+            break;
+          }
         }
       }
-    }
-    if (!fn) {
-      throw SemanticException("unknown function '" + nameExpr->name + "'");
-    }
-
-    const size_t argc = node.arguments.size();
-    if (fn->param_types.size() != argc) {
-      throw TypeError("function '" + fn->name +
-                      "' argument count mismatch: expected " +
-                      std::to_string(fn->param_types.size()) + ", got " +
-                      std::to_string(argc));
-    }
-
-    for (size_t i = 0; i < argc; ++i) {
-      auto at = evaluate(node.arguments[i].get());
-      const auto &expected = fn->param_types[i];
-      if (!can_assign(expected, at)) {
-        throw TypeError("argument type mismatch in call to " + fn->name +
-                        " at position " + std::to_string(i) + ": expected " +
-                        to_string(expected) + " got " + to_string(at));
+      if (!fn) {
+        throw SemanticException("unknown function '" + nameExpr->name + "'");
       }
+
+      const size_t argc = node.arguments.size();
+      if (fn->param_types.size() != argc) {
+        throw TypeError("function '" + fn->name +
+                        "' argument count mismatch: expected " +
+                        std::to_string(fn->param_types.size()) + ", got " +
+                        std::to_string(argc));
+      }
+
+      for (size_t i = 0; i < argc; ++i) {
+        auto at = evaluate(node.arguments[i].get());
+        const auto &expected = fn->param_types[i];
+        if (!can_assign(expected, at)) {
+          throw TypeError("argument type mismatch in call to " + fn->name +
+                          " at position " + std::to_string(i) + ": expected " +
+                          to_string(expected) + " got " + to_string(at));
+        }
+      }
+
+      cache_expr(&node, fn->return_type);
+      return;
+    } else if (auto *pathExpr =
+                   dynamic_cast<PathExpression *>(node.function_name.get())) {
+      resolve_path_function_call(*pathExpr, node);
+      return;
     }
 
-    cache_expr(&node, fn->return_type);
+    throw SemanticException("unsupported call target");
   }
 
   void visit(MethodCallExpression &node) override {
@@ -1240,6 +1245,83 @@ private:
                       to_string(dst) + "'");
     }
     cache_expr(&node, dst);
+  }
+
+  void resolve_path_function_call(const PathExpression &pe,
+                                  CallExpression &node) {
+    if (pe.leading_colons) {
+      throw SemanticException("leading colons in paths are not supported");
+    }
+    if (pe.segments.empty()) {
+      throw SemanticException("empty path in call");
+    }
+    for (const auto &seg : pe.segments) {
+      if (seg.call.has_value()) {
+        throw SemanticException("path segment expressions are not supported");
+      }
+    }
+
+    if (pe.segments.size() != 2) {
+      throw SemanticException("only TypeName::function calls are supported");
+    }
+
+    const std::string &type_name = pe.segments[0].ident;
+    const std::string &fn_name = pe.segments[1].ident;
+
+    const CollectedItem *type_item = nullptr;
+    for (auto *s = current_scope_node; s; s = s->parent) {
+      if (auto *it = s->find_type_item(type_name)) {
+        type_item = it;
+        break;
+      }
+    }
+    if (!type_item) {
+      throw SemanticException("unknown type '" + type_name + "'");
+    }
+    if (!type_item->has_struct_meta()) {
+      throw TypeError("type '" + type_name + "' is not a struct");
+    }
+
+    const auto &meta = type_item->as_struct_meta();
+
+    const FunctionMetaData *found = nullptr;
+    for (const auto &m : meta.methods) {
+      if (m.name == fn_name) {
+        found = &m;
+        break;
+      }
+    }
+    if (!found) {
+      throw TypeError("unknown method " + fn_name);
+    }
+
+    const auto argc = node.arguments.size();
+    const auto &params = found->param_types;
+
+    if (params.size() == argc + 1) {
+      if (params[0] == SemType::named(type_item)) {
+        throw TypeError("cannot call instance method " + fn_name +
+                        " as associated function; use method call syntax");
+      }
+    }
+
+    if (params.size() != argc) {
+      throw TypeError(
+          "function '" + fn_name + "' argument count mismatch: expected " +
+          std::to_string(params.size()) + ", got " + std::to_string(argc));
+    }
+
+    for (size_t i = 0; i < argc; ++i) {
+      auto at = evaluate(node.arguments[i].get());
+      const auto &expected = params[i];
+      if (!can_assign(expected, at)) {
+        throw TypeError("argument type mismatch in call to " + fn_name +
+                        " at position " + std::to_string(i) + ": expected " +
+                        to_string(expected) + " got " + to_string(at));
+      }
+    }
+
+    cache_expr(&node, found->return_type);
   }
 };
 
