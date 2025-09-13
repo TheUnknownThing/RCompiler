@@ -50,11 +50,10 @@ public:
     if (it != expr_cache.end())
       return it->second;
     expr->accept(*this);
+    if (expr_cache.find(expr) == expr_cache.end()) {
+      throw SemanticException("expression not cached after evaluation");
+    }
     return expr_cache.at(expr);
-  }
-
-  const std::unordered_map<const BaseNode *, SemType> &results() const {
-    return expr_cache;
   }
 
   void visit(BaseNode &node) override {
@@ -503,6 +502,8 @@ public:
         extract_pattern_bindings(*names[i], types[i]);
       }
       pending_params.reset();
+
+      LOG_DEBUG("[FourthPass] Successfully added function bindings");
     }
 
     for (const auto &st : node.statements) {
@@ -595,7 +596,66 @@ public:
     cache_expr(&node, SemType::primitive(SemPrimitiveKind::NEVER));
   }
 
-  void visit(PathExpression &) override {}
+  void visit(PathExpression &node) override {
+    // as we already handled path function call, so here we handle it as value
+    if (node.leading_colons) {
+      throw SemanticException("leading colons in paths are not supported");
+    }
+    if (node.segments.empty()) {
+      throw SemanticException("empty path in call");
+    }
+    for (const auto &seg : node.segments) {
+      if (seg.call.has_value()) {
+        throw SemanticException("path segment expressions are not supported");
+      }
+    }
+
+    if (node.segments.size() != 2) {
+      throw SemanticException("only TypeName::value calls are supported");
+    }
+
+    const std::string &type_name = node.segments[0].ident;
+    const std::string &val_name = node.segments[1].ident;
+
+    const CollectedItem *type_item = nullptr;
+    for (auto *s = current_scope_node; s; s = s->parent) {
+      if (auto *it = s->find_type_item(type_name)) {
+        type_item = it;
+        break;
+      }
+    }
+    if (!type_item) {
+      throw SemanticException("unknown type '" + type_name + "'");
+    }
+    if (type_item->has_struct_meta()) {
+      const auto &meta = type_item->as_struct_meta();
+
+      const ConstantMetaData *found = nullptr;
+      for (const auto &m : meta.constants) {
+        if (m.name == val_name) {
+          found = &m;
+          break;
+        }
+      }
+      if (!found) {
+        throw TypeError("unknown constant " + val_name);
+      }
+
+      cache_expr(&node, found->type);
+    } else if (type_item->has_enum_meta()) {
+      const auto &meta = type_item->as_enum_meta();
+
+      for (const auto &variant : meta.variant_names) {
+        if (variant == val_name) {
+          cache_expr(&node, SemType::named(type_item));
+          return;
+        }
+      }
+      throw TypeError("unknown enum variant " + val_name);
+    } else {
+      throw TypeError("type '" + type_name + "' is not a struct or enum");
+    }
+  }
 
   void visit(QualifiedPathExpression &) override {
     throw SemanticException("qualified path expression not supported yet");

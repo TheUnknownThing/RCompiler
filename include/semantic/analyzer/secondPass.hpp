@@ -21,7 +21,7 @@ namespace rc {
 
 class SecondPassResolver : public BaseVisitor {
 public:
-  SecondPassResolver() = default;
+  SecondPassResolver() : evaluator(this) {}
 
   void run(const std::shared_ptr<RootNode> &root, ScopeNode *root_scope_) {
     LOG_INFO("[SecondPass] Starting unified semantic analysis");
@@ -37,8 +37,17 @@ public:
     if (root) {
       size_t idx = 0;
       for (const auto &child : root->children) {
-        if (child) {
-          LOG_DEBUG("[SecondPass] Visiting top-level item #" +
+        if (child && dynamic_cast<ConstantItem *>(child.get())) {
+          LOG_DEBUG("[SecondPass] Visiting constant item #" +
+                    std::to_string(idx));
+          child->accept(*this);
+        }
+        ++idx;
+      }
+
+      for (const auto &child : root->children) {
+        if (child && !dynamic_cast<ConstantItem *>(child.get())) {
+          LOG_DEBUG("[SecondPass] Visiting top-level child #" +
                     std::to_string(idx));
           child->accept(*this);
         }
@@ -194,12 +203,17 @@ public:
         parent_scope ? parent_scope->find_child_scope_by_owner(&node) : nullptr;
 
     LOG_DEBUG("[SecondPass] Enter trait '" + node.name + "'");
-    push_scope(trait_scope);
+    enterScope(trait_scope);
     for (const auto &assoc : node.associated_items) {
-      if (assoc)
+      if (assoc && dynamic_cast<ConstantItem *>(assoc.get()))
         assoc->accept(*this);
     }
-    pop_scope();
+
+    for (const auto &assoc : node.associated_items) {
+      if (assoc && !dynamic_cast<ConstantItem *>(assoc.get()))
+        assoc->accept(*this);
+    }
+    exitScope();
     LOG_DEBUG("[SecondPass] Exit trait '" + node.name + "'");
   }
 
@@ -234,10 +248,15 @@ public:
     auto *block_scope = current_scope()
                             ? current_scope()->find_child_scope_by_owner(&node)
                             : nullptr;
-    push_scope(block_scope);
+    enterScope(block_scope);
 
     for (const auto &stmt : node.statements) {
-      if (stmt)
+      if (stmt && dynamic_cast<ConstantItem *>(stmt.get()))
+        stmt->accept(*this);
+    }
+
+    for (const auto &stmt : node.statements) {
+      if (stmt && !dynamic_cast<ConstantItem *>(stmt.get()))
         stmt->accept(*this);
     }
 
@@ -245,7 +264,7 @@ public:
       node.final_expr.value()->accept(*this);
     }
 
-    pop_scope();
+    exitScope();
   }
 
   void visit(IfExpression &node) override {
@@ -313,13 +332,13 @@ private:
 
   ScopeNode *current_scope() const { return scope_stack.back(); }
 
-  void push_scope(ScopeNode *s) {
+  void enterScope(ScopeNode *s) {
     if (s) {
       scope_stack.push_back(s);
     }
   }
 
-  void pop_scope() {
+  void exitScope() {
     if (scope_stack.size() > 1) {
       scope_stack.pop_back();
     }

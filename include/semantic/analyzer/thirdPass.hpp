@@ -139,12 +139,12 @@ public:
 
   void visit(BlockExpression &node) override {
     auto *block_scope = current_scope()->find_child_scope_by_owner(&node);
-    push_scope(block_scope);
+    enterScope(block_scope);
     for (const auto &stmt : node.statements) {
       if (stmt)
         stmt->accept(*this);
     }
-    pop_scope();
+    exitScope();
     if (node.final_expr)
       node.final_expr.value()->accept(*this);
   }
@@ -174,8 +174,8 @@ private:
 
   ScopeNode *current_scope() const { return scope_stack.back(); }
 
-  void push_scope(ScopeNode *s) { scope_stack.push_back(s); }
-  void pop_scope() {
+  void enterScope(ScopeNode *s) { scope_stack.push_back(s); }
+  void exitScope() {
     if (scope_stack.size() > 1)
       scope_stack.pop_back();
   }
