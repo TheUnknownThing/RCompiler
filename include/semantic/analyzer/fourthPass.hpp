@@ -579,7 +579,11 @@ public:
   void visit(TupleExpression &) override {}
 
   void visit(BreakExpression &node) override {
-    cache_expr(&node, SemType::primitive(SemPrimitiveKind::NEVER));
+    auto t = SemType::primitive(SemPrimitiveKind::UNIT);
+    if (node.expr.has_value()) {
+      t = evaluate(node.expr.value().get());
+    }
+    cache_expr(&node, t);
   }
 
   void visit(ContinueExpression &node) override {

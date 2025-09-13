@@ -75,6 +75,10 @@ public:
       visit(*expr);
     } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
       visit(*expr);
+    } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
+      visit(*expr);
     }
   }
 
@@ -165,6 +169,18 @@ public:
       node.condition->accept(*this);
     if (node.body)
       node.body->accept(*this);
+  }
+
+  void visit(BinaryExpression &node) override {
+    if (node.left)
+      node.left->accept(*this);
+    if (node.right)
+      node.right->accept(*this);
+  }
+
+  void visit(PrefixExpression &node) override {
+    if (node.right)
+      node.right->accept(*this);
   }
 
   void visit(RootNode &) override {}
