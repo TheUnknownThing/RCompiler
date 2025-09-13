@@ -154,6 +154,18 @@ public:
       pending_params = std::make_pair(meta.param_names, meta.param_types);
       node.body.value()->accept(*this);
       pending_params.reset();
+      auto *block_expr =
+          dynamic_cast<BlockExpression *>(node.body.value().get());
+      if (block_expr && block_expr->final_expr) {
+        // validate final expression type
+        auto ret_typ = expr_cache.at(block_expr->final_expr.value().get());
+        if (!can_assign(meta.return_type, ret_typ)) {
+          throw TypeError("function '" + node.name +
+                          "' return type mismatch: expected '" +
+                          to_string(meta.return_type) + "' got '" +
+                          to_string(ret_typ) + "'");
+        }
+      }
     }
 
     function_return_stack.pop_back();
@@ -314,7 +326,7 @@ public:
       throw TypeError("return type mismatch: expected '" + to_string(expected) +
                       "' got '" + to_string(rt) + "'");
     }
-    cache_expr(&node, SemType::primitive(SemPrimitiveKind::NEVER));
+    cache_expr(&node, rt);
   }
 
   void visit(CallExpression &node) override {
