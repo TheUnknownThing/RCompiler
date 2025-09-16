@@ -1494,7 +1494,7 @@ inline PrattTable default_table(rc::Parser *p) {
   auto prefix_op = [&tbl](const std::vector<rc::Token> &toks,
                           size_t &pos) -> ExprPtr {
     rc::Token op = toks[pos - 1];
-    ExprPtr right = tbl.parse_expression(toks, pos, 100); // Unary precedence
+    ExprPtr right = tbl.parse_expression(toks, pos, 78);
     if (!right)
       return nullptr;
     return std::make_shared<rc::PrefixExpression>(op, std::move(right));
@@ -1502,7 +1502,7 @@ inline PrattTable default_table(rc::Parser *p) {
   auto deref_op = [&tbl](const std::vector<rc::Token> &toks,
                          size_t &pos) -> ExprPtr {
     rc::Token op = toks[pos - 1];
-    ExprPtr right = tbl.parse_expression(toks, pos, 100); // Unary precedence
+    ExprPtr right = tbl.parse_expression(toks, pos, 78);
     if (!right)
       return nullptr;
     return std::make_shared<rc::DerefExpression>(op, std::move(right));
@@ -1513,20 +1513,20 @@ inline PrattTable default_table(rc::Parser *p) {
 
     if (pos < toks.size() && toks[pos].type == rc::TokenType::MUT) {
       pos++; // Consume 'mut' token
-
-      ExprPtr right = tbl.parse_expression(toks, pos, 100);
+      ExprPtr right = tbl.parse_expression(toks, pos, 78);
       if (!right) {
         return nullptr;
       }
       return std::make_shared<rc::BorrowExpression>(op, std::move(right), true);
     } else {
-      ExprPtr right = tbl.parse_expression(toks, pos, 100);
+      ExprPtr right = tbl.parse_expression(toks, pos, 78);
       if (!right) {
         return nullptr;
       }
       return std::make_shared<rc::BorrowExpression>(op, std::move(right));
     }
   };
+  
   tbl.prefix(rc::TokenType::PLUS, prefix_op);
   tbl.prefix(rc::TokenType::MINUS, prefix_op);
   tbl.prefix(rc::TokenType::NOT, prefix_op);
