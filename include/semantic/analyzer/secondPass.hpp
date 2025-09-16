@@ -77,6 +77,16 @@ public:
       visit(*expr);
     } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
       visit(*expr);
+    } else if (auto *expr = dynamic_cast<BorrowExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<DerefExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<ExpressionStatement *>(&node)) {
+      visit(*expr);
     }
     // we only care about arr type resolution below
     else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
@@ -321,6 +331,35 @@ public:
 
       node.repeat->first->accept(*this);
     }
+    LOG_DEBUG("[SecondPass] ArrayExpr with size " +
+              std::to_string(node.actual_size));
+  }
+
+  void visit(BorrowExpression &node) override {
+    if (node.right)
+      node.right->accept(*this);
+  }
+
+  void visit(DerefExpression &node) override {
+    if (node.right)
+      node.right->accept(*this);
+  }
+
+  void visit(BinaryExpression &node) override {
+    if (node.left)
+      node.left->accept(*this);
+    if (node.right)
+      node.right->accept(*this);
+  }
+
+  void visit(PrefixExpression &node) override {
+    if (node.right)
+      node.right->accept(*this);
+  }
+
+  void visit(ExpressionStatement &node) override {
+    if (node.expression)
+      node.expression->accept(*this);
   }
 
   void visit(RootNode &) override {}
