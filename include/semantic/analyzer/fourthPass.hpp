@@ -1150,9 +1150,21 @@ private:
       }
 
       if (target_t.is_reference()) {
-        return PlaceInfo{true, target_t.as_reference().is_mutable, base.root_name};
+        return PlaceInfo{true, target_t.as_reference().is_mutable,
+                         base.root_name};
       }
       return PlaceInfo{true, base.is_writable, base.root_name};
+    }
+
+    if (auto *deref = dynamic_cast<DerefExpression *>(expr)) {
+      PlaceInfo base = analyze_place(deref->right.get());
+      if (!base.is_place)
+        return {};
+      auto target_t = evaluate(deref->right.get());
+      if (!target_t.is_reference())
+        return {};
+      return PlaceInfo{true, target_t.as_reference().is_mutable,
+                       base.root_name};
     }
 
     // All others are r-values
