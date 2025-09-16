@@ -127,6 +127,10 @@ public:
       visit(*expr);
     } else if (auto *expr = dynamic_cast<QualifiedPathExpression *>(&node)) {
       visit(*expr);
+    } else if (auto *expr = dynamic_cast<BorrowExpression *>(&node)) {
+      visit(*expr);
+    } else if (auto *expr = dynamic_cast<DerefExpression *>(&node)) {
+      visit(*expr);
     }
   }
 
@@ -571,12 +575,12 @@ public:
     require_integer(idx_type, "array index must be integer");
     // TODO: validate the array index is in bounds if constant
     // TODO: validate negative index
-    if (target_t.is_array()) {
-      cache_expr(&node, *target_t.as_array().element);
+    if (target_t.is_array() || auto_deref(target_t).is_array()) {
+      cache_expr(&node, *auto_deref(target_t).as_array().element);
       return;
     }
-    if (target_t.is_slice()) {
-      cache_expr(&node, *target_t.as_slice().element);
+    if (target_t.is_slice() || auto_deref(target_t).is_slice()) {
+      cache_expr(&node, *auto_deref(target_t).as_slice().element);
       return;
     }
     throw TypeError("indexing non-array/slice type");
@@ -659,6 +663,21 @@ public:
 
   void visit(QualifiedPathExpression &) override {
     throw SemanticException("qualified path expression not supported yet");
+  }
+
+  void visit(BorrowExpression &node) override {
+    auto target_t = evaluate(node.right.get());
+    // TODO: validate target_t is mutable and borrowable
+    cache_expr(&node, SemType::reference(target_t, node.is_mutable));
+  }
+
+  void visit(DerefExpression &node) override {
+    auto target_t = evaluate(node.right.get());
+    if (!target_t.is_reference()) {
+      throw TypeError("cannot deref non-reference type: " +
+                      to_string(target_t));
+    }
+    cache_expr(&node, auto_deref(*target_t.as_reference().target));
   }
 
 private:
@@ -945,7 +964,7 @@ private:
     if (dst.is_reference() && src.is_reference()) {
       const auto &dr = dst.as_reference();
       const auto &sr = src.as_reference();
-      if (dr.is_mutable != sr.is_mutable)
+      if (dr.is_mutable && !sr.is_mutable)
         return false;
       return can_assign(*dr.target, *sr.target);
     }
@@ -1382,6 +1401,13 @@ private:
     }
 
     cache_expr(&node, found->return_type);
+  }
+
+  SemType auto_deref(const SemType &t) {
+    // TODO: this do not validate `mut`
+    if (!t.is_reference())
+      return t;
+    return auto_deref(*t.as_reference().target);
   }
 };
 

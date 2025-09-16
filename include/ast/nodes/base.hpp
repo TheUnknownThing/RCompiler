@@ -50,6 +50,8 @@ class OrPattern;
 class RootNode;
 class PathExpression;
 class QualifiedPathExpression;
+class BorrowExpression;
+class DerefExpression;
 
 class BaseVisitor;
 
@@ -89,6 +91,8 @@ public:
   virtual void visit(StructExpression &) {}
   virtual void visit(PathExpression &) {}
   virtual void visit(QualifiedPathExpression &) {}
+  virtual void visit(BorrowExpression &) {}
+  virtual void visit(DerefExpression &) {}
 
   // Statement visitors
   virtual void visit(BlockStatement &) {}
