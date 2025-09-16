@@ -1136,11 +1136,22 @@ private:
 
     if (auto *idx = dynamic_cast<IndexExpression *>(expr)) {
       PlaceInfo base = analyze_place(idx->target.get());
-      if (!base.is_place)
+      if (!base.is_place) {
+        LOG_DEBUG("[FourthPass] IndexExpression target is not a place (base)");
         return {};
+      }
       auto target_t = evaluate(idx->target.get());
-      if (!(target_t.is_array() || target_t.is_slice()))
+      if (!(target_t.is_array() || target_t.is_slice() ||
+            auto_deref(target_t).is_array() ||
+            auto_deref(target_t).is_slice())) {
+        LOG_DEBUG(
+            "[FourthPass] IndexExpression target is not array or slice (base)");
         return {};
+      }
+
+      if (target_t.is_reference()) {
+        return PlaceInfo{true, target_t.as_reference().is_mutable, base.root_name};
+      }
       return PlaceInfo{true, base.is_writable, base.root_name};
     }
 
@@ -1159,8 +1170,7 @@ private:
                         ": cannot assign to immutable binding '" +
                         *info.root_name + "'");
       }
-      throw TypeError(std::string(context) +
-                      ": cannot assign to immutable place");
+      throw TypeError("cannot assign, target does not have a writable root");
     }
   }
 
