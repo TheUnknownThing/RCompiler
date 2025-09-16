@@ -458,6 +458,9 @@ public:
       throw SemanticException("tuple field access not supported yet");
     }
     // Struct field access
+    if (target_type.is_reference()) {
+      target_type = auto_deref(target_type);
+    }
     if (!target_type.is_named()) {
       throw TypeError("field access on non-struct type '" +
                       to_string(target_type) + "'");
@@ -476,8 +479,54 @@ public:
     throw TypeError("unknown field '" + node.field_name + "'");
   }
 
-  void visit(StructExpression &) override {
-    throw SemanticException("struct literal not supported yet");
+  void visit(StructExpression &node) override {
+    auto struct_path = dynamic_cast<PathExpression *>(node.path_expr.get());
+    if (struct_path) {
+      throw SemanticException("struct expressions with path not supported");
+    }
+    auto struct_name = dynamic_cast<NameExpression *>(node.path_expr.get());
+    if (struct_name) {
+      CollectedItem *item = nullptr;
+      for (auto *s = current_scope_node; s; s = s->parent) {
+        if (auto *it = s->find_type_item(struct_name->name)) {
+          if (it->kind == ItemKind::Struct && it->has_struct_meta()) {
+            item = it;
+            break;
+          }
+        }
+      }
+      if (!item) {
+        throw SemanticException("struct item for '" + struct_name->name +
+                                "' not found in scope");
+      }
+      const auto &meta = item->as_struct_meta();
+      if (meta.named_fields.size() != node.fields.size()) {
+        throw SemanticException("struct expression field count mismatch");
+      }
+      for (const auto &f : node.fields) {
+        const auto &fname = f.name;
+        auto it =
+            std::find_if(meta.named_fields.begin(), meta.named_fields.end(),
+                         [&fname](const auto &p) { return p.first == fname; });
+        if (it == meta.named_fields.end()) {
+          throw SemanticException("unknown field '" + fname + "'");
+        }
+
+        if (!f.value) {
+          throw SemanticException("missing value for field '" + fname + "'");
+        }
+
+        auto ft = evaluate(f.value->get());
+        if (!can_assign(it->second, ft)) {
+          throw TypeError("field '" + fname + "' type mismatch: expected '" +
+                          to_string(it->second) + "' got '" + to_string(ft) +
+                          "'");
+        }
+      }
+      cache_expr(&node, SemType::named(item));
+      return;
+    }
+    throw SemanticException("struct expressions not found");
   }
 
   void visit(UnderscoreExpression &node) override {
@@ -800,8 +849,8 @@ private:
     }
     const auto &ref_type = type.as_reference();
     if (pattern.is_mutable && !ref_type.is_mutable) {
-      throw SemanticException(
-          "cannot create mutable reference pattern from immutable reference");
+      throw SemanticException("cannot create mutable reference pattern "
+                              "from immutable reference");
     }
     if (pattern.inner_pattern) {
       extract_pattern_bindings(*pattern.inner_pattern, *ref_type.target);
@@ -1144,8 +1193,8 @@ private:
       if (!(target_t.is_array() || target_t.is_slice() ||
             auto_deref(target_t).is_array() ||
             auto_deref(target_t).is_slice())) {
-        LOG_DEBUG(
-            "[FourthPass] IndexExpression target is not array or slice (base)");
+        LOG_DEBUG("[FourthPass] IndexExpression target is not array or slice "
+                  "(base)");
         return {};
       }
 
