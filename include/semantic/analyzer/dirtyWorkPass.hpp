@@ -79,7 +79,6 @@ public:
       node.body.value()->accept(*this);
     }
 
-    // Rule 3: main function must have exit() at the end
     if (node.name == "main" && current_scope_node == root_scope) {
       if (!found_exit_call) {
         throw SemanticException("main function must have exit() call");
@@ -97,9 +96,10 @@ public:
     auto *nameExpr = dynamic_cast<NameExpression *>(node.function_name.get());
     if (nameExpr && nameExpr->name == "exit") {
       if (!current_function_name.has_value() ||
-          current_function_name.value() != "main") {
+          current_function_name.value() != "main" ||
+          current_scope_node != root_scope || found_exit_call || is_in_impl) {
         throw SemanticException(
-            "exit() function can only be called from main function");
+            "exit() function can only be called once at the end of main");
       }
 
       found_exit_call = true;
@@ -226,11 +226,13 @@ public:
 
   void visit(ImplDecl &node) override {
     LOG_DEBUG("[DirtyWorkPass] Visiting impl block");
+    is_in_impl = true;
     for (const auto &item : node.associated_items) {
       if (item) {
         item->accept(*this);
       }
     }
+    is_in_impl = false;
   }
 
 private:
@@ -238,6 +240,7 @@ private:
   ScopeNode *current_scope_node = nullptr;
   std::optional<std::string> current_function_name;
   bool found_exit_call = false;
+  bool is_in_impl = false;
 };
 
 } // namespace rc
