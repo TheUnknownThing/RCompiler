@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <map>
 #include <memory>
 #include <optional>
@@ -315,7 +316,13 @@ public:
     }
 
     if (then_t.has_value() && !else_t.has_value()) {
-      cache_expr(&node, then_t.value());
+      if (!can_assign(then_t.value(),
+                      SemType::primitive(SemPrimitiveKind::UNIT))) {
+        throw TypeError("if expression missing else branch, but then branch "
+                        "has non-unit type '" +
+                        to_string(then_t.value()) + "'");
+      }
+      cache_expr(&node, SemType::primitive(SemPrimitiveKind::UNIT));
       return;
     }
 
