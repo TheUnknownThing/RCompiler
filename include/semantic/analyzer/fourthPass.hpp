@@ -605,7 +605,11 @@ public:
   void visit(LoopExpression &node) override {
     if (node.body)
       (void)evaluate(node.body.get());
-    cache_expr(&node, SemType::primitive(SemPrimitiveKind::UNIT));
+    if (loop_break_stack.empty()) {
+      throw SemanticException("Why loop without breaks?");
+    }
+    cache_expr(&node, loop_break_stack.back());
+    loop_break_stack.pop_back();
   }
 
   void visit(WhileExpression &node) override {
@@ -671,6 +675,7 @@ public:
       t = evaluate(node.expr.value().get());
     }
     cache_expr(&node, t);
+    loop_break_stack.push_back(t);
   }
 
   void visit(ContinueExpression &node) override {
@@ -783,6 +788,8 @@ private:
 
   std::vector<SemType> function_return_stack;
 
+  std::vector<SemType> loop_break_stack;
+
   void cache_expr(const BaseNode *n, SemType t) {
     if (!n)
       return;
@@ -850,7 +857,7 @@ private:
       throw SemanticException("tuple patterns is removed");
     } else if (dynamic_cast<const StructPattern *>(&pattern)) {
       throw SemanticException("struct patterns is removed");
-    } else if (auto *grp = dynamic_cast<const GroupedPattern *>(&pattern)) {
+    } else if (dynamic_cast<const GroupedPattern *>(&pattern)) {
       throw SemanticException("grouped patterns is removed");
     } else if (dynamic_cast<const OrPattern *>(&pattern)) {
       // or pattern removed in subset
