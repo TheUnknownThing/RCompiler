@@ -56,5 +56,3 @@ coverage/
 third_party/llvm/ 
 
 examples/
-
-testcases/
