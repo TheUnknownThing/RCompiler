@@ -324,6 +324,10 @@ public:
       cache_expr(&node, then_t.value());
       return;
     }
+
+    LOG_DEBUG("if expression has type" + to_string(then_t.value()) + " , " +
+              to_string(else_t.value()));
+
     if (auto u = unify_integers(then_t.value(), else_t.value())) {
       cache_expr(&node, *u);
       return;
@@ -342,7 +346,7 @@ public:
   }
 
   void visit(ReturnExpression &node) override {
-    SemType rt = SemType::primitive(SemPrimitiveKind::UNIT);
+    SemType rt = SemType::primitive(SemPrimitiveKind::NEVER);
     if (node.value)
       rt = evaluate(node.value.value().get());
     if (function_return_stack.empty()) {
@@ -353,7 +357,7 @@ public:
       throw TypeError("return type mismatch: expected '" + to_string(expected) +
                       "' got '" + to_string(rt) + "'");
     }
-    cache_expr(&node, rt);
+    cache_expr(&node, SemType::primitive(SemPrimitiveKind::NEVER));
   }
 
   void visit(CallExpression &node) override {
@@ -595,6 +599,16 @@ public:
     SemType t = SemType::primitive(SemPrimitiveKind::UNIT);
     if (node.final_expr) {
       t = evaluate(node.final_expr.value().get());
+    } else {
+      if (!node.statements.empty()) {
+        if (auto *last_expr = dynamic_cast<ExpressionStatement *>(
+                node.statements.back().get())) {
+          if (last_expr->expression &&
+              dynamic_cast<ReturnExpression *>(last_expr->expression.get())) {
+            t = SemType::primitive(SemPrimitiveKind::NEVER);
+          }
+        }
+      }
     }
     cache_expr(&node, t);
 
