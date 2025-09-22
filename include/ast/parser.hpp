@@ -730,6 +730,21 @@ Parser::parse_block_expression() {
           return std::nullopt;
         }
 
+        if (!tail_expr && !stmts.empty()) {
+          auto last_expr_stmt = stmts.back();
+          if (auto expr_stmt_ptr =
+                  std::dynamic_pointer_cast<ExpressionStatement>(
+                      last_expr_stmt)) {
+            if (!expr_stmt_ptr->has_semicolon) {
+              tail_expr = expr_stmt_ptr->expression;
+              stmts.pop_back();
+              stmt_count--;
+              LOG_DEBUG("Last statement in block is now treated as tail "
+                        "expression");
+            }
+          }
+        }
+
         LOG_DEBUG("Successfully parsed block expression with " +
                   std::to_string(stmt_count) + " statements" +
                   (tail_expr ? " and tail expression" : ""));

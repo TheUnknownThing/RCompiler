@@ -82,6 +82,7 @@ struct SemType {
   static SemType primitive(SemPrimitiveKind k) {
     return SemType{SemPrimitiveType{k}};
   }
+  static SemType never() { return SemType::primitive(SemPrimitiveKind::NEVER); }
   static SemType tuple(std::vector<SemType> elems) {
     return SemType{SemTupleType{std::move(elems)}};
   }
@@ -122,6 +123,9 @@ struct SemType {
   bool is_unknown() const {
     return std::holds_alternative<SemUnknownType>(storage);
   }
+  bool is_never() const {
+    return is_primitive() && as_primitive().kind == SemPrimitiveKind::NEVER;
+  }
 
   const SemPrimitiveType &as_primitive() const {
     return std::get<SemPrimitiveType>(storage);
@@ -149,6 +153,8 @@ struct SemType {
 inline bool operator==(const SemType &a, const SemType &b) {
   if (a.storage.index() != b.storage.index())
     return false;
+  if (a.is_never() || b.is_never())
+    return true;
   if (a.is_primitive())
     return a.as_primitive().kind == b.as_primitive().kind;
   if (a.is_tuple())
@@ -193,7 +199,7 @@ inline std::string to_string(SemPrimitiveKind k) {
   case SemPrimitiveKind::BOOL:
     return "bool";
   case SemPrimitiveKind::NEVER:
-    return "!";
+    return "never!";
   case SemPrimitiveKind::UNIT:
     return "()";
   case SemPrimitiveKind::UNKNOWN:
