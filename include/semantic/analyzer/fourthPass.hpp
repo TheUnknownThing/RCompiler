@@ -926,8 +926,9 @@ private:
   }
 
   void require_bool(const SemType &t, const std::string &msg) {
-    if (!(t.is_primitive() && t.as_primitive().kind == SemPrimitiveKind::BOOL))
-      throw TypeError(msg);
+    if (can_assign(SemType::primitive(SemPrimitiveKind::BOOL), t))
+      return;
+    throw TypeError(msg);
   }
 
   void require_integer(const SemType &t, const std::string &msg) {

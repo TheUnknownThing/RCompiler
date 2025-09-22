@@ -1,7 +1,6 @@
-FAILED TESTS (6):
+FAILED TESTS (5):
   ✗ semantic-1/expr17 (expected: 0, got: 1)
   ✗ semantic-1/expr34 (expected: 0, got: 1)
   ✗ semantic-1/if4 (expected: 0, got: 1)
   ✗ semantic-1/misc65 (expected: 0, got: 1)
-  ✗ semantic-1/return15 (expected: 0, got: 1)
   ✗ semantic-1/return2 (expected: 0, got: 1)
