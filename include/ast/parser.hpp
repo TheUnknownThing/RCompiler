@@ -1333,9 +1333,17 @@ inline parsec::Parser<std::vector<std::shared_ptr<Expression>>>
 Parser::expression_list_parser() {
   using namespace parsec;
   auto expr = any_expression();
+  auto expr_with_comma = expr.thenL(tok(TokenType::COMMA));
 
   return tok(TokenType::L_PAREN)
-      .thenR(many(expr.thenL(optional(tok(TokenType::COMMA)))))
+      .thenR(many(expr_with_comma))
+      .combine(optional(expr),
+               [](const auto &vec, const auto &last) {
+                 std::vector<std::shared_ptr<Expression>> all = vec;
+                 if (last)
+                   all.push_back(*last);
+                 return all;
+               })
       .thenL(tok(TokenType::R_PAREN))
       .map([](auto exprs) {
         LOG_DEBUG("Parsed expression list with " +
