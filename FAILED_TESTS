@@ -4,7 +4,6 @@ FAILED TESTS (11):
   ✗ semantic-1/misc11 (expected: 0, got: 1)
   ✗ semantic-1/misc28 (expected: 0, got: 1)
   ✗ semantic-1/misc43 (expected: 0, got: 1)
-  ✗ semantic-1/misc44 (expected: 0, got: 1)
   ✗ semantic-1/misc65 (expected: 0, got: 1)
   ✗ semantic-1/return10 (expected: -1, got: 0)
   ✗ semantic-1/return11 (expected: -1, got: 0)

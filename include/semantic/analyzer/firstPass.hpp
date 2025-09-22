@@ -81,6 +81,8 @@ public:
       visit(*expr);
     } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
       visit(*expr);
+    } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
+      visit(*expr);
     }
   }
 
@@ -188,6 +190,15 @@ public:
   void visit(ReturnExpression &node) override {
     if (node.value)
       node.value.value()->accept(*this);
+  }
+
+  void visit(StructExpression &node) override {
+    if (node.path_expr)
+      node.path_expr->accept(*this);
+    for (const auto &field : node.fields) {
+      if (field.value)
+        field.value.value()->accept(*this);
+    }
   }
 
   void visit(RootNode &) override {}
