@@ -151,10 +151,10 @@ struct SemType {
 };
 
 inline bool operator==(const SemType &a, const SemType &b) {
-  if (a.storage.index() != b.storage.index())
-    return false;
   if (a.is_never() || b.is_never())
     return true;
+  if (a.storage.index() != b.storage.index())
+    return false;
   if (a.is_primitive())
     return a.as_primitive().kind == b.as_primitive().kind;
   if (a.is_tuple())
