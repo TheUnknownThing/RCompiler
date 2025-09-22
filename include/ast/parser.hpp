@@ -273,9 +273,21 @@ inline parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
                      LOG_DEBUG("Parsed struct field: " + id);
                      return std::make_pair(id, t);
                    });
-  auto fields = tok(TokenType::L_BRACE)
-                    .thenR(many(field.thenL(optional(tok(TokenType::COMMA)))))
-                    .thenL(tok(TokenType::R_BRACE));
+
+  auto field_with_comma = tok(TokenType::COMMA).thenR(field);
+
+  auto fields =
+      tok(TokenType::L_BRACE)
+          .thenR(field)
+          .combine(many(field_with_comma),
+                   [](const auto &f, const auto &fs) {
+                     std::vector<std::pair<std::string, LiteralType>> all;
+                     all.push_back(f);
+                     all.insert(all.end(), fs.begin(), fs.end());
+                     return all;
+                   })
+          .thenL(optional(tok(TokenType::COMMA)))
+          .thenL(tok(TokenType::R_BRACE));
 
   auto tuple_fields =
       tok(TokenType::L_PAREN)
@@ -1379,8 +1391,18 @@ Parser::parse_struct_expr_fields() {
         return std::nullopt;
       });
 
+  auto field_with_comma = tok(TokenType::COMMA).thenR(one_field);
+
   return tok(TokenType::L_BRACE)
-      .thenR(many(one_field.thenL(optional(tok(TokenType::COMMA)))))
+      .thenR(one_field)
+      .combine(many(field_with_comma),
+               [](const Field &f, const auto &fs) {
+                 std::vector<Field> all;
+                 all.push_back(f);
+                 all.insert(all.end(), fs.begin(), fs.end());
+                 return all;
+               })
+      .thenL(optional(tok(TokenType::COMMA)))
       .thenL(tok(TokenType::R_BRACE));
 }
 
@@ -1526,7 +1548,7 @@ inline PrattTable default_table(rc::Parser *p) {
       return std::make_shared<rc::BorrowExpression>(op, std::move(right));
     }
   };
-  
+
   tbl.prefix(rc::TokenType::PLUS, prefix_op);
   tbl.prefix(rc::TokenType::MINUS, prefix_op);
   tbl.prefix(rc::TokenType::NOT, prefix_op);

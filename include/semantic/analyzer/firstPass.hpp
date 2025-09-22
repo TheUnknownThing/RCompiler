@@ -79,6 +79,8 @@ public:
       visit(*expr);
     } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
       visit(*expr);
+    } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
+      visit(*expr);
     }
   }
 
@@ -181,6 +183,11 @@ public:
   void visit(PrefixExpression &node) override {
     if (node.right)
       node.right->accept(*this);
+  }
+
+  void visit(ReturnExpression &node) override {
+    if (node.value)
+      node.value.value()->accept(*this);
   }
 
   void visit(RootNode &) override {}

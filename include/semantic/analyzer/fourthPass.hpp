@@ -45,7 +45,7 @@ public:
 
   SemType evaluate(Expression *expr) {
     if (!expr)
-      return SemType::primitive(SemPrimitiveKind::UNIT);
+      throw SemanticException("null expression in evaluate");
     auto it = expr_cache.find(expr);
     if (it != expr_cache.end())
       return it->second;
@@ -283,6 +283,10 @@ public:
       return;
     }
 
+    if (!node.left || !node.right) {
+      throw SemanticException("binary expression missing operand");
+    }
+
     cache_expr(&node, eval_binary(node));
   }
 
@@ -295,22 +299,42 @@ public:
       auto ct = evaluate(node.condition.get());
       require_bool(ct, "if condition must be bool");
     }
-    auto then_t = node.then_block ? evaluate(node.then_block.get())
-                                  : SemType::primitive(SemPrimitiveKind::UNIT);
-    auto else_t = node.else_block ? evaluate(node.else_block.value().get())
-                                  : SemType::primitive(SemPrimitiveKind::UNIT);
 
-    if (then_t == else_t) {
-      cache_expr(&node, then_t);
+    std::optional<SemType> then_t = std::nullopt;
+    std::optional<SemType> else_t = std::nullopt;
+
+    if (node.then_block) {
+      then_t = evaluate(node.then_block.get());
+    }
+    if (node.else_block) {
+      else_t = evaluate(node.else_block.value().get());
+    }
+
+    if (!then_t.has_value() && !else_t.has_value()) {
+      throw SemanticException("if expression has no branches");
+    }
+
+    if (then_t.has_value() && !else_t.has_value()) {
+      cache_expr(&node, then_t.value());
       return;
     }
-    if (auto u = unify_integers(then_t, else_t)) {
+
+    // has then_t and else_t
+    if (then_t == else_t) {
+      cache_expr(&node, then_t.value());
+      return;
+    }
+    if (auto u = unify_integers(then_t.value(), else_t.value())) {
       cache_expr(&node, *u);
       return;
     }
 
-    throw TypeError("if branches have incompatible types: '" +
-                    to_string(then_t) + "' vs '" + to_string(else_t) + "'");
+    throw TypeError(
+        "if branches have incompatible types: '" +
+        to_string(then_t.value_or(SemType::primitive(SemPrimitiveKind::UNIT))) +
+        "' vs '" +
+        to_string(else_t.value_or(SemType::primitive(SemPrimitiveKind::UNIT))) +
+        "'");
   }
 
   void visit(MatchExpression &) override {
@@ -393,6 +417,10 @@ public:
           get_builtin_method_return_type(recv_type, node.method_name.name);
       cache_expr(&node, return_type);
       return;
+    }
+
+    if (recv_type.is_reference()) {
+      recv_type = auto_deref(recv_type);
     }
 
     if (!recv_type.is_named()) {
