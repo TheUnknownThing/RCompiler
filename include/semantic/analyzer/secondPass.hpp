@@ -95,6 +95,8 @@ public:
       visit(*decl);
     } else if (auto *expr = dynamic_cast<ArrayExpression *>(&node)) {
       visit(*expr);
+    } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
+      visit(*expr);
     }
   }
 
@@ -330,6 +332,10 @@ public:
       node.actual_size = static_cast<int64_t>(size_val);
 
       node.repeat->first->accept(*this);
+    } else {
+      for (const auto &element : node.elements) {
+        element->accept(*this);
+      }
     }
     LOG_DEBUG("[SecondPass] ArrayExpr with size " +
               std::to_string(node.actual_size));
@@ -360,6 +366,13 @@ public:
   void visit(ExpressionStatement &node) override {
     if (node.expression)
       node.expression->accept(*this);
+  }
+
+  void visit(StructExpression &node) override {
+    for (const auto &field : node.fields) {
+      if (field.value)
+        field.value.value()->accept(*this);
+    }
   }
 
   void visit(RootNode &) override {}

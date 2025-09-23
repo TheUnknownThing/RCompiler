@@ -1,4 +1,3 @@
-FAILED TESTS (3):
-  ✗ semantic-1/if4 (expected: 0, got: 1)
-  ✗ semantic-1/misc65 (expected: 0, got: 1)
-  ✗ semantic-1/return2 (expected: 0, got: 1)
+FAILED TESTS (2):
+  ✗ testcases/semantic-1/if4.rx (expected: 0, got: 1)
+  ✗ testcases/semantic-1/return2.rx (expected: 0, got: 1)
