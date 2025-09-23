@@ -230,10 +230,12 @@ public:
   void visit(EmptyStatement &) override {}
 
   void visit(NameExpression &node) override {
+    LOG_DEBUG("[FourthPass] Evaluating NameExpression: " + node.name);
     if (auto t = lookup_binding(node.name)) {
       cache_expr(&node, *t);
       return;
     }
+    LOG_DEBUG("[FourthPass] NameExpression not in bindings, checking scope");
     // fall back to scope value items
     for (auto *s = current_scope_node; s; s = s->parent) {
       if (auto *it = s->find_value_item(node.name)) {
@@ -1192,13 +1194,15 @@ private:
 
   PlaceInfo analyze_place(Expression *expr) {
     if (!expr)
-      return {};
+      throw SemanticException("analyze_place on null expr");
 
     if (auto *g = dynamic_cast<GroupExpression *>(expr)) {
+      LOG_DEBUG("[FourthPass] Analyzing place for GroupExpression");
       return analyze_place(g->inner.get());
     }
 
     if (auto *n = dynamic_cast<NameExpression *>(expr)) {
+      LOG_DEBUG("[FourthPass] Analyzing place for NameExpression: " + n->name);
       PlaceInfo info;
       if (const auto *meta = lookup_binding_meta(n->name)) {
         info.is_place = true;
@@ -1208,26 +1212,33 @@ private:
       }
 
       for (auto *s = current_scope_node; s; s = s->parent) {
-        if (auto *it = s->find_value_item(n->name)) {
+        if (s->find_value_item(n->name)) {
           info.is_place = false;
           info.is_writable = false;
           info.root_name = n->name;
           return info;
         }
       }
-      return {};
+      throw SemanticException("analyze_place on null expr");
     }
 
     if (auto *f = dynamic_cast<FieldAccessExpression *>(expr)) {
+      LOG_DEBUG("[FourthPass] Analyzing place for FieldAccessExpression: " +
+                f->field_name);
       PlaceInfo base = analyze_place(f->target.get());
       if (!base.is_place)
-        return {};
+        throw SemanticException("field access target is not a place (base)");
       auto target_t = evaluate(f->target.get());
+      bool can_write = base.is_writable;
+      if (target_t.is_reference()) {
+        can_write = target_t.as_reference().is_mutable;
+      }
+      target_t = auto_deref(target_t);
       if (!target_t.is_named())
-        return {};
+        throw SemanticException("field access target is not named");
       const CollectedItem *ci = target_t.as_named().item;
       if (!ci || !ci->has_struct_meta())
-        return {};
+        throw SemanticException("field access target is not a struct");
       bool field_exists = false;
       for (const auto &p : ci->as_struct_meta().named_fields) {
         if (p.first == f->field_name) {
@@ -1236,15 +1247,16 @@ private:
         }
       }
       if (!field_exists)
-        return {};
-      return PlaceInfo{true, base.is_writable, base.root_name};
+        throw SemanticException("field access target is not a struct");
+      return PlaceInfo{true, can_write, base.root_name};
     }
 
     if (auto *idx = dynamic_cast<IndexExpression *>(expr)) {
+      LOG_DEBUG("[FourthPass] Analyzing place for IndexExpression");
       PlaceInfo base = analyze_place(idx->target.get());
       if (!base.is_place) {
         LOG_DEBUG("[FourthPass] IndexExpression target is not a place (base)");
-        return {};
+        throw SemanticException("IndexExpression target is not a place (base)");
       }
       auto target_t = evaluate(idx->target.get());
       if (!(target_t.is_array() || target_t.is_slice() ||
@@ -1252,7 +1264,8 @@ private:
             auto_deref(target_t).is_slice())) {
         LOG_DEBUG("[FourthPass] IndexExpression target is not array or slice "
                   "(base)");
-        return {};
+        throw SemanticException("IndexExpression target is not array or slice "
+                                "(base)");
       }
 
       if (target_t.is_reference()) {
@@ -1263,18 +1276,27 @@ private:
     }
 
     if (auto *deref = dynamic_cast<DerefExpression *>(expr)) {
+      LOG_DEBUG("[FourthPass] Analyzing place for DerefExpression");
       PlaceInfo base = analyze_place(deref->right.get());
       if (!base.is_place)
-        return {};
+        throw SemanticException("DerefExpression target is not a place");
       auto target_t = evaluate(deref->right.get());
       if (!target_t.is_reference())
-        return {};
+        throw SemanticException("DerefExpression target is not a reference");
       return PlaceInfo{true, target_t.as_reference().is_mutable,
                        base.root_name};
     }
 
+    if (auto *ref = dynamic_cast<BorrowExpression *>(expr)) {
+      LOG_DEBUG("[FourthPass] Analyzing place for BorrowExpression");
+      PlaceInfo base = analyze_place(ref->right.get());
+      if (!base.is_place)
+        throw SemanticException("BorrowExpression target is not a place");
+      return PlaceInfo{true, ref->is_mutable, base.root_name};
+    }
+
     // All others are r-values
-    return {};
+    throw SemanticException("expression is r-value");
   }
 
   void require_place_writable(Expression *lhs, const char *context) {

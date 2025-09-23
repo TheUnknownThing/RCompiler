@@ -72,6 +72,10 @@ void PrettyPrintVisitor::visit(BaseNode &node) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
     visit(*expr);
+  } else if (auto *expr = dynamic_cast<DerefExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<BorrowExpression *>(&node)) {
+    visit(*expr);
   } else if (auto *expr = dynamic_cast<BreakExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<ContinueExpression *>(&node)) {
@@ -341,6 +345,19 @@ void PrettyPrintVisitor::visit(TupleExpression &node) {
       print_inline(", ");
     }
   }
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(DerefExpression &node) {
+  print_inline("DerefExpr(");
+  RC_SAFE_ACCEPT(node.right);
+  print_inline(")");
+}
+
+void PrettyPrintVisitor::visit(BorrowExpression &node) {
+  print_inline("BorrowExpr(");
+  print_inline(node.is_mutable ? "mut " : "imm ");
+  RC_SAFE_ACCEPT(node.right);
   print_inline(")");
 }
 

@@ -71,6 +71,8 @@ public:
   void visit(ContinueExpression &node) override;
   void visit(PathExpression &node) override;
   void visit(QualifiedPathExpression &node) override;
+  void visit(BorrowExpression &node) override;
+  void visit(DerefExpression &node) override;
 
   // Statement visitors
   void visit(BlockStatement &node) override;
