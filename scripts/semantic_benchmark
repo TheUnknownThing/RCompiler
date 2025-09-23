@@ -200,7 +200,7 @@ class BenchmarkRunner:
         if self.failed_tests:
             print(f"\n{Colors.RED}FAILED TESTS ({len(self.failed_tests)}):{Colors.NC}")
             for result in sorted(self.failed_tests, key=lambda r: r.full_name):
-                print(f"  ✗ {result.full_name} (expected: {result.expected}, got: {result.actual})")
+                print(f"  ✗ {self.testcases_dir}/{result.full_name}.rx (expected: {result.expected}, got: {result.actual})")
                 if self.verbose and result.output:
                     output_preview = result.output.strip().split('\n')[0]
                     print(f"    → {output_preview}")

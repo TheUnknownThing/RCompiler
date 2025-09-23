@@ -193,6 +193,8 @@ public:
     } else if (auto *struct_expr =
                    dynamic_cast<const StructExpression *>(expr)) {
       return evaluate_struct(*struct_expr);
+    } else if (auto *group = dynamic_cast<const GroupExpression *>(expr)) {
+      return evaluate(group->inner.get(), semantic_scope);
     }
 
     return std::nullopt;
@@ -419,6 +421,10 @@ private:
       return evaluate_logical_and(*left, *right);
     case TokenType::OR:
       return evaluate_logical_or(*left, *right);
+    case TokenType::SHL:
+      return evaluate_shl(*left, *right);
+    case TokenType::SHR:
+      return evaluate_shr(*left, *right);
     default:
       break;
     }
@@ -865,6 +871,60 @@ private:
                                                 const ConstValue &right) {
     if (left.is_bool() && right.is_bool()) {
       return ConstValue::bool_val(left.as_bool() || right.as_bool());
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_shl(const ConstValue &left,
+                                         const ConstValue &right) {
+    auto kind = int_result_kind(left, right);
+    if (!kind)
+      return std::nullopt;
+
+    if (*kind == SemPrimitiveKind::ANY_INT) {
+      return ConstValue::any_int(left.as_any_int() << right.as_any_int());
+    }
+
+    auto l = any_int_to(left, *kind);
+    auto r = any_int_to(right, *kind);
+    switch (*kind) {
+    case SemPrimitiveKind::I32:
+      return ConstValue::i32(l.as_i32() << r.as_i32());
+    case SemPrimitiveKind::U32:
+      return ConstValue::u32(l.as_u32() << r.as_u32());
+    case SemPrimitiveKind::ISIZE:
+      return ConstValue::isize(l.as_isize() << r.as_isize());
+    case SemPrimitiveKind::USIZE:
+      return ConstValue::usize(l.as_usize() << r.as_usize());
+    default:
+      break;
+    }
+    return std::nullopt;
+  }
+
+  std::optional<ConstValue> evaluate_shr(const ConstValue &left,
+                                         const ConstValue &right) {
+    auto kind = int_result_kind(left, right);
+    if (!kind)
+      return std::nullopt;
+
+    if (*kind == SemPrimitiveKind::ANY_INT) {
+      return ConstValue::any_int(left.as_any_int() >> right.as_any_int());
+    }
+
+    auto l = any_int_to(left, *kind);
+    auto r = any_int_to(right, *kind);
+    switch (*kind) {
+    case SemPrimitiveKind::I32:
+      return ConstValue::i32(l.as_i32() >> r.as_i32());
+    case SemPrimitiveKind::U32:
+      return ConstValue::u32(l.as_u32() >> r.as_u32());
+    case SemPrimitiveKind::ISIZE:
+      return ConstValue::isize(l.as_isize() >> r.as_isize());
+    case SemPrimitiveKind::USIZE:
+      return ConstValue::usize(l.as_usize() >> r.as_usize());
+    default:
+      break;
     }
     return std::nullopt;
   }
