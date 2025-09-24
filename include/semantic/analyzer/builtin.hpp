@@ -56,13 +56,15 @@ inline ScopeNode *create_prelude_scope() {
 
   // print(s: &str) -> ()
   add_builtin_function(
-      "print", {SemType::primitive(SemPrimitiveKind::STRING)}, {"s"},
-      SemType::primitive(SemPrimitiveKind::UNIT), prelude);
+      "print",
+      {SemType::reference(SemType::primitive(SemPrimitiveKind::STR), false)},
+      {"s"}, SemType::primitive(SemPrimitiveKind::UNIT), prelude);
 
   // println(s: &str) -> ()
   add_builtin_function(
-      "println", {SemType::primitive(SemPrimitiveKind::STRING)}, {"s"},
-      SemType::primitive(SemPrimitiveKind::UNIT), prelude);
+      "println",
+      {SemType::reference(SemType::primitive(SemPrimitiveKind::STR), false)},
+      {"s"}, SemType::primitive(SemPrimitiveKind::UNIT), prelude);
 
   // printInt(n: i32) -> ()
   add_builtin_function("printInt", {SemType::primitive(SemPrimitiveKind::I32)},
@@ -104,8 +106,7 @@ inline bool is_builtin_method(const SemType &receiver_type,
     }
 
     if (method_name == "len") {
-      return kind == SemPrimitiveKind::STRING ||
-             kind == SemPrimitiveKind::RAW_STRING;
+      return kind == SemPrimitiveKind::STRING;
     }
   }
 
@@ -119,7 +120,7 @@ inline bool is_builtin_method(const SemType &receiver_type,
         return true;
       }
       if (target.is_primitive() &&
-          target.as_primitive().kind == SemPrimitiveKind::RAW_STRING) {
+          target.as_primitive().kind == SemPrimitiveKind::STR) {
         return true;
       }
     }
@@ -153,8 +154,7 @@ inline SemType get_builtin_method_return_type(const SemType &receiver_type,
   }
 
   if (method_name == "as_str") {
-    return SemType::reference(SemType::primitive(SemPrimitiveKind::RAW_STRING),
-                              false);
+    return SemType::reference(SemType::primitive(SemPrimitiveKind::STR), false);
   }
 
   if (method_name == "len") {

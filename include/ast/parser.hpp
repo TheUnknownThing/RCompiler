@@ -1468,8 +1468,7 @@ inline PrattTable default_table(rc::Parser *p) {
              delegate_to_parsec(&rc::Parser::parse_continue_expression));
 
   // Literals
-  auto add_simple_literal = [&tbl](rc::TokenType tt,
-                                   rc::PrimitiveLiteralType plt) {
+  auto add_simple_literal = [&tbl](rc::TokenType tt, rc::LiteralType plt) {
     tbl.prefix(
         tt,
         [tt, plt](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
@@ -1482,13 +1481,13 @@ inline PrattTable default_table(rc::Parser *p) {
               auto t = plt;
               if (has_suffix) {
                 if (suffix == "i32") {
-                  t = rc::PrimitiveLiteralType::I32;
+                  t = rc::LiteralType(rc::PrimitiveLiteralType::I32);
                 } else if (suffix == "u32") {
-                  t = rc::PrimitiveLiteralType::U32;
+                  t = rc::LiteralType(rc::PrimitiveLiteralType::U32);
                 } else if (suffix == "isize") {
-                  t = rc::PrimitiveLiteralType::ISIZE;
+                  t = rc::LiteralType(rc::PrimitiveLiteralType::ISIZE);
                 } else if (suffix == "usize") {
-                  t = rc::PrimitiveLiteralType::USIZE;
+                  t = rc::LiteralType(rc::PrimitiveLiteralType::USIZE);
                 } else {
                   throw std::invalid_argument("Unknown integer suffix '" +
                                               suffix + "'");
@@ -1496,7 +1495,7 @@ inline PrattTable default_table(rc::Parser *p) {
               }
 
               return std::make_shared<rc::LiteralExpression>(
-                  std::to_string(value), rc::LiteralType(t));
+                  std::to_string(value), t);
 
             } catch (const std::exception &e) {
               LOG_ERROR("Invalid integer literal '" + prev.lexeme +
@@ -1504,21 +1503,24 @@ inline PrattTable default_table(rc::Parser *p) {
               return nullptr;
             }
           }
-          return std::make_shared<rc::LiteralExpression>(prev.lexeme,
-                                                         rc::LiteralType(plt));
+          return std::make_shared<rc::LiteralExpression>(prev.lexeme, plt);
         });
   };
 
   add_simple_literal(rc::TokenType::INTEGER_LITERAL,
-                     rc::PrimitiveLiteralType::ANY_INT);
-  add_simple_literal(rc::TokenType::STRING_LITERAL,
-                     rc::PrimitiveLiteralType::STRING);
-  add_simple_literal(rc::TokenType::C_STRING_LITERAL,
-                     rc::PrimitiveLiteralType::C_STRING);
+                     rc::LiteralType(rc::PrimitiveLiteralType::ANY_INT));
+  add_simple_literal(
+      rc::TokenType::STRING_LITERAL,
+      rc::LiteralType::reference(rc::PrimitiveLiteralType::STR, false));
+  add_simple_literal(
+      rc::TokenType::C_STRING_LITERAL,
+      rc::LiteralType::reference(rc::PrimitiveLiteralType::STR, false));
   add_simple_literal(rc::TokenType::CHAR_LITERAL,
-                     rc::PrimitiveLiteralType::CHAR);
-  add_simple_literal(rc::TokenType::TRUE, rc::PrimitiveLiteralType::BOOL);
-  add_simple_literal(rc::TokenType::FALSE, rc::PrimitiveLiteralType::BOOL);
+                     rc::LiteralType(rc::PrimitiveLiteralType::CHAR));
+  add_simple_literal(rc::TokenType::TRUE,
+                     rc::LiteralType(rc::PrimitiveLiteralType::BOOL));
+  add_simple_literal(rc::TokenType::FALSE,
+                     rc::LiteralType(rc::PrimitiveLiteralType::BOOL));
 
   // Path or Name expressions
   tbl.prefix(rc::TokenType::NON_KEYWORD_IDENTIFIER,

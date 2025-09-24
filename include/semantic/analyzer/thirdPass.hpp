@@ -192,7 +192,7 @@ private:
 
   SemType resolve_type(const LiteralType &t) {
     if (t.is_base()) {
-      return SemType::primitive(map_primitive(t.as_base()));
+      return SemType::map_primitive(t.as_base());
     }
     if (t.is_tuple()) {
       std::vector<SemType> elems;
@@ -240,36 +240,6 @@ private:
       }
     }
     return nullptr;
-  }
-
-  SemPrimitiveKind map_primitive(PrimitiveLiteralType plt) {
-    switch (plt) {
-    case PrimitiveLiteralType::I32:
-      return SemPrimitiveKind::I32;
-    case PrimitiveLiteralType::U32:
-      return SemPrimitiveKind::U32;
-    case PrimitiveLiteralType::ISIZE:
-      return SemPrimitiveKind::ISIZE;
-    case PrimitiveLiteralType::USIZE:
-      return SemPrimitiveKind::USIZE;
-    case PrimitiveLiteralType::STRING:
-      return SemPrimitiveKind::STRING;
-    case PrimitiveLiteralType::RAW_STRING:
-      return SemPrimitiveKind::RAW_STRING;
-    case PrimitiveLiteralType::C_STRING:
-      return SemPrimitiveKind::C_STRING;
-    case PrimitiveLiteralType::RAW_C_STRING:
-      return SemPrimitiveKind::RAW_C_STRING;
-    case PrimitiveLiteralType::CHAR:
-      return SemPrimitiveKind::CHAR;
-    case PrimitiveLiteralType::BOOL:
-      return SemPrimitiveKind::BOOL;
-    case PrimitiveLiteralType::NEVER:
-      return SemPrimitiveKind::NEVER;
-    case PrimitiveLiteralType::UNIT:
-      return SemPrimitiveKind::UNIT;
-    }
-    return SemPrimitiveKind::UNKNOWN;
   }
 
   CollectedItem *lookup_current_value_item(const std::string &name,

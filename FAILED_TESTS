@@ -1,3 +1,1 @@
-FAILED TESTS (2):
-  ✗ testcases/semantic-1/if4.rx (expected: 0, got: 1)
-  ✗ testcases/semantic-1/return2.rx (expected: 0, got: 1)
+✓ All tests passed!
