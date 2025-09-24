@@ -14,6 +14,7 @@
 #include "ast/nodes/pattern.hpp"
 #include "ast/nodes/stmt.hpp"
 #include "ast/nodes/topLevel.hpp"
+#include "ast/types.hpp"
 #include "semantic/analyzer/builtin.hpp"
 #include "semantic/error/exceptions.hpp"
 #include "semantic/scope.hpp"
@@ -416,6 +417,11 @@ public:
 
   void visit(MethodCallExpression &node) override {
     auto recv_type = evaluate(node.receiver.get());
+
+    if (recv_type == SemType::primitive(SemPrimitiveKind::ANY_INT)) {
+      // TODO: we just UNSAFELY cast it to u32
+      recv_type = SemType::primitive(SemPrimitiveKind::U32);
+    }
 
     // Check for builtin methods first
     if (is_builtin_method(recv_type, node.method_name.name)) {
@@ -922,9 +928,7 @@ private:
   }
 
   bool is_str(SemPrimitiveKind k) const {
-    return k == SemPrimitiveKind::STRING || k == SemPrimitiveKind::RAW_STRING ||
-           k == SemPrimitiveKind::C_STRING ||
-           k == SemPrimitiveKind::RAW_C_STRING;
+    return k == SemPrimitiveKind::STRING;
   }
 
   void require_bool(const SemType &t, const std::string &msg) {
@@ -940,7 +944,7 @@ private:
 
   SemType resolve_type(const LiteralType &type) {
     if (type.is_base()) {
-      return SemType::primitive(map_primitive(type.as_base()));
+      return SemType::map_primitive(type.as_base());
     }
     if (type.is_tuple()) {
       std::vector<SemType> elem_types;
@@ -979,38 +983,6 @@ private:
     }
 
     return SemType::primitive(SemPrimitiveKind::UNKNOWN);
-  }
-
-  SemPrimitiveKind map_primitive(PrimitiveLiteralType plt) {
-    switch (plt) {
-    case PrimitiveLiteralType::I32:
-      return SemPrimitiveKind::I32;
-    case PrimitiveLiteralType::U32:
-      return SemPrimitiveKind::U32;
-    case PrimitiveLiteralType::ISIZE:
-      return SemPrimitiveKind::ISIZE;
-    case PrimitiveLiteralType::USIZE:
-      return SemPrimitiveKind::USIZE;
-    case PrimitiveLiteralType::STRING:
-      return SemPrimitiveKind::STRING;
-    case PrimitiveLiteralType::RAW_STRING:
-      return SemPrimitiveKind::RAW_STRING;
-    case PrimitiveLiteralType::C_STRING:
-      return SemPrimitiveKind::C_STRING;
-    case PrimitiveLiteralType::RAW_C_STRING:
-      return SemPrimitiveKind::RAW_C_STRING;
-    case PrimitiveLiteralType::CHAR:
-      return SemPrimitiveKind::CHAR;
-    case PrimitiveLiteralType::BOOL:
-      return SemPrimitiveKind::BOOL;
-    case PrimitiveLiteralType::NEVER:
-      return SemPrimitiveKind::NEVER;
-    case PrimitiveLiteralType::UNIT:
-      return SemPrimitiveKind::UNIT;
-    case PrimitiveLiteralType::ANY_INT:
-      return SemPrimitiveKind::ANY_INT;
-    }
-    return SemPrimitiveKind::UNKNOWN;
   }
 
   std::optional<SemType> unify_integers(const SemType &a,
@@ -1431,12 +1403,8 @@ private:
       return SemType::primitive(SemPrimitiveKind::USIZE);
     if (name == "string")
       return SemType::primitive(SemPrimitiveKind::STRING);
-    if (name == "raw_string")
-      return SemType::primitive(SemPrimitiveKind::RAW_STRING);
-    if (name == "c_string")
-      return SemType::primitive(SemPrimitiveKind::C_STRING);
-    if (name == "raw_c_string")
-      return SemType::primitive(SemPrimitiveKind::RAW_C_STRING);
+    if (name == "str")
+      return SemType::primitive(SemPrimitiveKind::STR);
     if (name == "char")
       return SemType::primitive(SemPrimitiveKind::CHAR);
     if (name == "bool")

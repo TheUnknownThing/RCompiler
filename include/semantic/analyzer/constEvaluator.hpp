@@ -290,10 +290,7 @@ private:
           std::uint64_t val = std::stoull(node.value);
           return ConstValue::usize(val);
         }
-        case PrimitiveLiteralType::STRING:
-        case PrimitiveLiteralType::RAW_STRING:
-        case PrimitiveLiteralType::C_STRING:
-        case PrimitiveLiteralType::RAW_C_STRING: {
+        case PrimitiveLiteralType::STRING: {
           return ConstValue::string(node.value);
         }
         case PrimitiveLiteralType::CHAR: {

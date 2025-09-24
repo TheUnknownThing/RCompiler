@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ast/types.hpp"
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -30,9 +31,7 @@ enum class SemPrimitiveKind {
   ISIZE,
   USIZE,
   STRING,
-  RAW_STRING,
-  C_STRING,
-  RAW_C_STRING,
+  STR,
   CHAR,
   BOOL,
   NEVER,
@@ -148,6 +147,34 @@ struct SemType {
   const SemUnknownType &as_unknown() const {
     return std::get<SemUnknownType>(storage);
   }
+
+  static SemType map_primitive(PrimitiveLiteralType plt) {
+    switch (plt) {
+    case PrimitiveLiteralType::I32:
+      return SemType::primitive(SemPrimitiveKind::I32);
+    case PrimitiveLiteralType::U32:
+      return SemType::primitive(SemPrimitiveKind::U32);
+    case PrimitiveLiteralType::ISIZE:
+      return SemType::primitive(SemPrimitiveKind::ISIZE);
+    case PrimitiveLiteralType::USIZE:
+      return SemType::primitive(SemPrimitiveKind::USIZE);
+    case PrimitiveLiteralType::STRING:
+      return SemType::primitive(SemPrimitiveKind::STRING);
+    case PrimitiveLiteralType::STR:
+      return SemType::primitive(SemPrimitiveKind::STR);
+    case PrimitiveLiteralType::CHAR:
+      return SemType::primitive(SemPrimitiveKind::CHAR);
+    case PrimitiveLiteralType::BOOL:
+      return SemType::primitive(SemPrimitiveKind::BOOL);
+    case PrimitiveLiteralType::NEVER:
+      return SemType::primitive(SemPrimitiveKind::NEVER);
+    case PrimitiveLiteralType::UNIT:
+      return SemType::primitive(SemPrimitiveKind::UNIT);
+    case PrimitiveLiteralType::ANY_INT:
+      return SemType::primitive(SemPrimitiveKind::ANY_INT);
+    }
+    return SemType::primitive(SemPrimitiveKind::UNKNOWN);
+  }
 };
 
 inline bool operator==(const SemType &a, const SemType &b) {
@@ -188,12 +215,8 @@ inline std::string to_string(SemPrimitiveKind k) {
     return "usize";
   case SemPrimitiveKind::STRING:
     return "string";
-  case SemPrimitiveKind::RAW_STRING:
-    return "raw_string";
-  case SemPrimitiveKind::C_STRING:
-    return "c_string";
-  case SemPrimitiveKind::RAW_C_STRING:
-    return "raw_c_string";
+  case SemPrimitiveKind::STR:
+    return "str";
   case SemPrimitiveKind::CHAR:
     return "char";
   case SemPrimitiveKind::BOOL:
