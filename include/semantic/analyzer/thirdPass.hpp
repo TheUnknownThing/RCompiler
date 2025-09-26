@@ -109,10 +109,10 @@ public:
         if (fn->params) {
           for (const auto &p : *fn->params) {
             fmd.param_names.push_back(p.first);
-            fmd.param_types.push_back(resolve_type(p.second));
+            fmd.param_types.push_back(ScopeNode::resolve_type(p.second, current_scope()));
           }
         }
-        fmd.return_type = resolve_type(fn->return_type);
+        fmd.return_type = ScopeNode::resolve_type(fn->return_type, current_scope());
         fmd.decl = fn;
         meta.methods.push_back(std::move(fmd));
         LOG_DEBUG("[ThirdPass] Added method '" + fn->name + "' to struct '" +
@@ -124,7 +124,7 @@ public:
         existing.insert(cst->name);
         ConstantMetaData cmd;
         cmd.name = cst->name;
-        cmd.type = resolve_type(cst->type);
+        cmd.type = ScopeNode::resolve_type(cst->type, current_scope());
         cmd.decl = cst;
         meta.constants.push_back(std::move(cmd));
         LOG_DEBUG("[ThirdPass] Added constant '" + cst->name + "' to struct '" +
@@ -188,75 +188,6 @@ private:
       }
     }
     return nullptr;
-  }
-
-  SemType resolve_type(const LiteralType &t) {
-    if (t.is_base()) {
-      return SemType::map_primitive(t.as_base());
-    }
-    if (t.is_tuple()) {
-      std::vector<SemType> elems;
-      elems.reserve(t.as_tuple().size());
-      for (const auto &el : t.as_tuple()) {
-        elems.push_back(resolve_type(el));
-      }
-      return SemType::tuple(std::move(elems));
-    }
-    if (t.is_array()) {
-      if (t.as_array().actual_size < 0) {
-        throw SemanticException("array size not resolved");
-      }
-      return SemType::array(resolve_type(*t.as_array().element),
-                            t.as_array().actual_size);
-    }
-    if (t.is_slice()) {
-      return SemType::slice(resolve_type(*t.as_slice().element));
-    }
-    if (t.is_path()) {
-      const auto &segs = t.as_path().segments;
-      if (segs.empty())
-        throw SemanticException("empty path");
-      if (segs.size() == 1) {
-        const auto *ci = resolve_named_item(segs[0]);
-        if (ci)
-          return SemType::named(ci);
-        throw SemanticException("unknown named item " + segs[0]);
-      }
-      // qualified path, no such thing
-      throw SemanticException("qualified path not supported");
-    }
-    if (t.is_reference()) {
-      return SemType::reference(resolve_type(*t.as_reference().target),
-                                t.as_reference().is_mutable);
-    }
-    throw SemanticException("unknown type");
-  }
-
-  const CollectedItem *resolve_named_item(const std::string &name) const {
-    for (auto *scope = current_scope(); scope; scope = scope->parent) {
-      if (const auto *ci = scope->find_type_item(name)) {
-        if (ci->kind == ItemKind::Struct || ci->kind == ItemKind::Enum)
-          return ci;
-      }
-    }
-    return nullptr;
-  }
-
-  CollectedItem *lookup_current_value_item(const std::string &name,
-                                           ItemKind kind) {
-    auto *scope = current_scope();
-    auto *found = scope->find_value_item(name);
-    if (found && found->kind == kind)
-      return found;
-    throw SemanticException("item " + name + " not found in value namespace");
-  }
-  CollectedItem *lookup_current_type_item(const std::string &name,
-                                          ItemKind kind) {
-    auto *scope = current_scope();
-    auto *found = scope->find_type_item(name);
-    if (found && found->kind == kind)
-      return found;
-    throw SemanticException("item " + name + " not found in type namespace");
   }
 };
 

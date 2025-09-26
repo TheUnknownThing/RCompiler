@@ -202,7 +202,7 @@ public:
 
   void visit(LetStatement &node) override {
     LOG_DEBUG("[FourthPass] Processing let statement");
-    SemType annotated = resolve_type(node.type);
+    SemType annotated = ScopeNode::resolve_type(node.type, current_scope_node);
 
     if (!node.expr) {
       // TODO: allow uninitialized let
@@ -257,7 +257,7 @@ public:
   }
 
   void visit(LiteralExpression &node) override {
-    cache_expr(&node, resolve_type(node.type));
+    cache_expr(&node, ScopeNode::resolve_type(node.type, current_scope_node));
   }
 
   void visit(PrefixExpression &node) override {
@@ -940,49 +940,6 @@ private:
   void require_integer(const SemType &t, const std::string &msg) {
     if (!(t.is_primitive() && is_integer(t.as_primitive().kind)))
       throw TypeError(msg);
-  }
-
-  SemType resolve_type(const LiteralType &type) {
-    if (type.is_base()) {
-      return SemType::map_primitive(type.as_base());
-    }
-    if (type.is_tuple()) {
-      std::vector<SemType> elem_types;
-      elem_types.reserve(type.as_tuple().size());
-      for (const auto &elem : type.as_tuple()) {
-        elem_types.push_back(resolve_type(elem));
-      }
-      return SemType::tuple(std::move(elem_types));
-    }
-    if (type.is_array()) {
-      if (type.as_array().actual_size < 0) {
-        throw SemanticException("array size not resolved");
-      }
-      return SemType::array(resolve_type(*type.as_array().element),
-                            type.as_array().actual_size);
-    }
-    if (type.is_slice()) {
-      return SemType::slice(resolve_type(*type.as_slice().element));
-    }
-    if (type.is_path()) {
-      const auto &segments = type.as_path().segments;
-      if (segments.size() == 1) {
-        // Look up the named type in the scope tree
-        for (auto *scope = current_scope_node; scope; scope = scope->parent) {
-          if (auto *item = scope->find_type_item(segments[0])) {
-            return SemType::named(item);
-          }
-        }
-        throw SemanticException("unknown type '" + segments[0] + "'");
-      }
-      throw SemanticException("qualified paths not supported in types");
-    }
-    if (type.is_reference()) {
-      return SemType::reference(resolve_type(*type.as_reference().target),
-                                type.as_reference().is_mutable);
-    }
-
-    return SemType::primitive(SemPrimitiveKind::UNKNOWN);
   }
 
   std::optional<SemType> unify_integers(const SemType &a,

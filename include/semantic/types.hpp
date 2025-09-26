@@ -8,6 +8,7 @@
 #include <string>
 #include <variant>
 #include <vector>
+#include "semantic/error/exceptions.hpp"
 
 namespace rc {
 struct CollectedItem; // fwd decl
