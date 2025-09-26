@@ -10,7 +10,6 @@ include_directories(include)
 # Source files
 set(SOURCES 
     src/main.cpp
-    src/pretty_print.cpp
 )
 
 # Header files (not used for build, but helpful for IDEs)
@@ -57,12 +56,12 @@ if (BUILD_TESTING)
   set_tests_properties(parser_basic PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "parser;basic;stable")
 
   # New: parser comprehensive aggregated test (full dataset, pretty print)
-  add_test_executable(parser_comprehensive "tests/unit/parser_comprehensive.cpp;src/pretty_print.cpp")
+  add_test_executable(parser_comprehensive "tests/unit/parser_comprehensive.cpp")
   add_test(NAME parser_comprehensive COMMAND parser_comprehensive)
   set_tests_properties(parser_comprehensive PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "parser;comprehensive;unstable")
 
   # Unit: Comprehensive parser tests (AST validation) - for manual testing
-  add_test_executable(parser_comprehensive_runner "tests/unit/parser_comprehensive_runner.cpp;src/pretty_print.cpp")
+  add_test_executable(parser_comprehensive_runner "tests/unit/parser_comprehensive_runner.cpp")
 
   # Lexer case runner: compares tokens with expected files
   add_test_executable(lexer_case_runner tests/unit/lexer_case_runner.cpp)

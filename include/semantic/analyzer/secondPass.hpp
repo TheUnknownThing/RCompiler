@@ -65,7 +65,7 @@ private:
 // Implementation
 
 inline SecondPassResolver::SecondPassResolver()
-    : evaluator(this), root_scope(nullptr) {}
+    : root_scope(nullptr), evaluator(this) {}
 
 inline void SecondPassResolver::run(const std::shared_ptr<RootNode> &root,
                                     ScopeNode *root_scope_) {

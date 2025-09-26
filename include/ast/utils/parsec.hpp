@@ -290,7 +290,6 @@ parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
     // Array form: [ T ; expr ]
     if (pos < toks.size() && toks[pos].type == rc::TokenType::SEMICOLON) {
       pos++; // consume ';'
-      size_t expr_start = pos;
       auto size_expr = parse_expr
                            ? parse_expr(toks, pos)
                            : ParseResult<std::shared_ptr<rc::Expression>>{};
