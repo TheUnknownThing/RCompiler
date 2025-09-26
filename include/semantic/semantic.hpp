@@ -22,7 +22,6 @@ public:
 inline SemanticAnalyzer::SemanticAnalyzer() = default;
 
 inline void SemanticAnalyzer::analyze(const std::shared_ptr<RootNode> &root) {
-
   // First pass collects item name
   FirstPassBuilder first;
   first.build(root);
