@@ -12,7 +12,7 @@
 #include "utils/parsec.hpp"
 #include "utils/pratt.hpp"
 
-#include "parsers/pattern_parser.hpp"
+#include "parsers/patternParser.hpp"
 
 #include "nodes/base.hpp"
 #include "nodes/expr.hpp"

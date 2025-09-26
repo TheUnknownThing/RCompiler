@@ -6,7 +6,7 @@
 
 #include "../../include/lexer/lexer.hpp"
 #include "../../include/ast/parser.hpp"
-#include "../../include/ast/parsers/pattern_parser.hpp"
+#include "../../include/ast/parsers/patternParser.hpp"
 #include "../../include/ast/nodes/base.hpp"
 
 /**
