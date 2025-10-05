@@ -175,6 +175,8 @@ private:
   static ConstValue any_int_to(const ConstValue &v, SemPrimitiveKind target);
   static std::optional<SemPrimitiveKind>
   int_result_kind(const ConstValue &left, const ConstValue &right);
+  static std::optional<SemPrimitiveKind>
+  as_base_type(const NameExpression &node);
 
   std::optional<ConstValue> evaluate_literal(const LiteralExpression &node);
   std::optional<ConstValue> evaluate_name(const NameExpression &node);
@@ -321,6 +323,21 @@ ConstEvaluator::int_result_kind(const ConstValue &left,
   return std::nullopt;
 }
 
+inline std::optional<SemPrimitiveKind>
+ConstEvaluator::as_base_type(const NameExpression &node) {
+  const std::string &name = node.name;
+  if (name == "i32")
+    return SemPrimitiveKind::I32;
+  if (name == "u32")
+    return SemPrimitiveKind::U32;
+  if (name == "isize")
+    return SemPrimitiveKind::ISIZE;
+  if (name == "usize")
+    return SemPrimitiveKind::USIZE;
+
+  return std::nullopt;
+}
+
 inline std::optional<ConstValue>
 ConstEvaluator::evaluate_literal(const LiteralExpression &node) {
   try {
@@ -440,6 +457,26 @@ inline std::optional<ConstValue>
 ConstEvaluator::evaluate_binary(const BinaryExpression &node) {
   if (!node.left || !node.right)
     return std::nullopt;
+
+  // Handle as cast
+  if (node.op.type == TokenType::AS) {
+    auto left = evaluate(node.left.get(), current_scope);
+    if (!left)
+      return std::nullopt;
+
+    if (!is_integer_value(*left))
+      return std::nullopt;
+
+    if (!dynamic_cast<NameExpression *>(node.right.get()))
+      return std::nullopt;
+
+    auto target_base =
+        as_base_type(*dynamic_cast<NameExpression *>(node.right.get()));
+    if (!target_base)
+      return std::nullopt;
+    SemPrimitiveKind target_kind = *target_base;
+    return any_int_to(*left, target_kind);
+  }
 
   auto left = evaluate(node.left.get(), current_scope);
   auto right = evaluate(node.right.get(), current_scope);

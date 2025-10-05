@@ -1469,6 +1469,9 @@ inline bool FourthPass::is_cast_allowed(const SemType &src,
     return true;
   if (is_integer_type(src) && is_integer_type(dst))
     return true;
+  if (src.is_primitive() && src.as_primitive().kind == SemPrimitiveKind::BOOL &&
+      is_integer_type(dst))
+    return true;
   return false;
 }
 

@@ -29,7 +29,6 @@ public:
   std::shared_ptr<RootNode> parse();
 
   parsec::Parser<std::shared_ptr<Expression>> any_expression();
-  parsec::Parser<std::shared_ptr<Expression>> expression_without_block();
 
   parsec::Parser<std::shared_ptr<Expression>> parse_block_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_if_expression();
@@ -619,7 +618,7 @@ Parser::parse_block_expression() {
         std::vector<std::shared_ptr<BaseNode>> stmts;
         std::optional<std::shared_ptr<Expression>> tail_expr;
 
-        auto expr = expression_without_block();
+        auto expr = any_expression();
         auto empty_stmt = tok(TokenType::SEMICOLON).map([](auto) {
           return std::shared_ptr<BaseNode>(std::make_shared<EmptyStatement>());
         });
@@ -1210,32 +1209,6 @@ inline parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
 
         pos = saved;
         LOG_DEBUG("Pratt parser failed to parse an expression.");
-        return std::nullopt;
-      });
-}
-
-inline parsec::Parser<std::shared_ptr<Expression>>
-Parser::expression_without_block() {
-  return parsec::Parser<std::shared_ptr<Expression>>(
-      [this](const std::vector<rc::Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
-        size_t saved = pos;
-        LOG_DEBUG("Attempting to parse expression without block at position " +
-                  std::to_string(pos));
-
-        if (auto e = pratt_table_.parse_expression(toks, pos)) {
-          if (std::dynamic_pointer_cast<BlockExpression>(e)) {
-            pos = saved;
-            LOG_DEBUG(
-                "Parsed expression is a block, which is not allowed here.");
-            return std::nullopt;
-          }
-          LOG_DEBUG("Successfully parsed expression without block.");
-          return e;
-        }
-
-        pos = saved;
-        LOG_DEBUG("Failed to parse expression without block.");
         return std::nullopt;
       });
 }
