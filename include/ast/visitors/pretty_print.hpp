@@ -642,6 +642,15 @@ public:
 
     if (node.params.has_value()) {
       print_list_start("params");
+      if (node.self_param) {
+        print_indent();
+        print_inline(colorize("(", Colors::BRACE));
+        print_inline(node.self_param->is_reference ? "&" : "");
+        print_inline(node.self_param->is_mutable ? "mut" : "");
+        print_inline(colorize(" self", Colors::KEYWORD));
+        print_inline(colorize(")", Colors::BRACE));
+        print_newline();
+      }
       for (const auto &param : node.params.value()) {
         print_indent();
         print_inline(colorize("(", Colors::BRACE));

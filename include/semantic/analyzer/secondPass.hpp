@@ -152,6 +152,12 @@ inline void SecondPassResolver::visit(FunctionDecl &node) {
   sig.name = node.name;
   sig.decl = &node;
 
+  auto *ci = lookup_current_value_item(node.name, ItemKind::Function);
+  if (!ci) {
+    throw SemanticException("function item for '" + node.name +
+                            "' not found in scope");
+  }
+
   if (node.params) {
     // TODO: deduplicate parameter names
     std::set<std::shared_ptr<BasePattern>> seen_param_names;
@@ -176,9 +182,7 @@ inline void SecondPassResolver::visit(FunctionDecl &node) {
     }
   }
 
-  if (auto *ci = lookup_current_value_item(node.name, ItemKind::Function)) {
     ci->metadata = std::move(sig);
-  }
 
   if (node.body && node.body.value()) {
     node.body.value()->accept(*this);
