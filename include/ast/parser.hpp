@@ -659,6 +659,13 @@ Parser::parse_block_expression() {
               }
               pos = saved_local;
 
+              if (auto e = parse_block_expression().parse(toks, pos)) {
+                LOG_DEBUG(
+                    "Parsed control-flow statement (block) without semicolon");
+                return std::shared_ptr<BaseNode>(
+                    std::make_shared<ExpressionStatement>(*e, false));
+              }
+              pos = saved_local;
               return std::nullopt;
             });
 
@@ -1685,17 +1692,41 @@ inline PrattTable default_table(rc::Parser *p) {
   // 9: ||
   tbl.infix_left(rc::TokenType::OR, 9, bin);
   // 5: assignments
-  tbl.infix_right(rc::TokenType::ASSIGN, 5, bin);
-  tbl.infix_right(rc::TokenType::PLUS_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::MINUS_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::STAR_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::SLASH_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::PERCENT_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::AMPERSAND_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::PIPE_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::CARET_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::SHL_EQ, 5, bin);
-  tbl.infix_right(rc::TokenType::SHR_EQ, 5, bin);
+  auto assignment_parser = [&tbl](ExprPtr left, rc::Token op,
+                                  const std::vector<rc::Token> &toks,
+                                  size_t &pos) -> ExprPtr {
+    if (dynamic_cast<rc::NameExpression *>(left.get()) == nullptr &&
+        dynamic_cast<rc::FieldAccessExpression *>(left.get()) == nullptr &&
+        dynamic_cast<rc::IndexExpression *>(left.get()) == nullptr &&
+        dynamic_cast<rc::DerefExpression *>(left.get()) == nullptr) {
+      LOG_ERROR("Invalid left-hand side in assignment expression.");
+      return nullptr;
+    }
+
+    ExprPtr right = tbl.parse_expression(toks, pos, 4);
+    if (!right) {
+      return nullptr;
+    }
+
+    return std::make_shared<rc::BinaryExpression>(
+        std::move(left), std::move(op), std::move(right));
+  };
+
+  auto add_assignment_op = [&](rc::TokenType tt) {
+    tbl.infix_custom(tt, 5, 4, assignment_parser);
+  };
+
+  add_assignment_op(rc::TokenType::ASSIGN);
+  add_assignment_op(rc::TokenType::PLUS_EQ);
+  add_assignment_op(rc::TokenType::MINUS_EQ);
+  add_assignment_op(rc::TokenType::STAR_EQ);
+  add_assignment_op(rc::TokenType::SLASH_EQ);
+  add_assignment_op(rc::TokenType::PERCENT_EQ);
+  add_assignment_op(rc::TokenType::AMPERSAND_EQ);
+  add_assignment_op(rc::TokenType::PIPE_EQ);
+  add_assignment_op(rc::TokenType::CARET_EQ);
+  add_assignment_op(rc::TokenType::SHL_EQ);
+  add_assignment_op(rc::TokenType::SHR_EQ);
 
   return tbl;
 }

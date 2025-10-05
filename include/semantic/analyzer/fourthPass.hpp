@@ -112,6 +112,7 @@ private:
   bool is_str(SemPrimitiveKind k) const;
   void require_bool(const SemType &t, const std::string &msg);
   void require_integer(const SemType &t, const std::string &msg);
+  void require_bool_or_integer(const SemType &t, const std::string &msg);
   std::optional<SemType> unify_integers(const SemType &a,
                                         const SemType &b) const;
   std::optional<SemType> unify_for_op(const SemType &a, const SemType &b,
@@ -182,8 +183,6 @@ inline void FourthPass::visit(BaseNode &node) {
   } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
     visit(*expr);
   } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
     visit(*stmt);
@@ -327,9 +326,11 @@ inline void FourthPass::visit(LetStatement &node) {
   } else {
     throw SemanticException("let pattern is required");
   }
+  LOG_DEBUG("[FourthPass] Let statement processed");
 }
 
 inline void FourthPass::visit(ExpressionStatement &node) {
+  LOG_DEBUG("[FourthPass] Processing expression statement");
   if (node.expression)
     (void)evaluate(node.expression.get());
 }
@@ -370,8 +371,8 @@ inline void FourthPass::visit(PrefixExpression &node) {
   auto rt = evaluate(node.right.get());
   switch (node.op.type) {
   case TokenType::NOT:
-    require_bool(rt, "operator ! requires bool operand");
-    cache_expr(&node, SemType::primitive(SemPrimitiveKind::BOOL));
+    require_bool_or_integer(rt, "operator ! requires bool or integer operand");
+    cache_expr(&node, rt);
     break;
   case TokenType::MINUS:
     require_integer(rt, "unary - requires integer operand");
@@ -384,11 +385,13 @@ inline void FourthPass::visit(PrefixExpression &node) {
 
 inline void FourthPass::visit(BinaryExpression &node) {
   if (is_assignment_token(node.op.type)) {
+    LOG_DEBUG("[FourthPass] Handling assignment");
     handle_assignment(node);
     return;
   }
 
   if (node.op.type == TokenType::AS) {
+    LOG_DEBUG("[FourthPass] Handling as cast");
     handle_as_cast(node);
     return;
   }
@@ -746,6 +749,7 @@ inline void FourthPass::visit(LoopExpression &node) {
 }
 
 inline void FourthPass::visit(WhileExpression &node) {
+  LOG_DEBUG("[FourthPass] Visiting while expression");
   if (node.condition) {
     auto ct = evaluate(node.condition.get());
     require_bool(ct, "while condition must be bool");
@@ -753,6 +757,7 @@ inline void FourthPass::visit(WhileExpression &node) {
   if (node.body)
     (void)evaluate(node.body.get());
   cache_expr(&node, SemType::primitive(SemPrimitiveKind::UNIT));
+  LOG_DEBUG("[FourthPass] While expression processed");
 }
 
 inline void FourthPass::visit(ArrayExpression &node) {
@@ -1018,6 +1023,15 @@ inline void FourthPass::require_integer(const SemType &t,
                                         const std::string &msg) {
   if (!(t.is_primitive() && is_integer(t.as_primitive().kind)))
     throw TypeError(msg);
+}
+
+inline void FourthPass::require_bool_or_integer(const SemType &t,
+                                               const std::string &msg) {
+  if (can_assign(SemType::primitive(SemPrimitiveKind::BOOL), t))
+    return;
+  if (t.is_primitive() && is_integer(t.as_primitive().kind))
+    return;
+  throw TypeError(msg);
 }
 
 inline std::optional<SemType>
