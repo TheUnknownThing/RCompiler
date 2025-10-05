@@ -42,6 +42,7 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_continue_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_tuple_or_group_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_path_or_name_expression();
+  parsec::Parser<std::shared_ptr<Expression>> parse_struct_expression();
   parsec::Parser<std::vector<rc::StructExpression::FieldInit>>
   parse_struct_expr_fields();
 
@@ -148,7 +149,8 @@ inline std::shared_ptr<RootNode> Parser::parse() {
     pos = saved;
     LOG_ERROR("Parse error: expected a top-level item at token index " +
               std::to_string(pos) + " (token: " +
-              (pos < tokens.size() ? tokens[pos].lexeme : "EOF") + ")");
+              (pos < tokens.size() ? tokens[pos].lexeme : "EOF") + "," +
+              (pos + 1 < tokens.size() ? tokens[pos + 1].lexeme : "EOF") + ")");
     throw std::runtime_error(
         "Parse error: expected a top-level item at token index " +
         std::to_string(pos));
@@ -1384,15 +1386,36 @@ inline parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
       });
 }
 
+inline parsec::Parser<std::shared_ptr<Expression>>
+Parser::parse_struct_expression() {
+  return parsec::Parser<std::shared_ptr<Expression>>(
+      [this](const std::vector<rc::Token> &toks,
+             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
+        size_t saved = pos;
+        LOG_DEBUG("Attempting to parse struct expression at position " +
+                  std::to_string(pos));
+        auto path = parse_path_or_name_expression().parse(toks, pos);
+        if (!path) {
+          pos = saved;
+          LOG_DEBUG("Failed to parse path for struct expression");
+          return std::nullopt;
+        }
+        LOG_DEBUG("Successfully parsed path for struct expression");
+        auto fields = parse_struct_expr_fields().parse(toks, pos);
+        if (!fields) {
+          pos = saved;
+          LOG_DEBUG("Failed to parse fields for struct expression");
+          return std::nullopt;
+        }
+        LOG_DEBUG("Successfully parsed fields for struct expression");
+        return std::make_shared<rc::StructExpression>(*path, *fields);
+      });
+}
+
 inline parsec::Parser<std::vector<rc::StructExpression::FieldInit>>
 Parser::parse_struct_expr_fields() {
   using Field = rc::StructExpression::FieldInit;
   using namespace parsec;
-
-  auto shorthand = parsec::identifier.map([](const std::string &name) {
-    Field f{name, std::nullopt};
-    return f;
-  });
 
   auto explicit_field =
       parsec::identifier.thenL(tok(TokenType::COLON))
@@ -1402,22 +1425,10 @@ Parser::parse_struct_expr_fields() {
             return f;
           });
 
-  auto one_field = parsec::Parser<Field>(
-      [shorthand, explicit_field](const std::vector<rc::Token> &toks,
-                                  size_t &pos) -> parsec::ParseResult<Field> {
-        size_t saved = pos;
-        if (auto f = explicit_field.parse(toks, pos))
-          return *f;
-        pos = saved;
-        if (auto f = shorthand.parse(toks, pos))
-          return *f;
-        return std::nullopt;
-      });
-
-  auto field_with_comma = tok(TokenType::COMMA).thenR(one_field);
+  auto field_with_comma = tok(TokenType::COMMA).thenR(explicit_field);
 
   return tok(TokenType::L_BRACE)
-      .thenR(one_field)
+      .thenR(explicit_field)
       .combine(many(field_with_comma),
                [](const Field &f, const auto &fs) {
                  std::vector<Field> all;
@@ -1447,6 +1458,22 @@ inline PrattTable default_table(rc::Parser *p) {
           return nullptr;
         };
       };
+
+  auto try_struct_or_path = [p](const std::vector<rc::Token> &toks,
+                                size_t &pos) -> ExprPtr {
+    size_t start_pos = pos - 1;
+    if (auto result = p->parse_struct_expression().parse(toks, start_pos)) {
+      pos = start_pos;
+      return *result;
+    }
+    start_pos = pos - 1;
+    if (auto result =
+            p->parse_path_or_name_expression().parse(toks, start_pos)) {
+      pos = start_pos;
+      return *result;
+    }
+    return nullptr;
+  };
 
   tbl.prefix(rc::TokenType::IF,
              delegate_to_parsec(&rc::Parser::parse_if_expression));
@@ -1523,18 +1550,12 @@ inline PrattTable default_table(rc::Parser *p) {
                      rc::LiteralType(rc::PrimitiveLiteralType::BOOL));
 
   // Path or Name expressions
-  tbl.prefix(rc::TokenType::NON_KEYWORD_IDENTIFIER,
-             delegate_to_parsec(&rc::Parser::parse_path_or_name_expression));
-  tbl.prefix(rc::TokenType::SELF,
-             delegate_to_parsec(&rc::Parser::parse_path_or_name_expression));
-  tbl.prefix(rc::TokenType::SELF_TYPE,
-             delegate_to_parsec(&rc::Parser::parse_path_or_name_expression));
-  tbl.prefix(rc::TokenType::SUPER,
-             delegate_to_parsec(&rc::Parser::parse_path_or_name_expression));
-  tbl.prefix(rc::TokenType::CRATE,
-             delegate_to_parsec(&rc::Parser::parse_path_or_name_expression));
-  tbl.prefix(rc::TokenType::COLON_COLON,
-             delegate_to_parsec(&rc::Parser::parse_path_or_name_expression));
+  tbl.prefix(rc::TokenType::NON_KEYWORD_IDENTIFIER, try_struct_or_path);
+  tbl.prefix(rc::TokenType::SELF, try_struct_or_path);
+  tbl.prefix(rc::TokenType::SELF_TYPE, try_struct_or_path);
+  tbl.prefix(rc::TokenType::SUPER, try_struct_or_path);
+  tbl.prefix(rc::TokenType::CRATE, try_struct_or_path);
+  tbl.prefix(rc::TokenType::COLON_COLON, try_struct_or_path);
   tbl.prefix(rc::TokenType::L_PAREN,
              delegate_to_parsec(&rc::Parser::parse_tuple_or_group_expression));
 
@@ -1643,27 +1664,6 @@ inline PrattTable default_table(rc::Parser *p) {
         }
 
         return nullptr;
-      });
-
-  // Struct expression: PathInExpression { fields }
-  tbl.infix_custom(
-      rc::TokenType::L_BRACE, POSTFIX_PRECEDENCE, POSTFIX_PRECEDENCE + 1,
-      [p](ExprPtr left, const rc::Token &, const std::vector<rc::Token> &toks,
-          size_t &pos) -> ExprPtr {
-        if (!left)
-          return nullptr;
-        if (!(dynamic_cast<rc::NameExpression *>(left.get()) ||
-              dynamic_cast<rc::PathExpression *>(left.get()) ||
-              dynamic_cast<rc::QualifiedPathExpression *>(left.get()))) {
-          return nullptr;
-        }
-        size_t start_pos = pos - 1;
-        auto fields = p->parse_struct_expr_fields().parse(toks, start_pos);
-        if (!fields) {
-          return nullptr;
-        }
-        pos = start_pos;
-        return std::make_shared<rc::StructExpression>(left, *fields);
       });
 
   // 80: index expression
