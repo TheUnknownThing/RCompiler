@@ -555,15 +555,17 @@ inline void FourthPass::visit(CallExpression &node) {
             case SemPrimitiveKind::I32:
             case SemPrimitiveKind::ISIZE:
               if (val < INT32_MIN || val > INT32_MAX) {
-                throw SemanticException("integer literal '" + lit->value +
-                                        "' overflows function argument expecting i32");
+                throw SemanticException(
+                    "integer literal '" + lit->value +
+                    "' overflows function argument expecting i32");
               }
               break;
             case SemPrimitiveKind::U32:
             case SemPrimitiveKind::USIZE:
               if (val < 0 || static_cast<uint64_t>(val) > UINT32_MAX) {
-                throw SemanticException("integer literal '" + lit->value +
-                                        "' overflows function argument expecting u32");
+                throw SemanticException(
+                    "integer literal '" + lit->value +
+                    "' overflows function argument expecting u32");
               }
               break;
             default:
@@ -611,15 +613,16 @@ inline void FourthPass::visit(MethodCallExpression &node) {
     return;
   }
 
-  if (recv_type.is_reference()) {
-    recv_type = auto_deref(recv_type);
+  SemType method_lookup_type = recv_type;
+  if (method_lookup_type.is_reference()) {
+    method_lookup_type = auto_deref(method_lookup_type);
   }
 
-  if (!recv_type.is_named()) {
+  if (!method_lookup_type.is_named()) {
     throw TypeError("method call on non-struct type: " + to_string(recv_type));
   }
 
-  const CollectedItem *ci = recv_type.as_named().item;
+  const CollectedItem *ci = method_lookup_type.as_named().item;
   if (!ci || !ci->has_struct_meta()) {
     throw TypeError("method call target is not a struct");
   }
@@ -638,25 +641,72 @@ inline void FourthPass::visit(MethodCallExpression &node) {
 
   const auto &params = found->param_types;
   const size_t argc = node.arguments.size();
-  if (!(params.size() == argc || params.size() == argc + 1)) {
-    throw TypeError(
-        "method " + node.method_name.name + " signature mismatch: expected " +
-        std::to_string(params.size()) + ", got " + std::to_string(argc + 1));
+  const auto &self_param = found->decl->self_param;
+
+  if (self_param.has_value()) {
+    LOG_DEBUG("[FourthPass] Method has self parameter");
+
+    SemType base_self_type;
+    if (self_param->explicit_type.has_value()) {
+      base_self_type = ScopeNode::resolve_type(
+          self_param->explicit_type.value(), current_scope_node);
+    } else {
+      base_self_type = SemType::named(ci);
+    }
+
+    SemType self_param_type = base_self_type;
+
+    if (self_param->is_reference) {
+      self_param_type =
+          SemType::reference(base_self_type, self_param->is_mutable);
+      const auto &ref_details = self_param_type.as_reference();
+      SemType base_receiver_type = auto_deref(recv_type);
+
+      if (*ref_details.target != base_receiver_type) {
+        throw TypeError("method call type mismatch for '" +
+                        node.method_name.name + "': receiver is of type '" +
+                        to_string(recv_type) + "', but method expects '" +
+                        to_string(self_param_type) + "'");
+      }
+
+      if (ref_details.is_mutable) {
+        try {
+          PlaceInfo place = analyze_place(node.receiver.get());
+          if (!place.is_writable) {
+            throw TypeError(
+                "cannot borrow immutable value as mutable: method '" +
+                node.method_name.name + "' requires a mutable receiver");
+          }
+        } catch (const SemanticException &) {
+          if ((recv_type.is_reference() &&
+              !recv_type.as_reference().is_mutable) ||
+              (!recv_type.is_reference())) {
+            throw TypeError(
+                "cannot borrow immutable value as mutable: method '" +
+                node.method_name.name + "' requires a mutable receiver");
+          }
+        }
+      }
+    } else { // 'self' is passed by value
+      if (!can_assign(self_param_type, recv_type)) {
+        throw TypeError("receiver type mismatch for method '" +
+                        node.method_name.name + "': expected '" +
+                        to_string(self_param_type) + "', got '" +
+                        to_string(recv_type) + "'");
+      }
+    }
   }
 
-  size_t arg_index_offset = 0;
-  if (params.size() == argc + 1) {
-    // Method with self parameter
-    if (!(recv_type == params[0])) {
-      throw TypeError("receiver type mismatch for method " +
-                      node.method_name.name + ": expected " +
-                      to_string(params[0]) + " got " + to_string(recv_type));
-    }
-    arg_index_offset = 1;
+  if (params.size() != argc) {
+    throw TypeError("method '" + node.method_name.name +
+                    "' argument count mismatch: expected " +
+                    std::to_string(params.size()) + ", got " +
+                    std::to_string(argc));
   }
+
   for (size_t i = 0; i < argc; ++i) {
     auto at = evaluate(node.arguments[i].get());
-    const auto &expected = params[i + arg_index_offset];
+    const auto &expected = params[i];
     if (!can_assign(expected, at)) {
       throw TypeError("argument type mismatch in method " +
                       node.method_name.name + " at position " +

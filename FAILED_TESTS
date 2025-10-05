@@ -1,4 +1,1 @@
-FAILED TESTS (3):
-  ✗ testcases/semantic-1/autoref7.rx (expected: -1, got: 0)
-  ✗ testcases/semantic-1/autoref8.rx (expected: -1, got: 0)
-  ✗ testcases/semantic-1/misc57.rx (expected: -1, got: 0)
+✓ All tests passed!
