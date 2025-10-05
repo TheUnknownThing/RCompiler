@@ -42,14 +42,25 @@ See [whitelist.md](whitelist.md) for the concrete, implementable subset of the R
 - [x] Parser
     - Parse expr, stmts, items
 
-- [x] Semantic Check
-
-    TBD in this part:
-    - mut / ref check
-    - refutability / irrefutability
-    - const expr handling
-    - Lvalue, Rvalue
-    - closure
-    - ...maybe more
+- [x] Semantic Checking
+    - [x] First Pass
+        - Symbol Table Construction
+        - Scope Management
+    - [x] Builtin Types and Functions
+    - [x] Second Pass
+        - Type Resolution
+        - Function Signature Verification
+        - Constant Evaluation
+    - [x] Third Pass
+        - Promote `impl` blocks to `struct`/`trait` definitions
+    - [x] Fourth Pass
+        - Pattern Binding
+        - Type Checking
+        - Borrow Checking
+        - Expression Analysis
+    - [x] Control Flow Analysis
+        - Return Path Verification
+    - [x] Dirty Workarounds
+        - Handling `exit(0)` in `main`
 
 - [ ] IR Codegen
