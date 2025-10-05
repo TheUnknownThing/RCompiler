@@ -544,6 +544,37 @@ inline void FourthPass::visit(CallExpression &node) {
                         " at position " + std::to_string(i) + ": expected " +
                         to_string(expected) + " got " + to_string(at));
       }
+      if (auto *lit =
+              dynamic_cast<LiteralExpression *>(node.arguments[i].get())) {
+        if (at.is_primitive() &&
+            at.as_primitive().kind == SemPrimitiveKind::ANY_INT &&
+            is_integer_type(expected)) {
+          try {
+            auto val = std::stoll(lit->value);
+            switch (expected.as_primitive().kind) {
+            case SemPrimitiveKind::I32:
+            case SemPrimitiveKind::ISIZE:
+              if (val < INT32_MIN || val > INT32_MAX) {
+                throw SemanticException("integer literal '" + lit->value +
+                                        "' overflows function argument expecting i32");
+              }
+              break;
+            case SemPrimitiveKind::U32:
+            case SemPrimitiveKind::USIZE:
+              if (val < 0 || static_cast<uint64_t>(val) > UINT32_MAX) {
+                throw SemanticException("integer literal '" + lit->value +
+                                        "' overflows function argument expecting u32");
+              }
+              break;
+            default:
+              break;
+            }
+          } catch (const std::out_of_range &) {
+            throw SemanticException("integer literal '" + lit->value +
+                                    "' is out of range for a 64-bit integer");
+          }
+        }
+      }
     }
 
     cache_expr(&node, fn->return_type);
@@ -631,6 +662,39 @@ inline void FourthPass::visit(MethodCallExpression &node) {
                       node.method_name.name + " at position " +
                       std::to_string(i) + ": expected " + to_string(expected) +
                       " got " + to_string(at));
+    }
+    if (auto *lit =
+            dynamic_cast<LiteralExpression *>(node.arguments[i].get())) {
+      if (at.is_primitive() &&
+          at.as_primitive().kind == SemPrimitiveKind::ANY_INT &&
+          is_integer_type(expected)) {
+        try {
+          auto val = std::stoll(lit->value);
+          switch (expected.as_primitive().kind) {
+          case SemPrimitiveKind::I32:
+          case SemPrimitiveKind::ISIZE:
+            if (val < INT32_MIN || val > INT32_MAX) {
+              throw SemanticException(
+                  "integer literal '" + lit->value +
+                  "' overflows method argument expecting i32");
+            }
+            break;
+          case SemPrimitiveKind::U32:
+          case SemPrimitiveKind::USIZE:
+            if (val < 0 || static_cast<uint64_t>(val) > UINT32_MAX) {
+              throw SemanticException(
+                  "integer literal '" + lit->value +
+                  "' overflows method argument expecting u32");
+            }
+            break;
+          default:
+            break;
+          }
+        } catch (const std::out_of_range &) {
+          throw SemanticException("integer literal '" + lit->value +
+                                  "' is out of range for a 64-bit integer");
+        }
+      }
     }
   }
   cache_expr(&node, found->return_type);
@@ -1637,6 +1701,39 @@ inline void FourthPass::resolve_path_function_call(const PathExpression &pe,
       throw TypeError("argument type mismatch in call to " + fn_name +
                       " at position " + std::to_string(i) + ": expected " +
                       to_string(expected) + " got " + to_string(at));
+    }
+    if (auto *lit =
+            dynamic_cast<LiteralExpression *>(node.arguments[i].get())) {
+      if (at.is_primitive() &&
+          at.as_primitive().kind == SemPrimitiveKind::ANY_INT &&
+          is_integer_type(expected)) {
+        try {
+          auto val = std::stoll(lit->value);
+          switch (expected.as_primitive().kind) {
+          case SemPrimitiveKind::I32:
+          case SemPrimitiveKind::ISIZE:
+            if (val < INT32_MIN || val > INT32_MAX) {
+              throw SemanticException(
+                  "integer literal '" + lit->value +
+                  "' overflows function argument expecting i32");
+            }
+            break;
+          case SemPrimitiveKind::U32:
+          case SemPrimitiveKind::USIZE:
+            if (val < 0 || static_cast<uint64_t>(val) > UINT32_MAX) {
+              throw SemanticException(
+                  "integer literal '" + lit->value +
+                  "' overflows function argument expecting u32");
+            }
+            break;
+          default:
+            break;
+          }
+        } catch (const std::out_of_range &) {
+          throw SemanticException("integer literal '" + lit->value +
+                                  "' is out of range for a 64-bit integer");
+        }
+      }
     }
   }
 
