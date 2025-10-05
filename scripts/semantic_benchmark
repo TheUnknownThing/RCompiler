@@ -66,38 +66,63 @@ class BenchmarkRunner:
             print_error(f"Testcases directory not found: {self.testcases_dir}")
             sys.exit(1)
 
-    def find_testcases(self) -> List[Path]:
+    def find_testcases(self) -> List[Tuple[Path, Dict]]:
         """Find all testcase directories matching the stage and testpoint filters"""
         testcases = []
         
-        for metadata_file in self.testcases_dir.rglob("testcase_info.json"):
-            testdir = metadata_file.parent
-            testname = testdir.name
-            stage = testdir.parent.name
+        # Look for global.json in stage directories
+        for stage_dir in self.testcases_dir.iterdir():
+            if not stage_dir.is_dir() or stage_dir.name == '.git':
+                continue
+            
+            stage_name = stage_dir.name
             
             # Filter by stage
-            if self.stage_filter and stage != self.stage_filter:
+            if self.stage_filter and stage_name != self.stage_filter:
                 continue
             
-            # Filter by testpoint (if specified)
-            if self.testpoint and testname != self.testpoint:
+            # Load global.json for this stage
+            global_json_path = stage_dir / "global.json"
+            if not global_json_path.is_file():
                 continue
             
-            # Check if .rx file exists
-            rx_file = testdir / f"{testname}.rx"
-            if rx_file.is_file():
-                testcases.append(testdir)
+            try:
+                with open(global_json_path, 'r') as f:
+                    test_metadata_list = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                continue
+            
+            # Process each test in the global.json
+            for test_metadata in test_metadata_list:
+                testname = test_metadata.get('name')
+                if not testname:
+                    continue
+                
+                # Filter by testpoint (if specified)
+                if self.testpoint and testname != self.testpoint:
+                    continue
+                
+                # Check if active
+                if not test_metadata.get('active', True):
+                    continue
+                
+                # Construct path to .rx file
+                source_info = test_metadata.get('source', [])
+                if source_info:
+                    rx_file_rel = source_info[0] if isinstance(source_info, list) else source_info
+                    rx_file = stage_dir / rx_file_rel
+                else:
+                    # Fallback to default path
+                    rx_file = stage_dir / "src" / testname / f"{testname}.rx"
+                
+                if rx_file.is_file():
+                    testcases.append((rx_file, test_metadata))
         
-        return sorted(testcases, key=lambda p: f"{p.parent.name}/{p.name}")
+        return sorted(testcases, key=lambda t: f"{t[0].parts[-3]}/{t[1]['name']}")
 
-    def get_expected_exit_code(self, metadata_file: Path) -> Optional[str]:
+    def get_expected_exit_code(self, metadata: Dict) -> Optional[str]:
         """Extract expected exit code from testcase metadata"""
-        try:
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
-                return metadata.get('compileexitcode', 'UNKNOWN')
-        except (json.JSONDecodeError, FileNotFoundError):
-            return None
+        return metadata.get('compileexitcode', 'UNKNOWN')
 
     def run_compiler(self, rx_file: Path) -> Tuple[int, str]:
         """Run the compiler and return exit code and output"""
@@ -114,15 +139,14 @@ class BenchmarkRunner:
         except subprocess.SubprocessError as e:
             return 1, str(e)
 
-    def run_test(self, testdir: Path) -> TestResult:
+    def run_test(self, rx_file: Path, metadata: Dict) -> TestResult:
         """Run a single test and return the result"""
-        testname = testdir.name
-        stage = testdir.parent.name
-        rx_file = testdir / f"{testname}.rx"
-        metadata_file = testdir / "testcase_info.json"
+        testname = metadata.get('name', 'unknown')
+        # Extract stage from the path (e.g., testcases/semantic-1/src/...)
+        stage = rx_file.parts[-4] if len(rx_file.parts) >= 4 else 'unknown'
         
         # Get expected exit code
-        expected = self.get_expected_exit_code(metadata_file)
+        expected = self.get_expected_exit_code(metadata)
         if expected is None or expected == "UNKNOWN":
             return TestResult(testname, stage, "UNKNOWN", -1, 
                             "Could not read expected exit code", False)
@@ -155,8 +179,8 @@ class BenchmarkRunner:
         else:
             print_info(f"Running {len(testcases)} testcases for stage: {self.stage_filter}")
         
-        for testdir in testcases:
-            result = self.run_test(testdir)
+        for rx_file, metadata in testcases:
+            result = self.run_test(rx_file, metadata)
             
             if result.passed:
                 self.passed_tests.append(result)
