@@ -311,7 +311,6 @@ inline void FourthPass::visit(LetStatement &node) {
   SemType annotated = ScopeNode::resolve_type(node.type, current_scope_node);
 
   if (!node.expr) {
-    // TODO: allow uninitialized let
     throw SemanticException("let initializer expression is required");
   }
   auto rhs_t = evaluate(node.expr.get());
@@ -326,6 +325,40 @@ inline void FourthPass::visit(LetStatement &node) {
   } else {
     throw SemanticException("let pattern is required");
   }
+
+  if (auto *lit = dynamic_cast<LiteralExpression *>(node.expr.get())) {
+    if (rhs_t.is_primitive() &&
+        rhs_t.as_primitive().kind == SemPrimitiveKind::ANY_INT &&
+        is_integer_type(annotated)) {
+      LOG_DEBUG("[FourthPass] Checking for overflow in let statement with "
+                "literal initializer");
+      try {
+        auto val = std::stoll(lit->value);
+        switch (annotated.as_primitive().kind) {
+        case SemPrimitiveKind::I32:
+        case SemPrimitiveKind::ISIZE:
+          if (val < INT32_MIN || val > INT32_MAX) {
+            throw SemanticException("integer literal '" + lit->value +
+                                    "' overflows when assigned to i32");
+          }
+          break;
+        case SemPrimitiveKind::U32:
+        case SemPrimitiveKind::USIZE:
+          if (val < 0 || static_cast<uint64_t>(val) > UINT32_MAX) {
+            throw SemanticException("integer literal '" + lit->value +
+                                    "' overflows when assigned to u32");
+          }
+          break;
+        default:
+          break;
+        }
+      } catch (const std::out_of_range &) {
+        throw SemanticException("integer literal '" + lit->value +
+                                "' is out of range for a 64-bit integer");
+      }
+    }
+  }
+
   LOG_DEBUG("[FourthPass] Let statement processed");
 }
 
@@ -1026,7 +1059,7 @@ inline void FourthPass::require_integer(const SemType &t,
 }
 
 inline void FourthPass::require_bool_or_integer(const SemType &t,
-                                               const std::string &msg) {
+                                                const std::string &msg) {
   if (can_assign(SemType::primitive(SemPrimitiveKind::BOOL), t))
     return;
   if (t.is_primitive() && is_integer(t.as_primitive().kind))
@@ -1492,6 +1525,39 @@ inline bool FourthPass::is_cast_allowed(const SemType &src,
 inline void FourthPass::handle_as_cast(BinaryExpression &node) {
   SemType src = evaluate(node.left.get());
   SemType dst = primitive_kind_from_name(node.right.get());
+
+  if (auto *lit = dynamic_cast<LiteralExpression *>(node.left.get())) {
+    if (src.is_primitive() &&
+        src.as_primitive().kind == SemPrimitiveKind::ANY_INT &&
+        is_integer_type(dst)) {
+      try {
+        auto val = std::stoll(lit->value);
+        auto dst_kind = dst.as_primitive().kind;
+
+        switch (dst_kind) {
+        case SemPrimitiveKind::I32:
+        case SemPrimitiveKind::ISIZE:
+          if (val < INT32_MIN || val > INT32_MAX) {
+            throw SemanticException("integer literal '" + lit->value +
+                                    "' overflows when casting to i32");
+          }
+          break;
+        case SemPrimitiveKind::U32:
+        case SemPrimitiveKind::USIZE:
+          if (val < 0 || static_cast<uint64_t>(val) > UINT32_MAX) {
+            throw SemanticException("integer literal '" + lit->value +
+                                    "' overflows when casting to u32");
+          }
+          break;
+        default:
+          break;
+        }
+      } catch (const std::out_of_range &) {
+        throw SemanticException("integer literal '" + lit->value +
+                                "' is out of range for a 64-bit integer");
+      }
+    }
+  }
 
   if (!is_cast_allowed(src, dst)) {
     throw TypeError("invalid cast from '" + to_string(src) + "' to '" +
