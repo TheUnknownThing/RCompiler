@@ -1,7 +1,5 @@
-FAILED TESTS (15):
+FAILED TESTS (12):
   ✗ testcases/semantic-2/comprehensive11.rx (expected: 0, got: 1)
-  ✗ testcases/semantic-2/comprehensive14.rx (expected: 0, got: 1)
-  ✗ testcases/semantic-2/comprehensive15.rx (expected: 0, got: 1)
   ✗ testcases/semantic-2/comprehensive18.rx (expected: 0, got: 1)
   ✗ testcases/semantic-2/comprehensive2.rx (expected: 0, got: 1)
   ✗ testcases/semantic-2/comprehensive20.rx (expected: 0, got: 1)
@@ -11,7 +9,6 @@ FAILED TESTS (15):
   ✗ testcases/semantic-2/comprehensive29.rx (expected: 0, got: 1)
   ✗ testcases/semantic-2/comprehensive3.rx (expected: 0, got: 1)
   ✗ testcases/semantic-2/comprehensive30.rx (expected: 0, got: 1)
-  ✗ testcases/semantic-2/comprehensive31.rx (expected: 0, got: 1)
   ✗ testcases/semantic-2/comprehensive33.rx (expected: 0, got: 1)
   ✗ testcases/semantic-2/comprehensive34.rx (expected: 0, got: 1)
   ✗ testcases/semantic-1/autoref7.rx (expected: -1, got: 0)

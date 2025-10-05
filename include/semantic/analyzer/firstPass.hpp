@@ -44,6 +44,7 @@ public:
   void visit(PrefixExpression &node) override;
   void visit(ReturnExpression &node) override;
   void visit(StructExpression &node) override;
+  void visit(CallExpression &node) override;
   void visit(RootNode &) override;
 
 private:
@@ -117,6 +118,8 @@ inline void FirstPassBuilder::visit(BaseNode &node) {
   } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
+    visit(*expr);
+  } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
     visit(*expr);
   }
 }
@@ -231,6 +234,13 @@ inline void FirstPassBuilder::visit(StructExpression &node) {
   for (const auto &field : node.fields) {
     if (field.value)
       field.value.value()->accept(*this);
+  }
+}
+
+inline void FirstPassBuilder::visit(CallExpression &node) {
+  for (const auto &arg : node.arguments) {
+    if (arg)
+      arg->accept(*this);
   }
 }
 
