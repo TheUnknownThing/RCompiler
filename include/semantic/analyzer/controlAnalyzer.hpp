@@ -23,8 +23,6 @@ public:
   void visit(BaseNode &node) override;
 
   // Expression visitors
-  void visit(NameExpression &node) override;
-  void visit(LiteralExpression &node) override;
   void visit(PrefixExpression &node) override;
   void visit(BinaryExpression &node) override;
   void visit(GroupExpression &node) override;
@@ -34,7 +32,6 @@ public:
   void visit(MethodCallExpression &node) override;
   void visit(FieldAccessExpression &node) override;
   void visit(StructExpression &node) override;
-  void visit(UnderscoreExpression &node) override;
   void visit(BlockExpression &node) override;
   void visit(LoopExpression &node) override;
   void visit(WhileExpression &node) override;
@@ -44,25 +41,19 @@ public:
   void visit(BreakExpression &node) override;
   void visit(ContinueExpression &node) override;
   void visit(PathExpression &node) override;
-  void visit(QualifiedPathExpression &node) override;
 
   // Statement visitors
   void visit(BlockStatement &node) override;
   void visit(LetStatement &node) override;
   void visit(ExpressionStatement &node) override;
-  void visit(EmptyStatement &node) override;
 
   // Pattern visitors
-  void visit(IdentifierPattern &node) override;
-  void visit(LiteralPattern &node) override;
   void visit(ReferencePattern &node) override;
   void visit(OrPattern &node) override;
 
   // Top-level declaration visitors
   void visit(FunctionDecl &node) override;
   void visit(ConstantItem &node) override;
-  void visit(StructDecl &node) override;
-  void visit(EnumDecl &node) override;
   void visit(TraitDecl &node) override;
   void visit(ImplDecl &node) override;
   void visit(RootNode &node) override;
@@ -91,11 +82,7 @@ inline bool ControlAnalyzer::analyze(const std::shared_ptr<BaseNode> &node) {
 
 inline void ControlAnalyzer::visit(BaseNode &node) {
   // Expressions
-  if (auto *expr = dynamic_cast<NameExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LiteralExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
+  if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
     visit(*expr);
@@ -112,8 +99,6 @@ inline void ControlAnalyzer::visit(BaseNode &node) {
   } else if (auto *expr = dynamic_cast<FieldAccessExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<UnderscoreExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
     visit(*expr);
@@ -133,8 +118,6 @@ inline void ControlAnalyzer::visit(BaseNode &node) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<PathExpression *>(&node)) {
     visit(*expr);
-  } else if (auto *expr = dynamic_cast<QualifiedPathExpression *>(&node)) {
-    visit(*expr);
   }
   // Statements
   else if (auto *stmt = dynamic_cast<BlockStatement *>(&node)) {
@@ -143,17 +126,11 @@ inline void ControlAnalyzer::visit(BaseNode &node) {
     visit(*stmt);
   } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
     visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<EmptyStatement *>(&node)) {
-    visit(*stmt);
   }
   // Top-level
   else if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
     visit(*decl);
   } else if (auto *decl = dynamic_cast<ConstantItem *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
     visit(*decl);
   } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
     visit(*decl);
@@ -163,11 +140,7 @@ inline void ControlAnalyzer::visit(BaseNode &node) {
     visit(*root);
   }
   // Patterns
-  else if (auto *p = dynamic_cast<IdentifierPattern *>(&node)) {
-    visit(*p);
-  } else if (auto *p = dynamic_cast<LiteralPattern *>(&node)) {
-    visit(*p);
-  } else if (auto *p = dynamic_cast<ReferencePattern *>(&node)) {
+  else if (auto *p = dynamic_cast<ReferencePattern *>(&node)) {
     visit(*p);
   } else if (auto *p = dynamic_cast<OrPattern *>(&node)) {
     visit(*p);
@@ -177,9 +150,6 @@ inline void ControlAnalyzer::visit(BaseNode &node) {
 }
 
 // Expression visitors
-inline void ControlAnalyzer::visit(NameExpression &node) { (void)node; }
-
-inline void ControlAnalyzer::visit(LiteralExpression &node) { (void)node; }
 
 inline void ControlAnalyzer::visit(PrefixExpression &node) {
   if (node.right)
@@ -244,8 +214,6 @@ inline void ControlAnalyzer::visit(StructExpression &node) {
       f.value.value()->accept(*this);
   }
 }
-
-inline void ControlAnalyzer::visit(UnderscoreExpression &node) { (void)node; }
 
 inline void ControlAnalyzer::visit(BlockExpression &node) {
   for (auto &s : node.statements) {
@@ -326,10 +294,6 @@ inline void ControlAnalyzer::visit(PathExpression &node) {
   }
 }
 
-inline void ControlAnalyzer::visit(QualifiedPathExpression &) {
-  // No QualiiedPath anymore
-}
-
 // Statement visitors
 inline void ControlAnalyzer::visit(BlockStatement &node) {
   for (auto &s : node.statements) {
@@ -350,13 +314,7 @@ inline void ControlAnalyzer::visit(ExpressionStatement &node) {
     node.expression->accept(*this);
 }
 
-inline void ControlAnalyzer::visit(EmptyStatement &node) { (void)node; }
-
 // Pattern visitors
-inline void ControlAnalyzer::visit(IdentifierPattern &) {}
-
-inline void ControlAnalyzer::visit(LiteralPattern &node) { (void)node; }
-
 inline void ControlAnalyzer::visit(ReferencePattern &node) {
   if (node.inner_pattern)
     node.inner_pattern->accept(*this);
@@ -382,10 +340,6 @@ inline void ControlAnalyzer::visit(ConstantItem &node) {
   if (node.value)
     node.value.value()->accept(*this);
 }
-
-inline void ControlAnalyzer::visit(StructDecl &node) { (void)node; }
-
-inline void ControlAnalyzer::visit(EnumDecl &node) { (void)node; }
 
 inline void ControlAnalyzer::visit(TraitDecl &node) {
   for (auto &item : node.associated_items) {
