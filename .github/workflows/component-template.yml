@@ -85,14 +85,13 @@ jobs:
           fi
           cmake --build "$BUILD_DIR" --target "$TARGET" --parallel
 
-      - name: Post-build hook
+            - name: Post-build hook
         if: ${{ inputs.post_build_command != '' }}
         run: |
           set -e
-          cat <<'EOF' > /tmp/post-build.sh
-${{ inputs.post_build_command }}
-EOF
-          bash /tmp/post-build.sh
+          printf '%s\n' "${{ inputs.post_build_command }}" > /tmp/post-build.sh
+          chmod +x /tmp/post-build.sh
+          /tmp/post-build.sh
 
       - name: Run component test suite
         run: |
@@ -100,10 +99,9 @@ EOF
           if [ -z "${{ inputs.test_command }}" ]; then
             ctest --test-dir "$BUILD_DIR" --output-on-failure -L ${{ inputs.test_label }}
           else
-            cat <<'EOF' > /tmp/run-tests.sh
-${{ inputs.test_command }}
-EOF
-            bash /tmp/run-tests.sh
+            printf '%s\n' "${{ inputs.test_command }}" > /tmp/run-tests.sh
+            chmod +x /tmp/run-tests.sh
+            /tmp/run-tests.sh
           fi
 
       - name: Upload test logs on failure
