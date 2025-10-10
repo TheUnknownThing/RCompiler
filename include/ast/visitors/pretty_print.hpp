@@ -82,8 +82,6 @@ public:
       visit(*expr);
     } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
       visit(*expr);
-    } else if (auto *expr = dynamic_cast<MatchExpression *>(&node)) {
-      visit(*expr);
     } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
       visit(*expr);
     } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
@@ -200,43 +198,6 @@ public:
     }
 
     print_node_end();
-  }
-
-  inline void visit(MatchExpression &node) override {
-    print_line("MatchExpr {");
-    increase_indent();
-
-    print_indent();
-    print_inline("scrutinee: ");
-    RC_SAFE_ACCEPT(node.scrutinee);
-    output_ << std::endl;
-
-    print_line("arms: [");
-    increase_indent();
-    for (const auto &arm : node.arms) {
-      print_line("MatchArm {");
-      increase_indent();
-      print_line("pattern: ");
-      RC_SAFE_ACCEPT(arm.pattern);
-      if (arm.guard.has_value()) {
-        print_indent();
-        print_inline("guard: ");
-        RC_SAFE_ACCEPT(arm.guard.value());
-        output_ << std::endl;
-      }
-      print_indent();
-      print_inline("body: ");
-      RC_SAFE_ACCEPT(arm.body);
-      output_ << std::endl;
-      decrease_indent();
-      print_line("}");
-    }
-    decrease_indent();
-    print_line("]");
-
-    decrease_indent();
-    print_indent();
-    print_inline("}");
   }
 
   inline void visit(ReturnExpression &node) override {

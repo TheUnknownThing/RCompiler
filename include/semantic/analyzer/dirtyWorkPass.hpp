@@ -27,7 +27,6 @@ public:
   void visit(LoopExpression &node) override;
   void visit(WhileExpression &node) override;
   void visit(ReturnExpression &node) override;
-  void visit(MatchExpression &node) override;
   void visit(ExpressionStatement &node) override;
   void visit(LetStatement &node) override;
   void visit(ImplDecl &node) override;
@@ -75,8 +74,6 @@ inline void DirtyWorkPass::visit(BaseNode &node) {
   } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<MatchExpression *>(&node)) {
     visit(*expr);
   } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
     visit(*stmt);
@@ -224,17 +221,6 @@ inline void DirtyWorkPass::visit(WhileExpression &node) {
 inline void DirtyWorkPass::visit(ReturnExpression &node) {
   if (node.value.has_value()) {
     node.value.value()->accept(*this);
-  }
-}
-
-inline void DirtyWorkPass::visit(MatchExpression &node) {
-  if (node.scrutinee) {
-    node.scrutinee->accept(*this);
-  }
-  for (const auto &arm : node.arms) {
-    if (arm.body) {
-      arm.body->accept(*this);
-    }
   }
 }
 

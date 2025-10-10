@@ -9,7 +9,6 @@ class PrefixExpression;
 class BinaryExpression;
 class GroupExpression;
 class IfExpression;
-class MatchExpression;
 class ReturnExpression;
 class CallExpression;
 class FieldAccessExpression;
@@ -74,7 +73,6 @@ public:
   virtual void visit(BinaryExpression &) {}
   virtual void visit(GroupExpression &) {}
   virtual void visit(IfExpression &) {}
-  virtual void visit(MatchExpression &) {}
   virtual void visit(ReturnExpression &) {}
   virtual void visit(CallExpression &) {}
   virtual void visit(FieldAccessExpression &) {}

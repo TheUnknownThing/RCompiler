@@ -29,7 +29,6 @@ public:
   void visit(BinaryExpression &node) override;
   void visit(GroupExpression &node) override;
   void visit(IfExpression &node) override;
-  void visit(MatchExpression &node) override;
   void visit(ReturnExpression &node) override;
   void visit(CallExpression &node) override;
   void visit(MethodCallExpression &node) override;
@@ -111,8 +110,6 @@ inline void ControlAnalyzer::visit(BaseNode &node) {
   } else if (auto *expr = dynamic_cast<GroupExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<MatchExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
     visit(*expr);
@@ -232,19 +229,6 @@ inline void ControlAnalyzer::visit(IfExpression &node) {
     node.then_block->accept(*this);
   if (node.else_block)
     node.else_block.value()->accept(*this);
-}
-
-inline void ControlAnalyzer::visit(MatchExpression &node) {
-  if (node.scrutinee)
-    node.scrutinee->accept(*this);
-  for (auto &arm : node.arms) {
-    if (arm.pattern)
-      arm.pattern->accept(*this);
-    if (arm.guard)
-      arm.guard.value()->accept(*this);
-    if (arm.body)
-      arm.body->accept(*this);
-  }
 }
 
 inline void ControlAnalyzer::visit(ReturnExpression &) {

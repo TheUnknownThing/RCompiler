@@ -121,24 +121,6 @@ public:
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
-class MatchExpression : public Expression {
-public:
-  struct MatchArm {
-    std::shared_ptr<BasePattern> pattern;
-    std::optional<std::shared_ptr<Expression>> guard;
-    std::shared_ptr<Expression> body;
-  };
-
-  std::shared_ptr<Expression> scrutinee;
-  std::vector<MatchArm> arms;
-
-  MatchExpression(std::shared_ptr<Expression> expr,
-                  std::vector<MatchArm> match_arms)
-      : scrutinee(std::move(expr)), arms(std::move(match_arms)) {}
-
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
-};
-
 class ReturnExpression : public Expression {
 public:
   std::optional<std::shared_ptr<Expression>> value;

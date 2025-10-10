@@ -245,40 +245,6 @@ public:
         }
     }
     
-    // Test match expressions
-    void test_match_expressions() {
-        std::cout << "\n--- Testing Match Expressions ---" << std::endl;
-        
-        // Test simple match: match x { 1 => 2, _ => 3 }
-        {
-            auto tokens = create_tokens({
-                {TokenType::MATCH, "match"},
-                {TokenType::NON_KEYWORD_IDENTIFIER, "x"},
-                {TokenType::LBRACE, "{"},
-                {TokenType::INTEGER_LITERAL, "1"},
-                {TokenType::FAT_ARROW, "=>"},
-                {TokenType::INTEGER_LITERAL, "2"},
-                {TokenType::COMMA, ","},
-                {TokenType::UNDERSCORE, "_"},
-                {TokenType::FAT_ARROW, "=>"},
-                {TokenType::INTEGER_LITERAL, "3"},
-                {TokenType::RBRACE, "}"}
-            });
-            Parser parser(tokens);
-            auto expr = parser.parse_match_expression()(tokens.begin());
-            
-            assert_test(expr.has_value(), "simple_match_parse", "Should parse simple match expression");
-            if (expr.has_value()) {
-                auto match_expr = std::dynamic_pointer_cast<MatchExpression>(expr->result);
-                assert_test(match_expr != nullptr, "simple_match_type", "Should create MatchExpression");
-                if (match_expr) {
-                    assert_test(match_expr->expression != nullptr, "simple_match_expr", "Should have match expression");
-                    assert_test(match_expr->arms.size() == 2, "simple_match_arms", "Should have 2 match arms");
-                }
-            }
-        }
-    }
-    
     // Test loop expressions
     void test_loop_expressions() {
         std::cout << "\n--- Testing Loop Expressions ---" << std::endl;

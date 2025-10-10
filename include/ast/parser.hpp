@@ -936,40 +936,6 @@ Parser::parse_while_expression() {
 }
 
 inline parsec::Parser<std::shared_ptr<Expression>>
-Parser::parse_match_expression() {
-  return parsec::Parser<std::shared_ptr<Expression>>(
-      [this](const std::vector<rc::Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::shared_ptr<Expression>> {
-        size_t saved = pos;
-        LOG_DEBUG("Attempting to parse match expression at position " +
-                  std::to_string(pos));
-        if (!tok(TokenType::MATCH).parse(toks, pos)) {
-          pos = saved;
-          return std::nullopt;
-        }
-
-        auto scrutinee = any_expression().parse(toks, pos);
-        if (!scrutinee) {
-          pos = saved;
-          LOG_ERROR("Failed to parse match scrutinee");
-          return std::nullopt;
-        }
-
-        if (!tok(TokenType::L_BRACE).parse(toks, pos)) {
-          pos = saved;
-          LOG_ERROR("Expected '{' after match scrutinee");
-          return std::nullopt;
-        }
-
-        std::vector<MatchExpression::MatchArm> arms;
-
-        // TODO: Implement MatchArms parsing
-
-        return std::make_shared<MatchExpression>(*scrutinee, std::move(arms));
-      });
-}
-
-inline parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_array_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
       [this](const std::vector<rc::Token> &toks,

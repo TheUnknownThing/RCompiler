@@ -50,7 +50,6 @@ public:
   void visit(BinaryExpression &node) override;
   void visit(GroupExpression &node) override;
   void visit(IfExpression &node) override;
-  void visit(MatchExpression &) override;
   void visit(ReturnExpression &node) override;
   void visit(CallExpression &node) override;
   void visit(MethodCallExpression &node) override;
@@ -201,8 +200,6 @@ inline void FourthPass::visit(BaseNode &node) {
   } else if (auto *expr = dynamic_cast<GroupExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<MatchExpression *>(&node)) {
     visit(*expr);
   } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
     visit(*expr);
@@ -491,10 +488,6 @@ inline void FourthPass::visit(IfExpression &node) {
       "' vs '" +
       to_string(else_t.value_or(SemType::primitive(SemPrimitiveKind::UNIT))) +
       "'");
-}
-
-inline void FourthPass::visit(MatchExpression &) {
-  throw SemanticException("match expression not supported yet");
 }
 
 inline void FourthPass::visit(ReturnExpression &node) {
