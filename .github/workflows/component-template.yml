@@ -85,7 +85,7 @@ jobs:
           fi
           cmake --build "$BUILD_DIR" --target "$TARGET" --parallel
 
-            - name: Post-build hook
+      - name: Post-build hook
         if: ${{ inputs.post_build_command != '' }}
         run: |
           set -e
