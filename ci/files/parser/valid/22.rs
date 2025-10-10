@@ -12,8 +12,8 @@ impl Point {
 }
 
 fn main() {
-    let p1 = Point { x: 3, y: 4 };
-    let p2 = Point { x: 10, y: 20 };
+    let p1 : Point = Point { x: 3, y: 4 };
+    let p2 : Point = Point { x: 10, y: 20 };
 
-    let dist = p1.manhattan_distance(&p2); // dist should be 23
+    let dist : i32 = p1.manhattan_distance(&p2); // dist should be 23
 }

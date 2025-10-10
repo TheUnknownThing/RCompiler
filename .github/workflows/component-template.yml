@@ -1,0 +1,75 @@
+name: Component Test Template
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        description: "Component identifier (preprocessor, lexer, parser)"
+        required: true
+        type: string
+      test_label:
+        description: "CTest label associated with the component"
+        required: true
+        type: string
+      build_type:
+        description: "CMake build type"
+        required: false
+        default: Release
+        type: string
+
+jobs:
+  run-component-tests:
+    name: "${{ inputs.component }} (${{ matrix.compiler }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    env:
+      BUILD_DIR: build/${{ matrix.compiler }}-${{ inputs.component }}
+      BUILD_TYPE: ${{ inputs.build_type }}
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build ${{ matrix.compiler }}
+
+      - name: Cache CMake configuration and objects
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.BUILD_DIR }}
+          key: ${{ runner.os }}-${{ matrix.compiler }}-${{ inputs.component }}-${{ hashFiles('CMakeLists.txt', 'src/**/*.cpp', 'src/**/*.hpp', 'include/**/*.hpp', 'tests/ci_*.cpp', 'ci/files/**/*', 'ci/expected_output/**/*') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.compiler }}-${{ inputs.component }}-
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B "$BUILD_DIR" -G "$CMAKE_GENERATOR" \
+                -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+                -DBUILD_TESTING=ON \
+                -DCMAKE_CXX_COMPILER=${{ matrix.compiler == 'clang' && 'clang++' || 'g++' }}
+
+      - name: Build component tests
+        run: |
+          cmake --build "$BUILD_DIR" --target ci_${{ inputs.component }}_tests --parallel
+
+      - name: Run component test suite
+        run: |
+          ctest --test-dir "$BUILD_DIR" --output-on-failure -L ${{ inputs.test_label }}
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.component }}-${{ matrix.compiler }}-logs
+          path: |
+            ${{ env.BUILD_DIR }}/Testing/Temporary/LastTest.log
+            ${{ env.BUILD_DIR }}/*.log
+          if-no-files-found: ignore

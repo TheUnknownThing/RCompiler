@@ -25,10 +25,26 @@ endif()
 
 # --- Testing setup ---
 include(CTest)
-option(BUILD_TESTING "Build tests" OFF)
+option(BUILD_TESTING "Build tests" ON)
 
 if (BUILD_TESTING)
   enable_testing()
 
-  
+  add_executable(ci_preprocessor_tests tests/ci_preprocessor_tests.cpp)
+  target_compile_definitions(ci_preprocessor_tests PRIVATE PROJECT_ROOT_DIR="${CMAKE_SOURCE_DIR}" LOGGING_LEVEL_WARN)
+
+  add_executable(ci_lexer_tests tests/ci_lexer_tests.cpp)
+  target_compile_definitions(ci_lexer_tests PRIVATE PROJECT_ROOT_DIR="${CMAKE_SOURCE_DIR}" LOGGING_LEVEL_WARN)
+
+  add_executable(ci_parser_tests tests/ci_parser_tests.cpp)
+  target_compile_definitions(ci_parser_tests PRIVATE PROJECT_ROOT_DIR="${CMAKE_SOURCE_DIR}" LOGGING_LEVEL_WARN)
+
+  add_test(NAME preprocessor_ci COMMAND ci_preprocessor_tests)
+  set_tests_properties(preprocessor_ci PROPERTIES LABELS "ci;preprocessor")
+
+  add_test(NAME lexer_ci COMMAND ci_lexer_tests)
+  set_tests_properties(lexer_ci PROPERTIES LABELS "ci;lexer")
+
+  add_test(NAME parser_ci COMMAND ci_parser_tests)
+  set_tests_properties(parser_ci PROPERTIES LABELS "ci;parser")
 endif()

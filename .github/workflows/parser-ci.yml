@@ -1,0 +1,20 @@
+name: Parser CI
+
+on:
+  push:
+    branches: [ main, fix-ci ]
+  pull_request:
+    branches: [ main, fix-ci ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parser:
+    uses: ./.github/workflows/component-template.yml
+    with:
+      component: parser
+      test_label: parser
+    secrets: inherit

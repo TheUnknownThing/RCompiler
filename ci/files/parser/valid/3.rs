@@ -3,5 +3,5 @@ fn identity(n: u32) -> u32 {
 }
 
 fn main() {
-    let val = identity(42);
+    let val : u32 = identity(42);
 }

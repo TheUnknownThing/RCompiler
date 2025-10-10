@@ -1,0 +1,20 @@
+name: Preprocessor CI
+
+on:
+  push:
+    branches: [ main, fix-ci ]
+  pull_request:
+    branches: [ main, fix-ci ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preprocessor:
+    uses: ./.github/workflows/component-template.yml
+    with:
+      component: preprocessor
+      test_label: preprocessor
+    secrets: inherit

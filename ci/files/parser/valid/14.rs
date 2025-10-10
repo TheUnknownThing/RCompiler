@@ -1,7 +1,7 @@
 fn main() {
-    let opt_x = 10;
-    let mut result = 0;
-    if let 10 = opt_x && true {
+    let opt_x : i32 = 10;
+    let mut result : i32 = 0;
+    if (true) {
         result = 1;
     }
 }

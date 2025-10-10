@@ -64,3 +64,27 @@ See [whitelist.md](whitelist.md) for the concrete, implementable subset of the R
         - Handling `exit(0)` in `main`
 
 - [ ] IR Codegen
+
+## Continuous Integration
+
+This repository provides dedicated GitHub Actions workflows to protect each
+stage of the frontend pipeline:
+
+- **Preprocessor CI** (`.github/workflows/preprocessor-ci.yml`) builds the
+    project and runs the labelled `preprocessor` tests that exercise the fixtures
+    in `ci/files/preprocessor` and their expectations in
+    `ci/expected_output/preprocessor`.
+- **Lexer CI** (`.github/workflows/lexer-ci.yml`) validates tokenization logic
+    using the cases in `ci/files/lexer` alongside the expected token streams in
+    `ci/expected_output/lexer`.
+- **Parser CI** (`.github/workflows/parser-ci.yml`) ensures the parser can
+    distinguish the valid and invalid Rust subsets defined under
+    `ci/files/parser`.
+
+Each workflow reuses the shared
+`Component Test Template` (`.github/workflows/component-template.yml`) to
+configure CMake with both `g++` and `clang++`, build only the relevant
+`ci_<component>_tests` target, and execute `ctest` for the matching label. The
+jobs publish diagnostic logs automatically when a failure occurs. All workflows
+support manual triggers via the **Run workflow** button and participate in the
+standard `push`/`pull_request` checks.

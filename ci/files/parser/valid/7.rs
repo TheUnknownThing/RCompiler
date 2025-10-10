@@ -1,5 +1,5 @@
 fn main() {
-    let arr = [10, 20, 30];
-    let first = arr[0];
-    let last = arr[2];
+    let arr : [i32; 3] = [10, 20, 30];
+    let first : i32 = arr[0];
+    let last : i32 = arr[2];
 }
