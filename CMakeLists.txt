@@ -20,7 +20,7 @@ add_executable(rcompiler ${SOURCES})
 
 # Compiler flags
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  target_compile_options(rcompiler PRIVATE -Wall -Wextra -std=c++20)
+  target_compile_options(rcompiler PRIVATE -Wall -Wextra -O3 -std=c++20)
 endif()
 
 # Function to apply clang-tidy to test executables
