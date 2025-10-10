@@ -29,7 +29,6 @@ class ExpressionStatement;
 class EmptyStatement;
 class FunctionDecl;
 class ConstantItem;
-class ModuleDecl;
 class StructDecl;
 class EnumDecl;
 class TraitDecl;
@@ -115,7 +114,6 @@ public:
   // Top-level declaration visitors
   virtual void visit(FunctionDecl &) {}
   virtual void visit(ConstantItem &) {}
-  virtual void visit(ModuleDecl &) {}
   virtual void visit(StructDecl &) {}
   virtual void visit(EnumDecl &) {}
   virtual void visit(TraitDecl &) {}

@@ -68,7 +68,6 @@ public:
   // Top-level declaration visitors
   void visit(FunctionDecl &node) override;
   void visit(ConstantItem &node) override;
-  void visit(ModuleDecl &node) override;
   void visit(StructDecl &node) override;
   void visit(EnumDecl &node) override;
   void visit(TraitDecl &node) override;
@@ -158,8 +157,6 @@ inline void ControlAnalyzer::visit(BaseNode &node) {
   else if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
     visit(*decl);
   } else if (auto *decl = dynamic_cast<ConstantItem *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<ModuleDecl *>(&node)) {
     visit(*decl);
   } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
     visit(*decl);
@@ -437,15 +434,6 @@ inline void ControlAnalyzer::visit(FunctionDecl &node) {
 inline void ControlAnalyzer::visit(ConstantItem &node) {
   if (node.value)
     node.value.value()->accept(*this);
-}
-
-inline void ControlAnalyzer::visit(ModuleDecl &node) {
-  if (node.items) {
-    for (auto &child : *node.items) {
-      if (child)
-        child->accept(*this);
-    }
-  }
 }
 
 inline void ControlAnalyzer::visit(StructDecl &node) { (void)node; }

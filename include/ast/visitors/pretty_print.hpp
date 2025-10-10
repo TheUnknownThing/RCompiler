@@ -130,8 +130,6 @@ public:
       visit(*decl);
     } else if (auto *decl = dynamic_cast<ConstantItem *>(&node)) {
       visit(*decl);
-    } else if (auto *decl = dynamic_cast<ModuleDecl *>(&node)) {
-      visit(*decl);
     } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
       visit(*decl);
     } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
@@ -653,34 +651,6 @@ public:
       output_ << std::endl;
     } else {
       print_line("value: None");
-    }
-
-    decrease_indent();
-    print_indent();
-    print_inline("}");
-  }
-
-  inline void visit(ModuleDecl &node) override {
-    print_line("ModuleDecl {");
-    increase_indent();
-    print_line("name: " + node.name);
-
-    if (node.items.has_value()) {
-      print_line("items: [");
-      increase_indent();
-      for (const auto &item : node.items.value()) {
-        print_indent();
-        if (item) {
-          item->accept(*this);
-        } else {
-          print_inline("<null>");
-        }
-        output_ << std::endl;
-      }
-      decrease_indent();
-      print_line("]");
-    } else {
-      print_line("items: None (semicolon form)");
     }
 
     decrease_indent();

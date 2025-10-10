@@ -62,19 +62,6 @@ public:
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };
 
-class ModuleDecl : public BaseItem {
-public:
-  std::string name;
-  std::optional<std::vector<std::shared_ptr<BaseNode>>> items;
-
-  ModuleDecl(const std::string &n,
-             std::optional<std::vector<std::shared_ptr<BaseNode>>> items =
-                 std::nullopt)
-      : name(n), items(std::move(items)) {}
-
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
-};
-
 class StructDecl : public BaseItem {
 public:
   enum class StructType { Struct, Tuple };

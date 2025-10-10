@@ -33,7 +33,6 @@ public:
   parsec::Parser<std::shared_ptr<Expression>> parse_block_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_if_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_return_expression();
-  parsec::Parser<std::shared_ptr<Expression>> parse_match_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_loop_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_while_expression();
   parsec::Parser<std::shared_ptr<Expression>> parse_array_expression();
@@ -49,7 +48,6 @@ public:
 
   parsec::Parser<std::shared_ptr<FunctionDecl>> parse_function();
   parsec::Parser<std::shared_ptr<StructDecl>> parse_struct();
-  parsec::Parser<std::shared_ptr<ModuleDecl>> parse_module();
   parsec::Parser<std::shared_ptr<EnumDecl>> parse_enum();
   parsec::Parser<std::shared_ptr<ConstantItem>> parse_const_item();
   parsec::Parser<std::shared_ptr<ImplDecl>> parse_impl();
@@ -99,11 +97,6 @@ inline parsec::Parser<std::shared_ptr<BaseItem>> Parser::any_top_level_item() {
         if (auto strct = parse_struct().parse(toks, pos)) {
           LOG_DEBUG("Parsed struct at position " + std::to_string(saved_pos));
           return strct;
-        }
-        pos = saved_pos;
-        if (auto mod = parse_module().parse(toks, pos)) {
-          LOG_DEBUG("Parsed module at position " + std::to_string(saved_pos));
-          return mod;
         }
         pos = saved_pos;
         if (auto en = parse_enum().parse(toks, pos)) {
@@ -353,65 +346,6 @@ inline parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
           });
 
   return parser;
-}
-
-inline parsec::Parser<std::shared_ptr<ModuleDecl>> Parser::parse_module() {
-  return parsec::Parser<std::shared_ptr<ModuleDecl>>(
-      [this](const std::vector<rc::Token> &toks,
-             size_t &pos) -> parsec::ParseResult<std::shared_ptr<ModuleDecl>> {
-        size_t saved = pos;
-        if (!tok(TokenType::MOD).parse(toks, pos)) {
-          pos = saved;
-          return std::nullopt;
-        }
-
-        auto maybe_name = parsec::identifier.parse(toks, pos);
-        if (!maybe_name) {
-          pos = saved;
-          return std::nullopt;
-        }
-        const std::string name = *maybe_name;
-
-        {
-          size_t sem_pos = pos;
-          if (tok(TokenType::SEMICOLON).parse(toks, sem_pos)) {
-            pos = sem_pos;
-            LOG_DEBUG("Parsed module decl (semicolon form): " + name);
-            return std::make_shared<ModuleDecl>(name, std::nullopt);
-          }
-        }
-
-        if (!tok(TokenType::L_BRACE).parse(toks, pos)) {
-          pos = saved;
-          return std::nullopt;
-        }
-
-        std::vector<std::shared_ptr<BaseNode>> items;
-
-        // Local item parser
-        auto item_parser = any_top_level_item();
-
-        int count = 0;
-        for (;;) {
-          size_t before = pos;
-          if (tok(TokenType::R_BRACE).parse(toks, pos)) {
-            LOG_DEBUG("Parsed module decl with " + std::to_string(count) +
-                      " items: " + name);
-            return std::make_shared<ModuleDecl>(name, std::move(items));
-          }
-          pos = before;
-
-          if (auto item = item_parser.parse(toks, pos)) {
-            items.push_back(std::move(*item));
-            ++count;
-            continue;
-          }
-
-          pos = saved;
-          LOG_ERROR("Failed parsing item in module '" + name + "'");
-          return std::nullopt;
-        }
-      });
 }
 
 inline parsec::Parser<std::shared_ptr<EnumDecl>> Parser::parse_enum() {
@@ -1431,8 +1365,6 @@ inline PrattTable default_table(rc::Parser *p) {
              delegate_to_parsec(&rc::Parser::parse_block_expression));
   tbl.prefix(rc::TokenType::RETURN,
              delegate_to_parsec(&rc::Parser::parse_return_expression));
-  tbl.prefix(rc::TokenType::MATCH,
-             delegate_to_parsec(&rc::Parser::parse_match_expression));
   tbl.prefix(rc::TokenType::L_BRACKET,
              delegate_to_parsec(&rc::Parser::parse_array_expression));
   tbl.prefix(rc::TokenType::BREAK,

@@ -17,7 +17,7 @@ struct ConstValue;
 
 class ScopeNode;
 
-enum class ItemKind { Function, Constant, Module, Struct, Enum, Trait };
+enum class ItemKind { Function, Constant, Struct, Enum, Trait };
 
 struct FunctionMetaData {
   std::string name;
@@ -107,8 +107,7 @@ public:
   void add_item(const std::string &name, ItemKind kind, const BaseItem *ast) {
     switch (kind) {
     case ItemKind::Function:
-    case ItemKind::Constant:
-    case ItemKind::Module: {
+    case ItemKind::Constant: {
       if (value_items_.contains(name)) {
         throw SemanticException("duplicate item (value namespace) " + name);
       }
@@ -268,9 +267,6 @@ inline void print_scope_tree(const ScopeNode &scope, int indent = 0) {
       break;
     case ItemKind::Constant:
       std::cout << "const";
-      break;
-    case ItemKind::Module:
-      std::cout << "mod";
       break;
     case ItemKind::Struct:
       std::cout << "struct";
