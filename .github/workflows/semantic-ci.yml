@@ -1,0 +1,36 @@
+name: Semantic CI
+
+on:
+  push:
+    branches: [ main, fix-ci ]
+  pull_request:
+    branches: [ main, fix-ci ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semantic:
+    uses: ./.github/workflows/component-template.yml
+    with:
+      component: semantic
+      test_label: semantic
+      build_type: Release
+      build_dir: build
+      build_target: rcompiler
+      test_command: |
+        set -e
+        shopt -s nullglob
+        stages=(testcases/semantic-*)
+        if [ ${#stages[@]} -eq 0 ]; then
+          echo "No semantic testcase stages found" >&2
+          exit 1
+        fi
+        for stage_path in "${stages[@]}"; do
+          stage=$(basename "$stage_path")
+          echo "\nRunning semantic benchmark for $stage"
+          python3 scripts/semantic_benchmark -q -s "$stage"
+        done
+    secrets: inherit
