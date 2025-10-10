@@ -94,14 +94,19 @@ jobs:
           /tmp/post-build.sh
 
       - name: Run component test suite
+        env:
+          TEST_COMMAND: ${{ inputs.test_command }}
         run: |
           set -e
-          if [ -z "${{ inputs.test_command }}" ]; then
+          if [ -z "$TEST_COMMAND" ]; then
             ctest --test-dir "$BUILD_DIR" --output-on-failure -L ${{ inputs.test_label }}
           else
-            printf '%s\n' "${{ inputs.test_command }}" > /tmp/run-tests.sh
+            {
+              printf '%s\n' '#!/usr/bin/env bash'
+              printf '%s\n' "$TEST_COMMAND"
+            } > /tmp/run-tests.sh
             chmod +x /tmp/run-tests.sh
-            /tmp/run-tests.sh
+            bash /tmp/run-tests.sh
           fi
 
       - name: Upload test logs on failure
