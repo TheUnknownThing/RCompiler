@@ -505,82 +505,12 @@ public:
     print_inline(")");
   }
 
-  inline void visit(WildcardPattern &node) override {
-    (void)node;
-    print_inline("WildcardPattern(_)");
-  }
-
-  inline void visit(RestPattern &node) override {
-    (void)node;
-    print_inline("RestPattern(..)");
-  }
-
   inline void visit(ReferencePattern &node) override {
     print_inline("ReferencePattern(&");
     if (node.is_mutable)
       print_inline("mut ");
     RC_SAFE_ACCEPT(node.inner_pattern);
     print_inline(")");
-  }
-
-  inline void visit(StructPattern &node) override {
-    print_inline("StructPattern(");
-    // print path
-    for (size_t i = 0; i < node.path.size(); ++i) {
-      print_inline(node.path[i]);
-      if (i + 1 < node.path.size())
-        print_inline("::");
-    }
-    print_inline(" { ");
-    for (size_t i = 0; i < node.fields.size(); ++i) {
-      const auto &f = node.fields[i];
-      print_inline(f.name + ": ");
-      RC_SAFE_ACCEPT(f.pattern);
-      if (i + 1 < node.fields.size())
-        print_inline(", ");
-    }
-    if (node.has_rest) {
-      if (!node.fields.empty())
-        print_inline(", ");
-      print_inline("..");
-    }
-    print_inline(" })");
-  }
-
-  inline void visit(TuplePattern &node) override {
-    print_inline("TuplePattern(");
-    for (size_t i = 0; i < node.elements.size(); ++i) {
-      RC_SAFE_ACCEPT(node.elements[i]);
-      if (i + 1 < node.elements.size())
-        print_inline(", ");
-    }
-    print_inline(")");
-  }
-
-  inline void visit(GroupedPattern &node) override {
-    print_inline("GroupedPattern(");
-    RC_SAFE_ACCEPT(node.inner_pattern);
-    print_inline(")");
-  }
-
-  inline void visit(PathPattern &node) override {
-    print_inline("PathPattern(");
-    for (size_t i = 0; i < node.path.size(); ++i) {
-      print_inline(node.path[i]);
-      if (i + 1 < node.path.size())
-        print_inline("::");
-    }
-    print_inline(")");
-  }
-
-  inline void visit(SlicePattern &node) override {
-    print_inline("SlicePattern([");
-    for (size_t i = 0; i < node.elements.size(); ++i) {
-      RC_SAFE_ACCEPT(node.elements[i]);
-      if (i + 1 < node.elements.size())
-        print_inline(", ");
-    }
-    print_inline("]) ");
   }
 
   inline void visit(OrPattern &node) override {

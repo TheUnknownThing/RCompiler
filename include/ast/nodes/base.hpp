@@ -101,14 +101,7 @@ public:
   virtual void visit(BasePattern &) {}
   virtual void visit(IdentifierPattern &) {}
   virtual void visit(LiteralPattern &) {}
-  virtual void visit(WildcardPattern &) {}
-  virtual void visit(RestPattern &) {}
   virtual void visit(ReferencePattern &) {}
-  virtual void visit(StructPattern &) {}
-  virtual void visit(TuplePattern &) {}
-  virtual void visit(GroupedPattern &) {}
-  virtual void visit(PathPattern &) {}
-  virtual void visit(SlicePattern &) {}
   virtual void visit(OrPattern &) {}
 
   // Top-level declaration visitors

@@ -19,25 +19,6 @@ public:
       return pattern_no_top_alt().parse(t, p);
     };
 
-    p_path_ = identifier.combine(
-        many(tok(rc::TokenType::COLON_COLON).thenR(identifier)),
-        [](const auto &first, const auto &rest) {
-          Path p = {first};
-          p.insert(p.end(), rest.begin(), rest.end());
-          return p;
-        });
-
-    p_wildcard_ =
-        tok(rc::TokenType::NON_KEYWORD_IDENTIFIER, "_") // '_' is an identifier
-            .map([](auto) -> std::shared_ptr<BasePattern> {
-              return std::make_shared<WildcardPattern>();
-            });
-
-    p_rest_ = tok(rc::TokenType::DOT_DOT)
-                  .map([](auto) -> std::shared_ptr<BasePattern> {
-                    return std::make_shared<RestPattern>();
-                  });
-
     p_literal_ = int_literal.map(
         [](const std::string &s) -> std::shared_ptr<BasePattern> {
           return std::make_shared<LiteralPattern>(s, false);
@@ -53,14 +34,6 @@ public:
                      [](auto flags, auto id) -> std::shared_ptr<BasePattern> {
                        return std::make_shared<IdentifierPattern>(
                            id, flags.first, flags.second);
-                     });
-
-    p_grouped_ = tok(rc::TokenType::L_PAREN)
-                     .thenR(parsec::Parser<std::shared_ptr<BasePattern>>(
-                         lazy_any_pattern))
-                     .thenL(tok(rc::TokenType::R_PAREN))
-                     .map([](auto inner) -> std::shared_ptr<BasePattern> {
-                       return std::make_shared<GroupedPattern>(inner);
                      });
 
     auto comma_separated_patterns =
@@ -102,20 +75,6 @@ public:
               return patterns;
             });
 
-    p_tuple_ = tok(rc::TokenType::L_PAREN)
-                   .thenR(comma_separated_patterns)
-                   .thenL(tok(rc::TokenType::R_PAREN))
-                   .map([](auto elems) -> std::shared_ptr<BasePattern> {
-                     return std::make_shared<TuplePattern>(std::move(elems));
-                   });
-
-    p_slice_ = tok(rc::TokenType::L_BRACKET)
-                   .thenR(comma_separated_patterns)
-                   .thenL(tok(rc::TokenType::R_BRACKET))
-                   .map([](auto elems) -> std::shared_ptr<BasePattern> {
-                     return std::make_shared<SlicePattern>(std::move(elems));
-                   });
-
     // WE DO NOT NEED TO IMPLEMENT STRUCT PATTERN!
 
     p_reference_ =
@@ -127,11 +86,6 @@ public:
                      [](bool is_mut, auto sub) -> std::shared_ptr<BasePattern> {
                        return std::make_shared<ReferencePattern>(sub, is_mut);
                      });
-
-    p_path_pattern_ =
-        p_path_.map([](const Path &path) -> std::shared_ptr<BasePattern> {
-          return std::make_shared<PathPattern>(path);
-        });
   }
 
   parsec::ParseResult<std::shared_ptr<BasePattern>>
@@ -139,17 +93,9 @@ public:
     return or_pattern().parse(toks, pos);
   }
 
-  parsec::Parser<Path> p_path_;
-  parsec::Parser<std::shared_ptr<BasePattern>> p_wildcard_;
-  parsec::Parser<std::shared_ptr<BasePattern>> p_rest_;
   parsec::Parser<std::shared_ptr<BasePattern>> p_literal_;
   parsec::Parser<std::shared_ptr<BasePattern>> p_identifier_;
-  parsec::Parser<std::shared_ptr<BasePattern>> p_grouped_;
-  parsec::Parser<std::shared_ptr<BasePattern>> p_tuple_;
-  parsec::Parser<std::shared_ptr<BasePattern>> p_slice_;
-  parsec::Parser<std::shared_ptr<BasePattern>> p_struct_;
   parsec::Parser<std::shared_ptr<BasePattern>> p_reference_;
-  parsec::Parser<std::shared_ptr<BasePattern>> p_path_pattern_;
 
   parsec::Parser<std::shared_ptr<BasePattern>> pattern_without_range() {
     return parsec::Parser<std::shared_ptr<BasePattern>>(
@@ -157,10 +103,8 @@ public:
             -> parsec::ParseResult<std::shared_ptr<BasePattern>> {
           size_t saved = pos;
 
-          auto parsers = {
-              p_wildcard_,    p_rest_,  p_literal_, p_identifier_,
-              p_grouped_,     p_tuple_, p_slice_,   /*p_struct_,*/ p_reference_,
-              p_path_pattern_};
+          auto parsers = {p_literal_, p_identifier_,
+                          /*p_struct_,*/ p_reference_};
 
           for (const auto &parser : parsers) {
             auto result = parser.parse(toks, pos);

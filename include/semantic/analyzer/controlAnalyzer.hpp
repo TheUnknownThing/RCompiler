@@ -55,14 +55,7 @@ public:
   // Pattern visitors
   void visit(IdentifierPattern &node) override;
   void visit(LiteralPattern &node) override;
-  void visit(WildcardPattern &node) override;
-  void visit(RestPattern &node) override;
   void visit(ReferencePattern &node) override;
-  void visit(StructPattern &node) override;
-  void visit(TuplePattern &node) override;
-  void visit(GroupedPattern &node) override;
-  void visit(PathPattern &node) override;
-  void visit(SlicePattern &node) override;
   void visit(OrPattern &node) override;
 
   // Top-level declaration visitors
@@ -174,21 +167,7 @@ inline void ControlAnalyzer::visit(BaseNode &node) {
     visit(*p);
   } else if (auto *p = dynamic_cast<LiteralPattern *>(&node)) {
     visit(*p);
-  } else if (auto *p = dynamic_cast<WildcardPattern *>(&node)) {
-    visit(*p);
-  } else if (auto *p = dynamic_cast<RestPattern *>(&node)) {
-    visit(*p);
   } else if (auto *p = dynamic_cast<ReferencePattern *>(&node)) {
-    visit(*p);
-  } else if (auto *p = dynamic_cast<StructPattern *>(&node)) {
-    visit(*p);
-  } else if (auto *p = dynamic_cast<TuplePattern *>(&node)) {
-    visit(*p);
-  } else if (auto *p = dynamic_cast<GroupedPattern *>(&node)) {
-    visit(*p);
-  } else if (auto *p = dynamic_cast<PathPattern *>(&node)) {
-    visit(*p);
-  } else if (auto *p = dynamic_cast<SlicePattern *>(&node)) {
     visit(*p);
   } else if (auto *p = dynamic_cast<OrPattern *>(&node)) {
     visit(*p);
@@ -378,41 +357,9 @@ inline void ControlAnalyzer::visit(IdentifierPattern &) {}
 
 inline void ControlAnalyzer::visit(LiteralPattern &node) { (void)node; }
 
-inline void ControlAnalyzer::visit(WildcardPattern &node) { (void)node; }
-
-inline void ControlAnalyzer::visit(RestPattern &node) { (void)node; }
-
 inline void ControlAnalyzer::visit(ReferencePattern &node) {
   if (node.inner_pattern)
     node.inner_pattern->accept(*this);
-}
-
-inline void ControlAnalyzer::visit(StructPattern &node) {
-  for (auto &f : node.fields) {
-    if (f.pattern)
-      f.pattern->accept(*this);
-  }
-}
-
-inline void ControlAnalyzer::visit(TuplePattern &node) {
-  for (auto &el : node.elements) {
-    if (el)
-      el->accept(*this);
-  }
-}
-
-inline void ControlAnalyzer::visit(GroupedPattern &node) {
-  if (node.inner_pattern)
-    node.inner_pattern->accept(*this);
-}
-
-inline void ControlAnalyzer::visit(PathPattern &node) { (void)node; }
-
-inline void ControlAnalyzer::visit(SlicePattern &node) {
-  for (auto &el : node.elements) {
-    if (el)
-      el->accept(*this);
-  }
 }
 
 inline void ControlAnalyzer::visit(OrPattern &node) {

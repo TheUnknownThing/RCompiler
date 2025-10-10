@@ -1103,12 +1103,6 @@ inline void FourthPass::extract_pattern_bindings(const BasePattern &pattern,
   } else if (auto *refp = dynamic_cast<const ReferencePattern *>(&pattern)) {
     extract_reference_pattern(*refp, type);
     return;
-  } else if (dynamic_cast<const TuplePattern *>(&pattern)) {
-    throw SemanticException("tuple patterns is removed");
-  } else if (dynamic_cast<const StructPattern *>(&pattern)) {
-    throw SemanticException("struct patterns is removed");
-  } else if (dynamic_cast<const GroupedPattern *>(&pattern)) {
-    throw SemanticException("grouped patterns is removed");
   } else if (dynamic_cast<const OrPattern *>(&pattern)) {
     // or pattern removed in subset
     return;
@@ -1547,33 +1541,18 @@ FourthPass::validate_irrefutable_pattern(const BasePattern &pattern) {
     (void)idp; // ok
     return;
   }
-  if (auto *grp = dynamic_cast<const GroupedPattern *>(&pattern)) {
-    if (grp->inner_pattern) {
-      validate_irrefutable_pattern(*grp->inner_pattern);
-    }
-    return;
-  }
   if (auto *refp = dynamic_cast<const ReferencePattern *>(&pattern)) {
     if (refp->inner_pattern) {
       validate_irrefutable_pattern(*refp->inner_pattern);
     }
     return;
   }
-  if (dynamic_cast<const WildcardPattern *>(&pattern)) {
-    return; // ok
-  }
-
+  
   if (dynamic_cast<const LiteralPattern *>(&pattern)) {
     throw SemanticException("literal pattern is not allowed");
   }
   if (dynamic_cast<const OrPattern *>(&pattern)) {
     throw SemanticException("or patterns is removed");
-  }
-  if (dynamic_cast<const TuplePattern *>(&pattern)) {
-    throw SemanticException("tuple patterns is removed");
-  }
-  if (dynamic_cast<const StructPattern *>(&pattern)) {
-    throw SemanticException("struct patterns is removed");
   }
 
   throw SemanticException("unsupported pattern");
