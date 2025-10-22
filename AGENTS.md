@@ -208,10 +208,6 @@ Source Code → Preprocessor → Lexer → Parser → AST → Semantic Analyzer 
 
 **Status**: Skeleton code exists; not yet implemented.
 
-**Planned Architecture** (`ir/gen.hpp`, `ir/instructions/`):
-- SSA-based intermediate representation
-- Visitor pattern for IR traversal (`visit.hpp`)
-
 ---
 
 ## Key Design Patterns
