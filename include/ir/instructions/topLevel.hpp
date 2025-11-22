@@ -114,6 +114,9 @@ public:
                                            std::shared_ptr<FunctionType> fnTy,
                                            bool isExternal = false) {
     auto fn = std::make_shared<Function>(name, std::move(fnTy), isExternal);
+    if (fn->type()) {
+      fn->type()->setFunction(fn);
+    }
     functions_.push_back(fn);
     return fn;
   }

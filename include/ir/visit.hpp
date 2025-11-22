@@ -91,8 +91,8 @@ private:
   std::shared_ptr<BasicBlock> current_block_;
 
   std::unordered_map<const BaseNode *, std::string> name_mangle_;
-  std::unordered_map<std::string, std::shared_ptr<Function>> function_table_;
-  std::unordered_map<std::string, std::shared_ptr<Value>> function_symbols_;
+  std::unordered_map<const FunctionMetaData *, std::shared_ptr<Function>> function_table_;
+  std::unordered_map<const FunctionMetaData *, std::shared_ptr<Value>> function_symbols_;
   std::unordered_map<std::string, std::shared_ptr<Value>> globals_;
 
   std::vector<std::unordered_map<std::string, std::shared_ptr<Value>>>
@@ -103,8 +103,8 @@ private:
 
   std::shared_ptr<Value> popOperand();
   void pushOperand(std::shared_ptr<Value> v);
-  std::shared_ptr<Value> materializeValue(std::shared_ptr<Value> v,
-                                          const SemType &semTy);
+  std::shared_ptr<Value> loadPtrValue(std::shared_ptr<Value> v,
+                                      const SemType &semTy);
   std::shared_ptr<Value> lookupLocal(const std::string &name) const;
   void bindLocal(const std::string &name, std::shared_ptr<Value> v);
   void pushLocalScope();
@@ -117,25 +117,23 @@ private:
 
   // mangling helpers
   std::string qualify_scope(const ScopeNode *scope) const;
-  std::string encode_type_for_mangling(const SemType &type) const;
   std::string mangle_struct(const CollectedItem &item) const;
   std::string mangle_constant(
       const std::string &name, const ScopeNode *owner_scope,
       const std::optional<std::string> &member_of = std::nullopt) const;
   std::string mangle_function(
       const FunctionMetaData &meta, const ScopeNode *owner_scope,
-      const std::vector<SemType> &params, const SemType &ret,
       const std::optional<std::string> &member_of = std::nullopt) const;
 
   // lookup helpers
   CollectedItem *resolve_value_item(const std::string &name) const;
   const CollectedItem *resolve_struct_item(const std::string &name) const;
-  std::shared_ptr<Function> find_function(const std::string &name) const;
-  std::shared_ptr<Function> ensure_function(const std::string &name,
+  std::shared_ptr<Function> find_function(const FunctionMetaData *meta) const;
+  std::shared_ptr<Function> create_function(const std::string &name,
                                             std::shared_ptr<FunctionType> ty,
-                                            bool is_external);
-  std::shared_ptr<Value> function_symbol(const std::string &name,
-                                         std::shared_ptr<FunctionType> ty);
+                                            bool is_external, const FunctionMetaData* meta);
+  std::shared_ptr<Value> function_symbol(const FunctionMetaData &meta,
+                                         const std::shared_ptr<Function> &fn);
 
   // argument utilities
   std::shared_ptr<Value> coerce_argument(std::shared_ptr<Value> value,
@@ -264,7 +262,7 @@ inline void IREmitter::visit(FunctionDecl &node) {
   const auto &meta = item->as_function_meta();
   auto params = build_effective_params(meta);
   auto mangled =
-      mangle_function(meta, item->owner_scope, params, meta.return_type);
+      mangle_function(meta, item->owner_scope);
 
   emit_function(meta, node, item->owner_scope, params, mangled);
 }
@@ -275,7 +273,7 @@ inline void IREmitter::visit(BinaryExpression &node) {
     auto lhs = popOperand();
     node.right->accept(*this);
     auto rhs = popOperand();
-    rhs = materializeValue(rhs, context->lookupType(node.right.get()));
+    rhs = loadPtrValue(rhs, context->lookupType(node.right.get()));
 
     auto lhsPtrTy = std::dynamic_pointer_cast<const PointerType>(lhs->type());
     if (!lhsPtrTy) {
@@ -288,11 +286,10 @@ inline void IREmitter::visit(BinaryExpression &node) {
       return;
     }
 
-    auto loaded =
-        current_block_->append<LoadInst>(lhs, lhsPtrTy->pointee());
+    auto loaded = current_block_->append<LoadInst>(lhs, lhsPtrTy->pointee());
     auto opKind = token_to_binop(node.op.type);
-    auto combined = current_block_->append<BinaryOpInst>(
-        *opKind, loaded, rhs, lhsPtrTy->pointee());
+    auto combined = current_block_->append<BinaryOpInst>(*opKind, loaded, rhs,
+                                                         lhsPtrTy->pointee());
     current_block_->append<StoreInst>(combined, lhs);
     pushOperand(combined);
     return;
@@ -301,7 +298,7 @@ inline void IREmitter::visit(BinaryExpression &node) {
   if (node.op.type == TokenType::AS) {
     node.left->accept(*this);
     auto val = popOperand();
-    val = materializeValue(val, context->lookupType(node.left.get()));
+    val = loadPtrValue(val, context->lookupType(node.left.get()));
     auto targetTy = context->resolveType(context->lookupType(&node));
     auto srcInt = std::dynamic_pointer_cast<const IntegerType>(val->type());
     auto dstInt = std::dynamic_pointer_cast<const IntegerType>(targetTy);
@@ -329,8 +326,8 @@ inline void IREmitter::visit(BinaryExpression &node) {
   auto lhs = popOperand();
   node.right->accept(*this);
   auto rhs = popOperand();
-  lhs = materializeValue(lhs, context->lookupType(node.left.get()));
-  rhs = materializeValue(rhs, context->lookupType(node.right.get()));
+  lhs = loadPtrValue(lhs, context->lookupType(node.left.get()));
+  rhs = loadPtrValue(rhs, context->lookupType(node.right.get()));
 
   auto opKind = token_to_binop(node.op.type);
   if (opKind) {
@@ -374,7 +371,7 @@ inline void IREmitter::visit(ReturnExpression &node) {
   if (node.value) {
     (*node.value)->accept(*this);
     auto v = popOperand();
-    v = materializeValue(v, context->lookupType(node.value->get()));
+    v = loadPtrValue(v, context->lookupType(node.value->get()));
     current_block_->append<ReturnInst>(v);
   } else {
     current_block_->append<ReturnInst>();
@@ -389,7 +386,7 @@ inline void IREmitter::visit(PrefixExpression &node) {
   node.right->accept(*this);
   auto operand = popOperand();
   const auto semTy = context->lookupType(&node);
-  operand = materializeValue(operand, semTy);
+  operand = loadPtrValue(operand, semTy);
   auto irTy = context->resolveType(semTy);
 
   switch (node.op.type) {
@@ -572,10 +569,6 @@ inline void IREmitter::visit(ConstantItem &node) {
 }
 
 inline void IREmitter::visit(CallExpression &node) {
-  if (!current_block_) {
-    throw IRException("no active basic block for call");
-  }
-
   std::vector<std::shared_ptr<Value>> args;
   args.reserve(node.arguments.size());
   for (const auto &arg : node.arguments) {
@@ -639,10 +632,6 @@ inline void IREmitter::visit(CallExpression &node) {
   }
 
   auto paramSems = build_effective_params(*meta);
-  if (paramSems.size() != args.size()) {
-    throw IRException("argument count mismatch in call to '" + meta->name +
-                      "'");
-  }
 
   std::vector<TypePtr> irParams;
   irParams.reserve(paramSems.size());
@@ -650,12 +639,17 @@ inline void IREmitter::visit(CallExpression &node) {
     irParams.push_back(context->resolveType(p));
   }
   auto retTy = context->resolveType(meta->return_type);
-  auto fnTy = std::make_shared<FunctionType>(retTy, irParams, false);
 
-  auto mangled = mangle_function(*meta, owner_scope, paramSems,
-                                 meta->return_type, member_of);
-  ensure_function(mangled, fnTy, !meta->decl || !meta->decl->body.has_value());
-  auto callee = function_symbol(mangled, fnTy);
+  auto found = find_function(meta);
+  if (!found) { // this happens for builtins or forward declarations
+    LOG_DEBUG("[IREmitter] Predeclaring function '" + meta->name + "'");
+    auto fnTy = std::make_shared<FunctionType>(retTy, irParams, false);
+    auto mangled = mangle_function(*meta, owner_scope, member_of);
+    found =
+        create_function(mangled, fnTy, !meta->decl || !meta->decl->body.has_value(), meta);
+  }
+  
+  auto callee = function_symbol(*meta, found);
 
   std::vector<std::shared_ptr<Value>> coerced;
   coerced.reserve(args.size());
@@ -736,9 +730,8 @@ inline void IREmitter::visit(StructDecl &node) {
     }
     auto retTy = context->resolveType(m.return_type);
     auto fnTy = std::make_shared<FunctionType>(retTy, irParams, false);
-    auto mangled_fn = mangle_function(m, item->owner_scope, params,
-                                      m.return_type, item->name);
-    ensure_function(mangled_fn, fnTy, !m.decl || !m.decl->body.has_value());
+    auto mangled_fn = mangle_function(m, item->owner_scope, item->name);
+    create_function(mangled_fn, fnTy, !m.decl || !m.decl->body.has_value(), &m);
   }
 
   return;
@@ -799,8 +792,7 @@ inline void IREmitter::visit(ImplDecl &node) {
         self_type = compute_self_type(*fn, struct_item);
       }
       auto params = build_effective_params(*found, self_type);
-      auto mangled = mangle_function(*found, struct_item->owner_scope, params,
-                                     found->return_type, struct_item->name);
+      auto mangled = mangle_function(*found, struct_item->owner_scope, struct_item->name);
       emit_function(*found, *fn, struct_item->owner_scope, params, mangled);
     }
     // Constants are not lowered yet; ignore silently for now.
@@ -817,8 +809,7 @@ inline void IREmitter::visit(GroupExpression &node) {
 inline void IREmitter::visit(IfExpression &node) {
   node.condition->accept(*this);
   auto condVal = popOperand();
-  condVal =
-      materializeValue(condVal, context->lookupType(node.condition.get()));
+  condVal = loadPtrValue(condVal, context->lookupType(node.condition.get()));
 
   auto cur_func = functions_.back();
   auto thenBlock = cur_func->createBlock("if_then");
@@ -906,13 +897,17 @@ inline void IREmitter::visit(MethodCallExpression &node) {
     paramIr.push_back(context->resolveType(p));
   }
   auto retTy = context->resolveType(found->return_type);
-  auto fnTy = std::make_shared<FunctionType>(retTy, paramIr, false);
-  auto mangled = mangle_function(*found, ci->owner_scope, paramSems,
-                                 found->return_type, ci->name);
-
-  ensure_function(mangled, fnTy,
-                  !found->decl || !found->decl->body.has_value());
-  auto callee = function_symbol(mangled, fnTy);
+  
+  auto foundFn = find_function(found);
+  if (!foundFn) {
+    auto fnTy = std::make_shared<FunctionType>(retTy, paramIr, false);
+    auto mangled =
+        mangle_function(*found, ci->owner_scope, ci->name);
+    foundFn = create_function(mangled, fnTy,
+                              !found->decl || !found->decl->body.has_value(),
+                              found);
+  }
+  auto callee = function_symbol(*found, foundFn);
 
   std::vector<std::shared_ptr<Value>> args;
   args.reserve(paramSems.size());
@@ -1081,8 +1076,7 @@ inline void IREmitter::visit(WhileExpression &node) {
   current_block_ = condBlock;
   node.condition->accept(*this);
   auto condVal = popOperand();
-  condVal =
-      materializeValue(condVal, context->lookupType(node.condition.get()));
+  condVal = loadPtrValue(condVal, context->lookupType(node.condition.get()));
   current_block_->append<BranchInst>(condVal, bodyBlock, afterBlock);
 
   current_block_ = bodyBlock;
@@ -1250,8 +1244,8 @@ inline void IREmitter::pushOperand(std::shared_ptr<Value> v) {
   operand_stack_.push_back(std::move(v));
 }
 
-inline std::shared_ptr<Value>
-IREmitter::materializeValue(std::shared_ptr<Value> v, const SemType &semTy) {
+inline std::shared_ptr<Value> IREmitter::loadPtrValue(std::shared_ptr<Value> v,
+                                                      const SemType &semTy) {
   if (!v) {
     throw IRException("attempt to materialize null value");
   }
@@ -1369,74 +1363,6 @@ inline std::string IREmitter::qualify_scope(const ScopeNode *scope) const {
   return qualified;
 }
 
-inline std::string
-IREmitter::encode_type_for_mangling(const SemType &type) const {
-  if (type.is_primitive()) {
-    switch (type.as_primitive().kind) {
-    case SemPrimitiveKind::BOOL:
-      return "b";
-    case SemPrimitiveKind::I32:
-      return "i32";
-    case SemPrimitiveKind::U32:
-      return "u32";
-    case SemPrimitiveKind::ISIZE:
-      return "is";
-    case SemPrimitiveKind::USIZE:
-      return "us";
-    case SemPrimitiveKind::STRING:
-      return "strg";
-    case SemPrimitiveKind::STR:
-      return "str";
-    case SemPrimitiveKind::CHAR:
-      return "ch";
-    case SemPrimitiveKind::UNIT:
-      return "unit";
-    case SemPrimitiveKind::NEVER:
-      return "never";
-    case SemPrimitiveKind::ANY_INT:
-      return "ai";
-    case SemPrimitiveKind::UNKNOWN:
-      return "unk";
-    }
-  }
-  if (type.is_reference()) {
-    const auto &ref = type.as_reference();
-    return std::string("R") + (ref.is_mutable ? "m" : "") +
-           encode_type_for_mangling(*ref.target);
-  }
-  if (type.is_array()) {
-    const auto &arr = type.as_array();
-    return "A" + std::to_string(arr.size) + "_" +
-           encode_type_for_mangling(*arr.element);
-  }
-  if (type.is_slice()) {
-    return "S" + encode_type_for_mangling(*type.as_slice().element);
-  }
-  if (type.is_tuple()) {
-    std::string encoded =
-        "T" + std::to_string(type.as_tuple().elements.size()) + "[";
-    for (size_t i = 0; i < type.as_tuple().elements.size(); ++i) {
-      if (i)
-        encoded += ",";
-      encoded += encode_type_for_mangling(type.as_tuple().elements[i]);
-    }
-    encoded += "]";
-    return encoded;
-  }
-  if (type.is_named()) {
-    const auto *ci = type.as_named().item;
-    std::string qualified = ci ? qualify_scope(ci->owner_scope) : std::string{};
-    if (!qualified.empty())
-      qualified += "::";
-    qualified += ci ? ci->name : "<anon>";
-    return "N" + qualified;
-  }
-  if (type.is_unknown()) {
-    return "U" + std::to_string(type.as_unknown().id);
-  }
-  return "unk";
-}
-
 inline std::string IREmitter::mangle_struct(const CollectedItem &item) const {
   auto qualified = qualify_scope(item.owner_scope);
   if (!qualified.empty())
@@ -1463,7 +1389,6 @@ IREmitter::mangle_constant(const std::string &name,
 
 inline std::string IREmitter::mangle_function(
     const FunctionMetaData &meta, const ScopeNode *owner_scope,
-    const std::vector<SemType> &params, const SemType &ret,
     const std::optional<std::string> &member_of) const {
   std::string qualified = qualify_scope(owner_scope);
   if (member_of) {
@@ -1475,14 +1400,7 @@ inline std::string IREmitter::mangle_function(
     qualified += "::";
   qualified += meta.name;
 
-  std::string signature = "(";
-  for (size_t i = 0; i < params.size(); ++i) {
-    if (i)
-      signature += ",";
-    signature += encode_type_for_mangling(params[i]);
-  }
-  signature += ")->" + encode_type_for_mangling(ret);
-
+  std::string signature = "_";
   return "_RF" + qualified + signature;
 }
 
@@ -1507,39 +1425,26 @@ IREmitter::resolve_struct_item(const std::string &name) const {
 }
 
 inline std::shared_ptr<Function>
-IREmitter::find_function(const std::string &name) const {
-  auto it = function_table_.find(name);
+IREmitter::find_function(const FunctionMetaData *meta) const {
+  auto it = function_table_.find(meta);
   if (it != function_table_.end()) {
     return it->second;
-  }
-  for (const auto &fn : module_.functions()) {
-    if (fn && fn->name() == name) {
-      return fn;
-    }
   }
   return nullptr;
 }
 
-inline std::shared_ptr<Function>
-IREmitter::ensure_function(const std::string &name,
-                           std::shared_ptr<FunctionType> ty, bool is_external) {
-  if (auto existing = find_function(name)) {
-    return existing;
-  }
-  auto fn = module_.createFunction(name, ty, is_external);
-  function_table_[name] = fn;
-  return fn;
-}
-
 inline std::shared_ptr<Value>
-IREmitter::function_symbol(const std::string &name,
-                           std::shared_ptr<FunctionType> ty) {
-  auto it = function_symbols_.find(name);
+IREmitter::function_symbol(const FunctionMetaData &meta,
+                           const std::shared_ptr<Function> &fn) {
+  if (!fn) {
+    throw IRException("null function symbol requested");
+  }
+  auto it = function_symbols_.find(&meta);
   if (it != function_symbols_.end()) {
     return it->second;
   }
-  auto sym = std::make_shared<Value>(ty, name);
-  function_symbols_[name] = sym;
+  auto sym = std::make_shared<Value>(fn->type(), fn->name());
+  function_symbols_[&meta] = sym;
   return sym;
 }
 
@@ -1611,19 +1516,15 @@ IREmitter::emit_function(const FunctionMetaData &meta, const FunctionDecl &node,
   auto retTy = context->resolveType(meta.return_type);
   auto fnTy = std::make_shared<FunctionType>(retTy, paramTyp, false);
 
-  auto fn = ensure_function(mangled_name, fnTy, !node.body.has_value());
+  auto fn = create_function(mangled_name, fnTy, !node.body.has_value(), &meta);
   name_mangle_[&node] = mangled_name;
 
   if (!node.body.has_value()) {
     return fn;
   }
 
-  if (std::find_if(functions_.begin(), functions_.end(), [&fn](const auto &f) {
-        return f.get() == fn.get();
-      }) == functions_.end()) {
-    functions_.push_back(fn);
-  }
-
+  auto saved_block = current_block_;
+  functions_.push_back(fn);
   auto *previousScope = current_scope_node;
   current_block_ = fn->createBlock("entry");
   pushLocalScope();
@@ -1658,7 +1559,22 @@ IREmitter::emit_function(const FunctionMetaData &meta, const FunctionDecl &node,
   }
 
   popLocalScope();
-  current_block_ = nullptr;
+  current_block_ = saved_block;
+  functions_.pop_back();
+  return fn;
+}
+
+inline std::shared_ptr<Function>
+IREmitter::create_function(const std::string &name,
+                           std::shared_ptr<FunctionType> ty, bool is_external, const FunctionMetaData* meta) {
+  if (meta) {
+    auto it = function_table_.find(meta);
+    if (it != function_table_.end()) {
+      return it->second;
+    }
+  }
+  auto fn = module_.createFunction(name, ty, is_external);
+  function_table_[meta] = fn;
   return fn;
 }
 

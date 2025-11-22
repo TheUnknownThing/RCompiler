@@ -6,7 +6,13 @@
 #include <utility>
 #include <vector>
 
+#include "semantic/scope.hpp"
+
 namespace rc::ir {
+
+// fwd decls
+class BasicBlock;
+class Function;
 
 enum class TypeKind {
   Void,
@@ -110,17 +116,22 @@ private:
 class FunctionType final : public Type {
 public:
   FunctionType(TypePtr retTy, std::vector<TypePtr> paramTys,
-               bool isVarArg = false)
+               bool isVarArg = false,
+               std::shared_ptr<Function> function = nullptr)
       : Type(TypeKind::Function), ret_(std::move(retTy)),
-        params_(std::move(paramTys)), varArg_(isVarArg) {}
+        params_(std::move(paramTys)), varArg_(isVarArg),
+        function_(std::move(function)) {}
   const TypePtr &returnType() const { return ret_; }
   const std::vector<TypePtr> &paramTypes() const { return params_; }
   bool isVarArg() const { return varArg_; }
+  const std::shared_ptr<Function> &function() const { return function_; }
+  void setFunction(std::shared_ptr<Function> fn) { function_ = std::move(fn); }
 
 private:
   TypePtr ret_;
   std::vector<TypePtr> params_;
   bool varArg_;
+  std::shared_ptr<Function> function_;
 };
 
 class Value {
@@ -180,9 +191,5 @@ class ConstantNull final : public Constant {
 public:
   explicit ConstantNull(TypePtr ptrTy) : Constant(std::move(ptrTy)) {}
 };
-
-// fwd decls
-class BasicBlock;
-class Function;
 
 } // namespace rc::ir
