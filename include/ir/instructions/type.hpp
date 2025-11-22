@@ -138,7 +138,7 @@ protected:
 
 private:
   TypePtr type_;
-  std::string name_;
+  std::string name_; // register name
 };
 
 class Constant : public Value {

@@ -69,6 +69,10 @@ public:
   void visit(BorrowExpression &node) override;
   void visit(DerefExpression &node) override;
 
+  auto getExprCache() -> const std::unordered_map<const BaseNode *, SemType> & {
+    return expr_cache;
+  }
+
 private:
   struct IdentifierMeta {
     bool is_mutable;
