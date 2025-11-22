@@ -18,6 +18,7 @@
 #include "ast/nodes/topLevel.hpp"
 #include "ast/types.hpp"
 #include "lexer/lexer.hpp"
+#include "semantic/analyzer/constEvaluator.hpp"
 #include "semantic/scope.hpp"
 #include "semantic/types.hpp"
 #include "utils/logger.hpp"
@@ -37,7 +38,6 @@ class IREmitter : public BaseVisitor {
 public:
   IREmitter() = default;
   ~IREmitter() = default;
-
   // Entry point
   void run(const std::shared_ptr<RootNode> &root, ScopeNode *root_scope_,
            const Context &ctx);
@@ -78,6 +78,9 @@ public:
   void visit(BorrowExpression &node) override;
   void visit(DerefExpression &node) override;
 
+  const Module &module() const { return module_; }
+  Module &module() { return module_; }
+
 private:
   ScopeNode *current_scope_node = nullptr;
   const Context *context = nullptr;
@@ -90,6 +93,7 @@ private:
   std::unordered_map<const BaseNode *, std::string> name_mangle_;
   std::unordered_map<std::string, std::shared_ptr<Function>> function_table_;
   std::unordered_map<std::string, std::shared_ptr<Value>> function_symbols_;
+  std::unordered_map<std::string, std::shared_ptr<Value>> globals_;
 
   std::vector<std::unordered_map<std::string, std::shared_ptr<Value>>>
       locals_; // local mapped to their memory location or SSA
@@ -99,6 +103,8 @@ private:
 
   std::shared_ptr<Value> popOperand();
   void pushOperand(std::shared_ptr<Value> v);
+  std::shared_ptr<Value> materializeValue(std::shared_ptr<Value> v,
+                                          const SemType &semTy);
   std::shared_ptr<Value> lookupLocal(const std::string &name) const;
   void bindLocal(const std::string &name, std::shared_ptr<Value> v);
   void pushLocalScope();
@@ -113,6 +119,9 @@ private:
   std::string qualify_scope(const ScopeNode *scope) const;
   std::string encode_type_for_mangling(const SemType &type) const;
   std::string mangle_struct(const CollectedItem &item) const;
+  std::string mangle_constant(
+      const std::string &name, const ScopeNode *owner_scope,
+      const std::optional<std::string> &member_of = std::nullopt) const;
   std::string mangle_function(
       const FunctionMetaData &meta, const ScopeNode *owner_scope,
       const std::vector<SemType> &params, const SemType &ret,
@@ -160,6 +169,7 @@ inline void IREmitter::run(const std::shared_ptr<RootNode> &root,
   name_mangle_.clear();
   function_table_.clear();
   function_symbols_.clear();
+  globals_.clear();
   functions_.clear();
   struct_types_.clear();
   locals_.emplace_back();
@@ -265,23 +275,25 @@ inline void IREmitter::visit(BinaryExpression &node) {
     auto lhs = popOperand();
     node.right->accept(*this);
     auto rhs = popOperand();
+    rhs = materializeValue(rhs, context->lookupType(node.right.get()));
 
-    auto lhsPtr = std::dynamic_pointer_cast<const PointerType>(lhs->type());
-    if (!lhsPtr) {
+    auto lhsPtrTy = std::dynamic_pointer_cast<const PointerType>(lhs->type());
+    if (!lhsPtrTy) {
       throw IRException("lhs is not addressable");
     }
 
     if (node.op.type == TokenType::ASSIGN) {
-      current_block_->append<StoreInst>(rhs, lhsPtr);
+      current_block_->append<StoreInst>(rhs, lhs);
       pushOperand(rhs);
       return;
     }
 
-    auto loaded = current_block_->append<LoadInst>(lhsPtr, lhsPtr->pointee());
+    auto loaded =
+        current_block_->append<LoadInst>(lhs, lhsPtrTy->pointee());
     auto opKind = token_to_binop(node.op.type);
-    auto combined = current_block_->append<BinaryOpInst>(*opKind, loaded, rhs,
-                                                         lhsPtr->pointee());
-    current_block_->append<StoreInst>(combined, lhsPtr);
+    auto combined = current_block_->append<BinaryOpInst>(
+        *opKind, loaded, rhs, lhsPtrTy->pointee());
+    current_block_->append<StoreInst>(combined, lhs);
     pushOperand(combined);
     return;
   }
@@ -289,6 +301,7 @@ inline void IREmitter::visit(BinaryExpression &node) {
   if (node.op.type == TokenType::AS) {
     node.left->accept(*this);
     auto val = popOperand();
+    val = materializeValue(val, context->lookupType(node.left.get()));
     auto targetTy = context->resolveType(context->lookupType(&node));
     auto srcInt = std::dynamic_pointer_cast<const IntegerType>(val->type());
     auto dstInt = std::dynamic_pointer_cast<const IntegerType>(targetTy);
@@ -316,6 +329,8 @@ inline void IREmitter::visit(BinaryExpression &node) {
   auto lhs = popOperand();
   node.right->accept(*this);
   auto rhs = popOperand();
+  lhs = materializeValue(lhs, context->lookupType(node.left.get()));
+  rhs = materializeValue(rhs, context->lookupType(node.right.get()));
 
   auto opKind = token_to_binop(node.op.type);
   if (opKind) {
@@ -348,7 +363,8 @@ inline void IREmitter::visit(BinaryExpression &node) {
     pred = lhsInt->isSigned() ? ICmpPred::SGE : ICmpPred::UGE;
     break;
   default:
-    throw IRException("unsupported binary operator");
+    throw IRException("unsupported binary operator: " +
+                      std::to_string(static_cast<int>(node.op.type)));
   }
   auto cmp = current_block_->append<ICmpInst>(pred, lhs, rhs);
   pushOperand(cmp);
@@ -358,6 +374,7 @@ inline void IREmitter::visit(ReturnExpression &node) {
   if (node.value) {
     (*node.value)->accept(*this);
     auto v = popOperand();
+    v = materializeValue(v, context->lookupType(node.value->get()));
     current_block_->append<ReturnInst>(v);
   } else {
     current_block_->append<ReturnInst>();
@@ -372,6 +389,7 @@ inline void IREmitter::visit(PrefixExpression &node) {
   node.right->accept(*this);
   auto operand = popOperand();
   const auto semTy = context->lookupType(&node);
+  operand = materializeValue(operand, semTy);
   auto irTy = context->resolveType(semTy);
 
   switch (node.op.type) {
@@ -481,16 +499,16 @@ inline void IREmitter::visit(NameExpression &node) {
   }
   auto value = lookupLocal(node.name);
   if (!value) {
+    auto g = globals_.find(node.name);
+    if (g != globals_.end()) {
+      value = g->second;
+    }
+  }
+  if (!value) {
     throw IRException("unknown identifier " + node.name);
   }
-  if (auto ptrTy =
-          std::dynamic_pointer_cast<const PointerType>(value->type())) {
-    auto loaded = current_block_->append<LoadInst>(value, ptrTy->pointee(), 0,
-                                                   false, node.name);
-    pushOperand(loaded);
-  } else {
-    pushOperand(value);
-  }
+
+  pushOperand(value);
 }
 
 inline void IREmitter::visit(ExpressionStatement &node) {
@@ -509,8 +527,48 @@ inline void IREmitter::visit(RootNode &node) {
 }
 
 inline void IREmitter::visit(ConstantItem &node) {
-  throw std::runtime_error("ConstantItem emission not implemented (" +
-                           node.name + ")");
+  auto *item = resolve_value_item(node.name);
+  if (!item || !item->has_constant_meta()) {
+    throw IRException("constant metadata not found for '" + node.name + "'");
+  }
+
+  const auto &meta = item->as_constant_meta();
+  if (!meta.evaluated_value) {
+    throw IRException("constant '" + node.name + "' not evaluated");
+  }
+
+  const auto &cv = *meta.evaluated_value;
+  std::shared_ptr<Constant> irConst;
+
+  if (cv.is_bool()) {
+    irConst = ConstantInt::getI1(cv.as_bool());
+  } else if (cv.is_i32()) {
+    irConst =
+        ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_i32()), true);
+  } else if (cv.is_u32()) {
+    irConst = ConstantInt::getI32(cv.as_u32(), false);
+  } else if (cv.is_isize()) {
+    irConst = std::make_shared<ConstantInt>(
+        IntegerType::isize(), static_cast<std::uint64_t>(cv.as_isize()));
+  } else if (cv.is_usize()) {
+    irConst =
+        std::make_shared<ConstantInt>(IntegerType::usize(), cv.as_usize());
+  } else if (cv.is_any_int()) {
+    // Treat ANY_INT as i32
+    irConst =
+        ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_any_int()), true);
+  } else if (cv.type.is_primitive() &&
+             cv.type.as_primitive().kind == SemPrimitiveKind::UNIT) {
+    irConst = std::make_shared<ConstantUnit>();
+  } else {
+    throw IRException("constant '" + node.name +
+                      "' has unsupported type for IR emission");
+  }
+
+  auto mangled = mangle_constant(meta.name, item->owner_scope);
+  irConst->setName(mangled);
+  module_.createConstant(irConst);
+  globals_[meta.name] = irConst;
 }
 
 inline void IREmitter::visit(CallExpression &node) {
@@ -629,11 +687,59 @@ inline void IREmitter::visit(StructDecl &node) {
   auto structType = module_.createStructType(fields, mangled);
   struct_types_.push_back(structType);
 
-  // TODO: visit methods & constants
+  // Emit evaluated associated constants
+  for (const auto &c : meta.constants) {
+    if (!c.evaluated_value) {
+      continue;
+    }
+    const auto &cv = *c.evaluated_value;
+    std::shared_ptr<Constant> irConst;
+    if (cv.is_bool()) {
+      irConst = ConstantInt::getI1(cv.as_bool());
+    } else if (cv.is_i32()) {
+      irConst =
+          ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_i32()), true);
+    } else if (cv.is_u32()) {
+      irConst = ConstantInt::getI32(cv.as_u32(), false);
+    } else if (cv.is_isize()) {
+      irConst = std::make_shared<ConstantInt>(
+          IntegerType::isize(), static_cast<std::uint64_t>(cv.as_isize()));
+    } else if (cv.is_usize()) {
+      irConst =
+          std::make_shared<ConstantInt>(IntegerType::usize(), cv.as_usize());
+    } else if (cv.is_any_int()) {
+      irConst = ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_any_int()),
+                                    true);
+    } else if (cv.type.is_primitive() &&
+               cv.type.as_primitive().kind == SemPrimitiveKind::UNIT) {
+      irConst = std::make_shared<ConstantUnit>();
+    } else {
+      continue; // unsupported constant type for IR emission
+    }
+    auto mangled_const = mangle_constant(c.name, item->owner_scope, item->name);
+    irConst->setName(mangled_const);
+    module_.createConstant(irConst);
+    globals_[c.name] = irConst;
+  }
 
-  // constant: name mangle + place it in module
-
-  // method: change &self to struct pointer + visit function
+  // Predeclare methods so call sites have symbols; bodies emitted in impl
+  for (const auto &m : meta.methods) {
+    std::optional<SemType> self_type;
+    if (m.decl && m.decl->self_param) {
+      self_type = compute_self_type(*m.decl, item);
+    }
+    auto params = build_effective_params(m, self_type);
+    std::vector<TypePtr> irParams;
+    irParams.reserve(params.size());
+    for (const auto &p : params) {
+      irParams.push_back(context->resolveType(p));
+    }
+    auto retTy = context->resolveType(m.return_type);
+    auto fnTy = std::make_shared<FunctionType>(retTy, irParams, false);
+    auto mangled_fn = mangle_function(m, item->owner_scope, params,
+                                      m.return_type, item->name);
+    ensure_function(mangled_fn, fnTy, !m.decl || !m.decl->body.has_value());
+  }
 
   return;
 }
@@ -648,7 +754,7 @@ inline void IREmitter::visit(TraitDecl &) {
 
 inline void IREmitter::visit(ImplDecl &node) {
   if (node.impl_type != ImplDecl::ImplType::Inherent) {
-    throw IRException("trait impl emission not supported");
+    throw IRException("trait impl removed");
   }
 
   if (!node.target_type.is_path()) {
@@ -711,6 +817,8 @@ inline void IREmitter::visit(GroupExpression &node) {
 inline void IREmitter::visit(IfExpression &node) {
   node.condition->accept(*this);
   auto condVal = popOperand();
+  condVal =
+      materializeValue(condVal, context->lookupType(node.condition.get()));
 
   auto cur_func = functions_.back();
   auto thenBlock = cur_func->createBlock("if_then");
@@ -887,8 +995,59 @@ inline void IREmitter::visit(FieldAccessExpression &node) {
   pushOperand(loaded);
 }
 
-inline void IREmitter::visit(StructExpression &) {
-  throw std::runtime_error("StructExpression emission not implemented");
+inline void IREmitter::visit(StructExpression &node) {
+  if (!current_block_) {
+    throw IRException("no active basic block for struct expression");
+  }
+
+  auto *nameExpr = dynamic_cast<NameExpression *>(node.path_expr.get());
+  if (!nameExpr) {
+    throw IRException("struct expression requires identifier path");
+  }
+
+  const auto *item = resolve_struct_item(nameExpr->name);
+  if (!item || !item->has_struct_meta()) {
+    throw IRException("unknown struct '" + nameExpr->name + "'");
+  }
+
+  const auto &meta = item->as_struct_meta();
+  if (meta.named_fields.size() != node.fields.size()) {
+    throw IRException("struct expression field count mismatch");
+  }
+
+  std::unordered_map<std::string, std::shared_ptr<Expression>> provided;
+  for (const auto &f : node.fields) {
+    if (!f.value) {
+      throw IRException("missing value for field '" + f.name + "'");
+    }
+    provided[f.name] = f.value.value();
+  }
+
+  auto structSem = SemType::named(item);
+  auto structIrTy = context->resolveType(structSem);
+  auto slot =
+      current_block_->append<AllocaInst>(structIrTy, nullptr, 0, "structtmp");
+
+  auto zero = ConstantInt::getI32(0, false);
+  for (size_t i = 0; i < meta.named_fields.size(); ++i) {
+    const auto &field = meta.named_fields[i];
+    auto it = provided.find(field.first);
+    if (it == provided.end()) {
+      throw IRException("missing initializer for field '" + field.first + "'");
+    }
+    it->second->accept(*this);
+    auto val = popOperand();
+    auto coerced = coerce_argument(val, field.second, field.first);
+    auto idxConst = ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
+    auto fieldTy = context->resolveType(field.second);
+    auto gep = current_block_->append<GetElementPtrInst>(
+        fieldTy, slot, std::vector<std::shared_ptr<Value>>{zero, idxConst},
+        true, field.first);
+    current_block_->append<StoreInst>(coerced, gep);
+  }
+
+  auto loaded = current_block_->append<LoadInst>(slot, structIrTy);
+  pushOperand(loaded);
 }
 
 inline void IREmitter::visit(UnderscoreExpression &) {
@@ -922,6 +1081,8 @@ inline void IREmitter::visit(WhileExpression &node) {
   current_block_ = condBlock;
   node.condition->accept(*this);
   auto condVal = popOperand();
+  condVal =
+      materializeValue(condVal, context->lookupType(node.condition.get()));
   current_block_->append<BranchInst>(condVal, bodyBlock, afterBlock);
 
   current_block_ = bodyBlock;
@@ -933,12 +1094,99 @@ inline void IREmitter::visit(WhileExpression &node) {
   current_block_ = afterBlock;
 }
 
-inline void IREmitter::visit(ArrayExpression &) {
-  throw std::runtime_error("ArrayExpression emission not implemented");
+inline void IREmitter::visit(ArrayExpression &node) {
+  if (!current_block_) {
+    throw IRException("no active basic block for array expression");
+  }
+
+  auto semTy = context->lookupType(&node);
+  if (!semTy.is_array()) {
+    throw IRException("array expression type not resolved to array");
+  }
+  const auto &arrSem = semTy.as_array();
+  std::size_t count = static_cast<std::size_t>(arrSem.size);
+  if (node.actual_size >= 0) {
+    count = static_cast<std::size_t>(node.actual_size);
+  }
+
+  auto arrIrTy = context->resolveType(semTy);
+  auto elemIrTy = context->resolveType(*arrSem.element);
+  auto slot = current_block_->append<AllocaInst>(arrIrTy, nullptr, 0, "arrtmp");
+  auto zero = ConstantInt::getI32(0, false);
+
+  if (node.repeat) {
+    node.repeat->first->accept(*this);
+    auto val = popOperand();
+    auto coerced = coerce_argument(val, *arrSem.element, "arr_init");
+    std::size_t repeatCount = count;
+    for (std::size_t i = 0; i < repeatCount; ++i) {
+      auto idxConst = ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
+      auto gep = current_block_->append<GetElementPtrInst>(
+          elemIrTy, slot, std::vector<std::shared_ptr<Value>>{zero, idxConst},
+          true, "elt");
+      current_block_->append<StoreInst>(coerced, gep);
+    }
+  } else {
+    if (node.elements.size() != count) {
+      throw IRException("array literal size mismatch");
+    }
+    for (std::size_t i = 0; i < node.elements.size(); ++i) {
+      node.elements[i]->accept(*this);
+      auto val = popOperand();
+      auto coerced =
+          coerce_argument(val, *arrSem.element, "elt" + std::to_string(i));
+      auto idxConst = ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
+      auto gep = current_block_->append<GetElementPtrInst>(
+          elemIrTy, slot, std::vector<std::shared_ptr<Value>>{zero, idxConst},
+          true, "elt");
+      current_block_->append<StoreInst>(coerced, gep);
+    }
+  }
+
+  auto loaded = current_block_->append<LoadInst>(slot, arrIrTy);
+  pushOperand(loaded);
 }
 
-inline void IREmitter::visit(IndexExpression &) {
-  throw std::runtime_error("IndexExpression emission not implemented");
+inline void IREmitter::visit(IndexExpression &node) {
+  if (!current_block_) {
+    throw IRException("no active basic block for index expression");
+  }
+
+  node.target->accept(*this);
+  auto targetVal = popOperand();
+  auto targetSem = context->lookupType(node.target.get());
+  if (targetSem.is_reference()) {
+    targetSem = *targetSem.as_reference().target;
+  }
+  if (!targetSem.is_array()) {
+    throw IRException("indexing non-array type");
+  }
+  const auto &arrSem = targetSem.as_array();
+  auto elemIrTy = context->resolveType(*arrSem.element);
+  auto basePtr = std::dynamic_pointer_cast<const PointerType>(targetVal->type())
+                     ? targetVal
+                     : nullptr;
+  if (!basePtr) {
+    auto arrIrTy = context->resolveType(targetSem);
+    auto tmp =
+        current_block_->append<AllocaInst>(arrIrTy, nullptr, 0, "indextmp");
+    current_block_->append<StoreInst>(targetVal, tmp);
+    basePtr = tmp;
+  }
+
+  node.index->accept(*this);
+  auto idxVal = popOperand();
+  auto idxTy = std::dynamic_pointer_cast<const IntegerType>(idxVal->type());
+  if (!idxTy) {
+    throw IRException("array index must be integer");
+  }
+
+  auto zero = ConstantInt::getI32(0, false);
+  auto gep = current_block_->append<GetElementPtrInst>(
+      elemIrTy, basePtr, std::vector<std::shared_ptr<Value>>{zero, idxVal},
+      true, "idx");
+  auto loaded = current_block_->append<LoadInst>(gep, elemIrTy);
+  pushOperand(loaded);
 }
 
 inline void IREmitter::visit(TupleExpression &) {
@@ -1000,6 +1248,18 @@ inline void IREmitter::pushOperand(std::shared_ptr<Value> v) {
     throw IRException("attempt to push null operand");
   }
   operand_stack_.push_back(std::move(v));
+}
+
+inline std::shared_ptr<Value>
+IREmitter::materializeValue(std::shared_ptr<Value> v, const SemType &semTy) {
+  if (!v) {
+    throw IRException("attempt to materialize null value");
+  }
+  auto ptrTy = std::dynamic_pointer_cast<const PointerType>(v->type());
+  if (ptrTy && !semTy.is_reference()) {
+    return current_block_->append<LoadInst>(v, ptrTy->pointee());
+  }
+  return v;
 }
 
 inline std::shared_ptr<Value>
@@ -1089,7 +1349,7 @@ IREmitter::token_to_binop(TokenType tt) const {
   case TokenType::CARET_EQ:
     return BinaryOpKind::XOR;
   default:
-    throw std::runtime_error("unsupported binary operator");
+    return std::nullopt;
   }
 }
 
@@ -1183,6 +1443,22 @@ inline std::string IREmitter::mangle_struct(const CollectedItem &item) const {
     qualified += "::";
   qualified += item.name;
   return "_RS" + qualified;
+}
+
+inline std::string
+IREmitter::mangle_constant(const std::string &name,
+                           const ScopeNode *owner_scope,
+                           const std::optional<std::string> &member_of) const {
+  std::string qualified = qualify_scope(owner_scope);
+  if (member_of) {
+    if (!qualified.empty())
+      qualified += "::";
+    qualified += *member_of;
+  }
+  if (!qualified.empty())
+    qualified += "::";
+  qualified += name;
+  return "_RC" + qualified;
 }
 
 inline std::string IREmitter::mangle_function(
@@ -1363,8 +1639,7 @@ IREmitter::emit_function(const FunctionMetaData &meta, const FunctionDecl &node,
   }
 
   for (size_t i = 0; i < fn->args().size(); ++i) {
-    std::string paramName =
-        i < paramNames.size() ? paramNames[i] : "arg" + std::to_string(i);
+    std::string paramName = paramNames[i];
     fn->args()[i]->setName(paramName);
     auto slot =
         current_block_->append<AllocaInst>(paramTyp[i], nullptr, 0, paramName);

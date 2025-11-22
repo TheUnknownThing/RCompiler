@@ -6,6 +6,8 @@
 
 #include "ast/parser.hpp"
 #include "ast/visitors/pretty_print.hpp"
+#include "ir/gen.hpp"
+#include "ir/visit.hpp"
 #include "lexer/lexer.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/analyzer/controlAnalyzer.hpp"
@@ -47,6 +49,14 @@ int main(int argc, char *argv[]) {
 
       rc::SemanticAnalyzer analyzer;
       analyzer.analyze(ast);
+
+      auto *root_scope = analyzer.root_scope();
+
+      rc::ir::Context irCtx(*root_scope, analyzer.expr_cache());
+      rc::ir::IREmitter emitter;
+      emitter.run(ast, root_scope, irCtx);
+
+      rc::ir::emitLLVM(emitter.module(), std::cout);
     } else {
       LOG_ERROR("Failed!");
     }

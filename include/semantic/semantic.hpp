@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 
 #include "ast/nodes/topLevel.hpp"
 #include "semantic/analyzer/controlAnalyzer.hpp"
@@ -9,6 +10,7 @@
 #include "semantic/analyzer/fourthPass.hpp"
 #include "semantic/analyzer/secondPass.hpp"
 #include "semantic/analyzer/thirdPass.hpp"
+#include "semantic/scope.hpp"
 
 namespace rc {
 
@@ -17,6 +19,15 @@ public:
   SemanticAnalyzer();
 
   void analyze(const std::shared_ptr<RootNode> &root);
+
+  ScopeNode *root_scope() const { return root_scope_; }
+  const std::unordered_map<const BaseNode *, SemType> &expr_cache() const {
+    return expr_cache_;
+  }
+
+private:
+  ScopeNode *root_scope_ = nullptr;
+  std::unordered_map<const BaseNode *, SemType> expr_cache_;
 };
 
 inline SemanticAnalyzer::SemanticAnalyzer() = default;
@@ -49,6 +60,9 @@ inline void SemanticAnalyzer::analyze(const std::shared_ptr<RootNode> &root) {
   // Dirty work is just dirty work
   DirtyWorkPass dirty_work;
   dirty_work.run(std::dynamic_pointer_cast<RootNode>(root), first.root_scope);
+
+  root_scope_ = first.root_scope;
+  expr_cache_ = fourth.getExprCache();
 }
 
 } // namespace rc

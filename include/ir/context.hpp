@@ -67,11 +67,8 @@ inline TypePtr Context::resolveType(const SemType &type) const {
     case SemPrimitiveKind::NEVER:
       return std::make_shared<VoidType>();
     case SemPrimitiveKind::ANY_INT:
-      // ANY_INT should have been resolved by semantic analysis
-      // throw error here
-      throw std::runtime_error(
-          "Context::resolveType: ANY_INT should have been resolved");
-      // return IntegerType::i32(true);
+      // TODO: resolve ANY_INT
+      return IntegerType::i32(true);
     default:
       throw std::runtime_error(
           "Context::resolveType: unsupported primitive kind");
