@@ -52,11 +52,11 @@ int main(int argc, char *argv[]) {
 
       auto *root_scope = analyzer.root_scope();
 
-      // rc::ir::Context irCtx(analyzer.expr_cache());
-      // rc::ir::IREmitter emitter;
-      // emitter.run(ast, root_scope, irCtx);
+      rc::ir::Context irCtx(analyzer.expr_cache());
+      rc::ir::IREmitter emitter;
+      emitter.run(ast, root_scope, irCtx);
 
-      // rc::ir::emitLLVM(emitter.module(), std::cout);
+      rc::ir::emitLLVM(emitter.module(), std::cout);
     } else {
       LOG_ERROR("Failed!");
     }

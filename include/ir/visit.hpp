@@ -88,6 +88,7 @@ private:
   std::vector<std::shared_ptr<Function>> functions_;
   std::vector<std::shared_ptr<StructType>> struct_types_;
   std::shared_ptr<BasicBlock> current_block_;
+  const CollectedItem *current_impl_target_ = nullptr;
 
   std::unordered_map<const BaseNode *, std::string> name_mangle_;
   std::unordered_map<const FunctionMetaData *, std::shared_ptr<Function>>
@@ -106,6 +107,7 @@ private:
   void pushOperand(std::shared_ptr<Value> v);
   std::shared_ptr<Value> loadPtrValue(std::shared_ptr<Value> v,
                                       const SemType &semTy);
+  bool typeEquals(const TypePtr &a, const TypePtr &b) const;
   std::shared_ptr<Value> lookupLocal(const std::string &name) const;
   void bindLocal(const std::string &name, std::shared_ptr<Value> v);
   void pushLocalScope();
@@ -838,6 +840,8 @@ inline void IREmitter::visit(ImplDecl &node) {
 
   const auto &meta = struct_item->as_struct_meta();
   std::unordered_set<const FunctionDecl *> visited;
+  auto *prev_impl = current_impl_target_;
+  current_impl_target_ = struct_item;
 
   for (const auto &assoc : node.associated_items) {
     if (!assoc)
@@ -871,6 +875,7 @@ inline void IREmitter::visit(ImplDecl &node) {
       emit_function(*found, *fn, struct_item->owner_scope, params, mangled);
     }
   }
+  current_impl_target_ = prev_impl;
 }
 
 inline void IREmitter::visit(EmptyStatement &) {}
@@ -889,6 +894,8 @@ inline void IREmitter::visit(IfExpression &node) {
 
   auto cur_func = functions_.back();
   auto thenBlock = cur_func->createBlock("if_then");
+  auto resultIrTy = context->resolveType(context->lookupType(&node));
+  auto entryBlock = current_block_;
 
   if (node.else_block) {
     auto elseBlock = cur_func->createBlock("if_else");
@@ -909,6 +916,11 @@ inline void IREmitter::visit(IfExpression &node) {
     current_block_->append<BranchInst>(mergeBlock);
     // merge block
     current_block_ = mergeBlock;
+    auto phi = current_block_->append<PhiInst>(
+        resultIrTy,
+        std::vector<PhiInst::Incoming>{{thenVal, thenBlock}, {elseVal, elseBlock}},
+        "ifval");
+    pushOperand(phi);
   } else {
     auto mergeBlock = cur_func->createBlock("if_merge");
     current_block_->append<BranchInst>(condVal, thenBlock, mergeBlock);
@@ -920,6 +932,13 @@ inline void IREmitter::visit(IfExpression &node) {
     current_block_->append<BranchInst>(mergeBlock);
     // merge block
     current_block_ = mergeBlock;
+    auto unit = std::make_shared<ConstantUnit>();
+    auto phi = current_block_->append<PhiInst>(
+        resultIrTy,
+        std::vector<PhiInst::Incoming>{{thenVal, thenBlock},
+                                       {unit, entryBlock}},
+        "ifval");
+    pushOperand(phi);
   }
 }
 
@@ -1071,7 +1090,7 @@ inline void IREmitter::visit(FieldAccessExpression &node) {
 
   auto loaded = current_block_->append<LoadInst>(gep, fieldIrTy, 0, false,
                                                  node.field_name);
-  pushOperand(loaded);
+  pushOperand(gep);
   LOG_DEBUG("[IREmitter] Loaded field '" + node.field_name + "'");
 }
 
@@ -1277,8 +1296,14 @@ inline void IREmitter::visit(IndexExpression &node) {
   auto idxVal = popOperand();
   auto idxTy = std::dynamic_pointer_cast<const IntegerType>(idxVal->type());
   if (!idxTy) {
-    LOG_ERROR("[IREmitter] array index must be integer");
-    throw IRException("array index must be integer");
+    // LOG_ERROR("[IREmitter] array index must be integer");
+    // throw IRException("array index must be integer");
+    auto loadedIdx = loadPtrValue(idxVal, context->lookupType(node.index.get()));
+    idxVal = loadedIdx;
+    if (!std::dynamic_pointer_cast<const IntegerType>(idxVal->type())) {
+      LOG_ERROR("[IREmitter] array index must be integer");
+      throw IRException("array index must be integer");
+    }
   }
 
   auto zero = ConstantInt::getI32(0, false);
@@ -1286,7 +1311,7 @@ inline void IREmitter::visit(IndexExpression &node) {
       elemIrTy, basePtr, std::vector<std::shared_ptr<Value>>{zero, idxVal},
       "idx");
   auto loaded = current_block_->append<LoadInst>(gep, elemIrTy);
-  pushOperand(loaded);
+  pushOperand(gep);
   LOG_DEBUG("[IREmitter] Emitted index access");
 }
 
@@ -1302,6 +1327,7 @@ inline void IREmitter::visit(BreakExpression &) {
     throw IRException("break used outside of loop"); // this should never happen
   }
   auto targetBlock = block_stack_.back();
+  pushOperand(std::make_shared<ConstantUnit>());
   current_block_->append<BranchInst>(targetBlock);
   // should never have dead code, but just in case
   auto cur_func = functions_.back();
@@ -1317,6 +1343,7 @@ inline void IREmitter::visit(ContinueExpression &) {
         "continue used outside of loop"); // this should never happen
   }
   auto targetBlock = block_stack_.back();
+  pushOperand(std::make_shared<ConstantUnit>());
   current_block_->append<BranchInst>(targetBlock);
   // should never have dead code, but just in case
   auto cur_func = functions_.back();
@@ -1324,9 +1351,116 @@ inline void IREmitter::visit(ContinueExpression &) {
   current_block_ = unreachableBlock;
 }
 
-inline void IREmitter::visit(PathExpression &) {
-  LOG_ERROR("[IREmitter] PathExpression emission not implemented");
-  throw std::runtime_error("PathExpression emission not implemented");
+inline void IREmitter::visit(PathExpression &node) {
+  LOG_DEBUG("[IREmitter] Visiting path expression");
+  if (node.leading_colons) {
+    LOG_ERROR("[IREmitter] leading colons in path expressions not supported");
+    throw IRException("leading colons in path expressions not supported");
+  }
+
+  for (const auto &seg : node.segments) {
+    if (seg.call.has_value()) {
+      LOG_ERROR("[IREmitter] path segment expressions are not supported");
+      throw IRException("path segment expressions are not supported");
+    }
+  }
+
+  if (node.segments.size() == 1) {
+    const auto &ident = node.segments[0].ident;
+    if (auto local = lookupLocal(ident)) {
+      LOG_DEBUG("[IREmitter] Path resolved to local '" + ident + "'");
+      pushOperand(local);
+      return;
+    }
+    auto g = globals_.find(ident);
+    if (g != globals_.end()) {
+      LOG_DEBUG("[IREmitter] Path resolved to global '" + ident + "'");
+      pushOperand(g->second);
+      return;
+    }
+    LOG_ERROR("[IREmitter] identifier '" + ident + "' not found");
+    throw IRException("identifier '" + ident + "' not found");
+  }
+
+  if (node.segments.size() != 2) {
+    LOG_ERROR("[IREmitter] only TypeName::Value paths are supported");
+    throw IRException("only TypeName::Value paths are supported");
+  }
+
+  const std::string &typeName = node.segments[0].ident;
+  const std::string &valName = node.segments[1].ident;
+
+  const CollectedItem *type_item = nullptr;
+  if (typeName == "Self" && current_impl_target_) {
+    type_item = current_impl_target_;
+  } else {
+    type_item = resolve_struct_item(typeName);
+  }
+  if (!type_item || !type_item->has_struct_meta()) {
+    LOG_ERROR("[IREmitter] unknown type '" + typeName + "' for path expr");
+    throw IRException("unknown type '" + typeName + "' for path expr");
+  }
+
+  const ConstantMetaData *foundConst = nullptr;
+  for (const auto &c : type_item->as_struct_meta().constants) {
+    if (c.name == valName) {
+      foundConst = &c;
+      break;
+    }
+  }
+
+  if (!foundConst || !foundConst->evaluated_value) {
+    LOG_ERROR("[IREmitter] associated constant '" + valName +
+              "' not found or unevaluated");
+    throw IRException("associated constant '" + valName +
+                      "' not found or unevaluated");
+  }
+
+  // Attempt to reuse existing emitted constant
+  auto mangled =
+      mangle_constant(valName, type_item->owner_scope, type_item->name);
+  for (const auto &c : module_.constants()) {
+    if (c && c->name() == mangled) {
+      globals_[valName] = c;
+      pushOperand(c);
+      LOG_DEBUG("[IREmitter] Resolved path to existing constant " + mangled);
+      return;
+    }
+  }
+
+  const auto &cv = *foundConst->evaluated_value;
+  std::shared_ptr<Constant> irConst;
+  if (cv.is_bool()) {
+    irConst = ConstantInt::getI1(cv.as_bool());
+  } else if (cv.is_i32()) {
+    irConst =
+        ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_i32()), true);
+  } else if (cv.is_u32()) {
+    irConst = ConstantInt::getI32(cv.as_u32(), false);
+  } else if (cv.is_isize()) {
+    irConst = std::make_shared<ConstantInt>(
+        IntegerType::isize(), static_cast<std::uint64_t>(cv.as_isize()));
+  } else if (cv.is_usize()) {
+    irConst =
+        std::make_shared<ConstantInt>(IntegerType::usize(), cv.as_usize());
+  } else if (cv.is_any_int()) {
+    irConst = ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_any_int()),
+                                  true);
+  } else if (cv.type.is_primitive() &&
+             cv.type.as_primitive().kind == SemPrimitiveKind::UNIT) {
+    irConst = std::make_shared<ConstantUnit>();
+  } else {
+    LOG_ERROR("[IREmitter] unsupported associated constant type for '" +
+              valName + "'");
+    throw IRException("unsupported associated constant type for '" + valName +
+                      "'");
+  }
+
+  irConst->setName(mangled);
+  module_.createConstant(irConst);
+  globals_[valName] = irConst;
+  pushOperand(irConst);
+  LOG_DEBUG("[IREmitter] Created path constant " + mangled);
 }
 
 inline void IREmitter::visit(QualifiedPathExpression &) {
@@ -1334,14 +1468,109 @@ inline void IREmitter::visit(QualifiedPathExpression &) {
   throw std::runtime_error("QualifiedPathExpression emission not implemented");
 }
 
-inline void IREmitter::visit(BorrowExpression &) {
-  LOG_ERROR("[IREmitter] BorrowExpression emission not implemented");
-  throw std::runtime_error("BorrowExpression emission not implemented");
+inline void IREmitter::visit(BorrowExpression &node) {
+  LOG_DEBUG("[IREmitter] Visiting borrow expression");
+  if (!current_block_) {
+    LOG_ERROR("[IREmitter] no active basic block for borrow");
+    throw IRException("no active basic block");
+  }
+
+  node.right->accept(*this);
+  auto value = popOperand();
+
+  auto targetSem = context->lookupType(node.right.get());
+  auto targetIrTy = context->resolveType(targetSem);
+
+  if (auto ptrTy = std::dynamic_pointer_cast<const PointerType>(value->type())) {
+    const auto &pointee = ptrTy->pointee();
+    if (typeEquals(pointee, targetIrTy)) {
+      LOG_DEBUG("[IREmitter] borrow returning existing pointer");
+      pushOperand(value);
+      return;
+    }
+    if (pointee->kind() == TypeKind::Pointer) {
+      LOG_DEBUG("[IREmitter] borrow loading inner pointer");
+      auto loadedPtr =
+          current_block_->append<LoadInst>(value, ptrTy->pointee(), 0, false,
+                                           node.is_mutable ? "refmut" : "ref");
+      auto innerPtrTy =
+          std::dynamic_pointer_cast<const PointerType>(ptrTy->pointee());
+      if (innerPtrTy && typeEquals(innerPtrTy->pointee(), targetIrTy)) {
+        pushOperand(loadedPtr);
+        return;
+      }
+      value = loadedPtr;
+    }
+  }
+
+  LOG_DEBUG("[IREmitter] borrow creating stack slot for value");
+  auto slot = current_block_->append<AllocaInst>(
+      targetIrTy, nullptr, 0, node.is_mutable ? "refmuttmp" : "reftmp");
+  auto toStore = value;
+  if (auto ptr = std::dynamic_pointer_cast<const PointerType>(value->type())) {
+    toStore = current_block_->append<LoadInst>(value, ptr->pointee());
+  }
+  current_block_->append<StoreInst>(toStore, slot);
+  pushOperand(slot);
 }
 
-inline void IREmitter::visit(DerefExpression &) {
-  LOG_ERROR("[IREmitter] DerefExpression emission not implemented");
-  throw std::runtime_error("DerefExpression emission not implemented");
+inline void IREmitter::visit(DerefExpression &node) {
+  LOG_DEBUG("[IREmitter] Visiting deref expression");
+  if (!current_block_) {
+    LOG_ERROR("[IREmitter] no active basic block for deref");
+    throw IRException("no active basic block");
+  }
+
+  node.right->accept(*this);
+  auto ptrVal = popOperand();
+
+  auto refDepth = [](SemType t) {
+    std::size_t depth = 0;
+    while (t.is_reference()) {
+      ++depth;
+      t = *t.as_reference().target;
+    }
+    return depth;
+  };
+
+  auto rightSem = context->lookupType(node.right.get());
+  auto resultSem = context->lookupType(&node);
+  auto resultIrTy = context->resolveType(resultSem);
+
+  std::size_t rightDepth = refDepth(rightSem);
+  std::size_t resultDepth = refDepth(resultSem);
+  if (rightDepth == 0 || rightDepth <= resultDepth) {
+    LOG_ERROR("[IREmitter] invalid deref depth computation");
+    throw IRException("invalid deref depth computation");
+  }
+
+  auto current = ptrVal;
+  // Peel loads until the pointee matches the expected result IR type.
+  for (int i = 0; i < 8; ++i) {
+    auto curPtrTy =
+        std::dynamic_pointer_cast<const PointerType>(current->type());
+    if (!curPtrTy) {
+      LOG_ERROR("[IREmitter] deref target lost pointer type during peeling");
+      throw IRException("deref target lost pointer type during peeling");
+    }
+    if (typeEquals(curPtrTy->pointee(), resultIrTy)) {
+      break;
+    }
+    auto innerPtr =
+        std::dynamic_pointer_cast<const PointerType>(curPtrTy->pointee());
+    if (!innerPtr) {
+      LOG_ERROR("[IREmitter] deref result pointer type mismatch");
+      throw IRException("deref result pointer type mismatch");
+    }
+    current = current_block_->append<LoadInst>(current, curPtrTy->pointee());
+    if (i == 7) {
+      LOG_ERROR("[IREmitter] deref peeling exceeded limit");
+      throw IRException("deref peeling exceeded limit");
+    }
+  }
+
+  // Return the addressable pointer; consumers can load if they need the value.
+  pushOperand(current);
 }
 
 inline std::shared_ptr<Value> IREmitter::popOperand() {
@@ -1376,6 +1605,61 @@ inline std::shared_ptr<Value> IREmitter::loadPtrValue(std::shared_ptr<Value> v,
     return current_block_->append<LoadInst>(v, ptrTy->pointee());
   }
   return v;
+}
+
+inline bool IREmitter::typeEquals(const TypePtr &a, const TypePtr &b) const {
+  if (a->kind() != b->kind())
+    return false;
+  switch (a->kind()) {
+  case TypeKind::Void:
+  case TypeKind::UnitZst:
+    return true;
+  case TypeKind::Integer: {
+    auto ia = std::static_pointer_cast<const IntegerType>(a);
+    auto ib = std::static_pointer_cast<const IntegerType>(b);
+    return ia->bits() == ib->bits() && ia->isSigned() == ib->isSigned();
+  }
+  case TypeKind::Pointer: {
+    auto pa = std::static_pointer_cast<const PointerType>(a);
+    auto pb = std::static_pointer_cast<const PointerType>(b);
+    return typeEquals(pa->pointee(), pb->pointee());
+  }
+  case TypeKind::Array: {
+    auto aa = std::static_pointer_cast<const ArrayType>(a);
+    auto ab = std::static_pointer_cast<const ArrayType>(b);
+    return aa->count() == ab->count() && typeEquals(aa->elem(), ab->elem());
+  }
+  case TypeKind::Struct: {
+    auto sa = std::static_pointer_cast<const StructType>(a);
+    auto sb = std::static_pointer_cast<const StructType>(b);
+    if (!sa->name().empty() || !sb->name().empty()) {
+      return sa->name() == sb->name();
+    }
+    if (sa->fields().size() != sb->fields().size())
+      return false;
+    for (size_t i = 0; i < sa->fields().size(); ++i) {
+      if (!typeEquals(sa->fields()[i], sb->fields()[i]))
+        return false;
+    }
+    return true;
+  }
+  case TypeKind::Function: {
+    auto fa = std::static_pointer_cast<const FunctionType>(a);
+    auto fb = std::static_pointer_cast<const FunctionType>(b);
+    if (fa->isVarArg() != fb->isVarArg())
+      return false;
+    if (!typeEquals(fa->returnType(), fb->returnType()))
+      return false;
+    if (fa->paramTypes().size() != fb->paramTypes().size())
+      return false;
+    for (size_t i = 0; i < fa->paramTypes().size(); ++i) {
+      if (!typeEquals(fa->paramTypes()[i], fb->paramTypes()[i]))
+        return false;
+    }
+    return true;
+  }
+  }
+  return false;
 }
 
 inline std::shared_ptr<Value>
@@ -1696,6 +1980,25 @@ IREmitter::emit_function(const FunctionMetaData &meta, const FunctionDecl &node,
       current_scope_node = child;
     }
     node.body.value()->accept(*this);
+    std::shared_ptr<Value> result =
+        operand_stack_.empty() ? nullptr : popOperand();
+    // Emit implicit return if block not terminated
+    bool terminated = false;
+    if (!current_block_->instructions().empty()) {
+      auto last = current_block_->instructions().back();
+      terminated = dynamic_cast<ReturnInst *>(last.get()) != nullptr;
+    }
+    if (!terminated) {
+      if (fnTy->returnType()->kind() == TypeKind::Void) {
+        current_block_->append<ReturnInst>();
+      } else {
+        if (!result) {
+          result = std::make_shared<ConstantUnit>();
+        }
+        auto retVal = loadPtrValue(result, meta.return_type);
+        current_block_->append<ReturnInst>(retVal);
+      }
+    }
     current_scope_node = previousScope;
   }
 
