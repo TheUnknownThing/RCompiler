@@ -17,27 +17,14 @@ namespace rc::ir {
 class Context {
 public:
   explicit Context(
-      const rc::ScopeNode &rootScope,
       const std::unordered_map<const BaseNode *, SemType> &exprCache)
-      : rootScope_(rootScope), exprCache_(exprCache) {}
-
-  void enterScope(const rc::ScopeNode &scope) { currentScope_ = &scope; }
-
-  const rc::ScopeNode *exitScope() {
-    if (currentScope_->parent) {
-      currentScope_ = currentScope_->parent;
-      return currentScope_;
-    }
-    return nullptr; // at root
-  }
+      : exprCache_(exprCache) {}
 
   SemType lookupType(const BaseNode *node) const;
 
   TypePtr resolveType(const SemType &type) const;
 
 private:
-  const rc::ScopeNode &rootScope_;
-  const rc::ScopeNode *currentScope_ = &rootScope_;
   const std::unordered_map<const BaseNode *, SemType> &exprCache_; // from semantic
 };
 

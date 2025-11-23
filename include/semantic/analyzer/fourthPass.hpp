@@ -100,6 +100,8 @@ private:
   std::vector<SemType> function_return_stack;
 
   std::vector<SemType> loop_break_stack;
+  const CollectedItem *current_impl_type = nullptr;
+  const CollectedItem *current_struct_type = nullptr;
 
   void cache_expr(const BaseNode *n, SemType t);
   std::optional<SemType> lookup_binding(const std::string &name) const;
@@ -136,6 +138,8 @@ private:
   void resolve_path_function_call(const PathExpression &pe,
                                   CallExpression &node);
   SemType auto_deref(const SemType &t);
+  ScopeNode *find_scope_for_owner(const BaseNode *owner,
+                                  ScopeNode *start) const;
 };
 
 // Implementation
@@ -299,7 +303,102 @@ inline void FourthPass::visit(ConstantItem &node) {
   }
 }
 
-inline void FourthPass::visit(StructDecl &) {}
+inline void FourthPass::visit(StructDecl &node) {
+  LOG_DEBUG("[FourthPass] Visiting struct '" + node.name + "'");
+  auto *type_item = current_scope_node->find_type_item(node.name);
+  if (!type_item || !type_item->has_struct_meta()) {
+    throw SemanticException("struct item for '" + node.name +
+                            "' not found in scope");
+  }
+
+  const auto &meta = type_item->as_struct_meta();
+  auto *prev_struct = current_struct_type;
+  current_struct_type = type_item;
+
+  // Type check associated constants from impl blocks
+  for (const auto &cmeta : meta.constants) {
+    if (cmeta.decl && cmeta.decl->value) {
+      auto got = evaluate(cmeta.decl->value.value().get());
+      if (!can_assign(cmeta.type, got)) {
+        throw TypeError("impl constant '" + cmeta.name +
+                        "' in struct '" + node.name +
+                        "' type mismatch: expected '" + to_string(cmeta.type) +
+                        "' got '" + to_string(got) + "'");
+      }
+    }
+  }
+
+  // Type check associated methods from impl blocks
+  for (const auto &mmeta : meta.methods) {
+    if (!mmeta.decl) {
+      throw SemanticException("method '" + mmeta.name +
+                              "' is missing declaration reference");
+    }
+
+    const auto *decl = mmeta.decl;
+    function_return_stack.push_back(mmeta.return_type);
+
+    std::vector<std::shared_ptr<BasePattern>> param_names = mmeta.param_names;
+    std::vector<SemType> param_types = mmeta.param_types;
+
+    if (decl->self_param.has_value()) {
+      const auto &self_param = decl->self_param.value();
+      SemType base_self_type;
+      if (self_param.explicit_type.has_value()) {
+        const auto &lit_ty = self_param.explicit_type.value();
+        if (lit_ty.is_path() && lit_ty.as_path().segments.size() == 1 &&
+            lit_ty.as_path().segments[0] == "Self") {
+          base_self_type = SemType::named(type_item);
+        } else {
+          base_self_type =
+              ScopeNode::resolve_type(lit_ty, current_scope_node);
+        }
+      } else {
+        base_self_type = SemType::named(type_item);
+      }
+
+      SemType self_type = base_self_type;
+      if (self_param.is_reference) {
+        self_type = SemType::reference(base_self_type, self_param.is_mutable);
+      }
+
+      auto self_pattern = std::make_shared<IdentifierPattern>(
+          "self", self_param.is_reference, self_param.is_mutable);
+      param_names.insert(param_names.begin(), self_pattern);
+      param_types.insert(param_types.begin(), self_type);
+    }
+
+    if (param_names.size() != param_types.size()) {
+      throw SemanticException("mismatched method parameter names and types for "
+                              "'" +
+                              mmeta.name + "' in struct '" + node.name + "'");
+    }
+
+    if (decl->body && decl->body.value()) {
+      pending_params = std::make_pair(param_names, param_types);
+      auto *prev_impl = current_impl_type;
+      current_impl_type = type_item;
+      decl->body.value()->accept(*this);
+      current_impl_type = prev_impl;
+      pending_params.reset();
+      if (auto *block_expr =
+              dynamic_cast<BlockExpression *>(decl->body.value().get())) {
+        if (block_expr->final_expr) {
+          auto ret_typ = expr_cache.at(block_expr->final_expr.value().get());
+          if (!can_assign(mmeta.return_type, ret_typ)) {
+            throw TypeError("method '" + mmeta.name + "' of struct '" +
+                            node.name + "' return type mismatch: expected '" +
+                            to_string(mmeta.return_type) + "' got '" +
+                            to_string(ret_typ) + "'");
+          }
+        }
+      }
+    }
+
+    function_return_stack.pop_back();
+  }
+  current_struct_type = prev_struct;
+}
 
 inline void FourthPass::visit(EnumDecl &) {}
 
@@ -833,9 +932,10 @@ inline void FourthPass::visit(UnderscoreExpression &node) {
 }
 
 inline void FourthPass::visit(BlockExpression &node) {
-  auto *block_scope = current_scope_node->find_child_scope_by_owner(&node);
+  auto *block_scope = find_scope_for_owner(&node, current_scope_node);
   if (!block_scope) {
-    throw SemanticException("block scope not found");
+    LOG_WARN("block scope not found, falling back to current scope");
+    block_scope = current_scope_node;
   }
   ScopeNode *saved = current_scope_node;
   current_scope_node = const_cast<ScopeNode *>(block_scope);
@@ -883,13 +983,15 @@ inline void FourthPass::visit(BlockExpression &node) {
 }
 
 inline void FourthPass::visit(LoopExpression &node) {
+  const size_t before_breaks = loop_break_stack.size();
   if (node.body)
     (void)evaluate(node.body.get());
-  if (loop_break_stack.empty()) {
-    throw SemanticException("Why loop without breaks?");
+  SemType loop_type = SemType::primitive(SemPrimitiveKind::NEVER);
+  if (loop_break_stack.size() > before_breaks) {
+    loop_type = loop_break_stack.back();
+    loop_break_stack.resize(before_breaks);
   }
-  cache_expr(&node, loop_break_stack.back());
-  loop_break_stack.pop_back();
+  cache_expr(&node, loop_type);
 }
 
 inline void FourthPass::visit(WhileExpression &node) {
@@ -1011,10 +1113,27 @@ inline void FourthPass::visit(PathExpression &node) {
   const std::string &val_name = node.segments[1].ident;
 
   const CollectedItem *type_item = nullptr;
+  if (type_name == "Self" && current_impl_type) {
+    type_item = current_impl_type;
+  } else {
   for (auto *s = current_scope_node; s; s = s->parent) {
     if (auto *it = s->find_type_item(type_name)) {
       type_item = it;
       break;
+    }
+  }
+  }
+  if (!type_item && type_name == "Self") {
+    if (current_struct_type) {
+      type_item = current_struct_type;
+    }
+  }
+  if (!type_item && type_name == "Self") {
+    if (auto self_ty = lookup_binding("self")) {
+      auto base = auto_deref(*self_ty);
+      if (base.is_named()) {
+        type_item = base.as_named().item;
+      }
     }
   }
   if (!type_item) {
@@ -1409,6 +1528,34 @@ inline FourthPass::PlaceInfo FourthPass::analyze_place(Expression *expr) {
     throw SemanticException("analyze_place on null expr");
   }
 
+  if (auto *p = dynamic_cast<PathExpression *>(expr)) {
+    LOG_DEBUG("[FourthPass] Analyzing place for PathExpression");
+    if (p->leading_colons) {
+      throw SemanticException("leading colons in paths are not supported");
+    }
+    if (p->segments.empty()) {
+      throw SemanticException("empty path in place expression");
+    }
+    for (const auto &seg : p->segments) {
+      if (seg.call.has_value()) {
+        throw SemanticException("path segment expressions are not supported");
+      }
+    }
+    if (p->segments.size() == 1) {
+      const auto &ident = p->segments[0].ident;
+      if (const auto *meta = lookup_binding_meta(ident)) {
+        return PlaceInfo{true, meta->is_mutable, ident};
+      }
+      for (auto *s = current_scope_node; s; s = s->parent) {
+        if (s->find_value_item(ident)) {
+          return PlaceInfo{false, false, ident};
+        }
+      }
+      throw SemanticException("identifier '" + ident + "' not found");
+    }
+    throw SemanticException("complex path not supported as assignment target");
+  }
+
   if (auto *f = dynamic_cast<FieldAccessExpression *>(expr)) {
     LOG_DEBUG("[FourthPass] Analyzing place for FieldAccessExpression: " +
               f->field_name);
@@ -1703,10 +1850,24 @@ inline void FourthPass::resolve_path_function_call(const PathExpression &pe,
   const std::string &fn_name = pe.segments[1].ident;
 
   const CollectedItem *type_item = nullptr;
-  for (auto *s = current_scope_node; s; s = s->parent) {
-    if (auto *it = s->find_type_item(type_name)) {
-      type_item = it;
-      break;
+  if (type_name == "Self" && current_impl_type) {
+    type_item = current_impl_type;
+  } else if (type_name == "Self" && current_struct_type) {
+    type_item = current_struct_type;
+  } else if (type_name == "Self") {
+    if (auto self_ty = lookup_binding("self")) {
+      auto base = auto_deref(*self_ty);
+      if (base.is_named()) {
+        type_item = base.as_named().item;
+      }
+    }
+  }
+  if (!type_item) {
+    for (auto *s = current_scope_node; s; s = s->parent) {
+      if (auto *it = s->find_type_item(type_name)) {
+        type_item = it;
+        break;
+      }
     }
   }
   if (!type_item) {
@@ -1796,6 +1957,35 @@ inline SemType FourthPass::auto_deref(const SemType &t) {
   if (!t.is_reference())
     return t;
   return auto_deref(*t.as_reference().target);
+}
+
+inline ScopeNode *FourthPass::find_scope_for_owner(const BaseNode *owner,
+                                                   ScopeNode *start) const {
+  if (!owner || !start)
+    return nullptr;
+
+  // BFS from the starting scope outward to ancestors to tolerate cases where
+  // the current scope is not the direct parent of the block owner.
+  std::vector<ScopeNode *> queue;
+  for (auto *s = start; s; s = s->parent) {
+    queue.push_back(s);
+  }
+
+  for (auto *candidate_root : queue) {
+    std::vector<const ScopeNode *> stack{candidate_root};
+    while (!stack.empty()) {
+      const auto *cur = stack.back();
+      stack.pop_back();
+      if (cur->owner == owner) {
+        return const_cast<ScopeNode *>(cur);
+      }
+      for (const auto *child : cur->children()) {
+        stack.push_back(child);
+      }
+    }
+  }
+
+  return nullptr;
 }
 
 } // namespace rc

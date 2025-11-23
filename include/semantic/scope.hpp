@@ -24,7 +24,7 @@ struct FunctionMetaData {
   std::vector<std::shared_ptr<BasePattern>> param_names;
   std::vector<SemType> param_types;
   SemType return_type;
-  const FunctionDecl *decl = nullptr;
+  FunctionDecl *decl = nullptr;
 };
 
 struct ConstantMetaData {

@@ -60,6 +60,7 @@ private:
                                            ItemKind kind);
   CollectedItem *lookup_current_type_item(const std::string &name,
                                           ItemKind kind);
+  LiteralType replace_self(LiteralType t, const std::string &target_name);
 };
 
 // Implementation
@@ -279,26 +280,46 @@ inline void SecondPassResolver::visit(TraitDecl &node) {
 }
 
 inline void SecondPassResolver::visit(ImplDecl &node) {
+  std::string target_name;
+  if (node.impl_type == ImplDecl::ImplType::Inherent &&
+      node.target_type.is_path() &&
+      node.target_type.as_path().segments.size() == 1) {
+    target_name = node.target_type.as_path().segments[0];
+  } else {
+    throw SemanticException("unsupported impl target type");
+  }
+
   for (auto &assoc : node.associated_items) {
     if (assoc) {
-      // assoc->accept(*this);
       if (auto *fn = dynamic_cast<FunctionDecl *>(assoc.get())) {
         if (fn->params) {
           for (auto &p : *fn->params) {
+            auto ty = replace_self(p.second, target_name);
+            p.second = ty;
             SemType pt = resolve_type(p.second);
             if (pt.is_array() && pt.as_array().size < 0) {
               throw SemanticException("array size not resolved");
             }
           }
         }
+        auto rty = replace_self(fn->return_type, target_name);
+        fn->return_type = rty;
         SemType rt = resolve_type(fn->return_type);
         if (rt.is_array() && rt.as_array().size < 0) {
           throw SemanticException("array size not resolved");
         }
+        if (fn->body && fn->body.value()) {
+          fn->body.value()->accept(*this);
+        }
       } else if (auto *cst = dynamic_cast<ConstantItem *>(assoc.get())) {
+        auto ty = replace_self(cst->type, target_name);
+        cst->type = ty;
         SemType ct = resolve_type(cst->type);
         if (ct.is_array() && ct.as_array().size < 0) {
           throw SemanticException("array size not resolved");
+        }
+        if (cst->value) {
+          cst->value.value()->accept(*this);
         }
       }
     }
@@ -536,6 +557,39 @@ SecondPassResolver::lookup_current_type_item(const std::string &name,
   if (found && found->kind == kind)
     return found;
   throw SemanticException("item " + name + " not found in type namespace");
+}
+
+inline LiteralType SecondPassResolver::replace_self(LiteralType t,
+                                                    const std::string &target_name) {
+  if (t.is_path()) {
+    auto &segs = t.as_path().segments;
+    if (segs.size() == 1 && segs[0] == "Self") {
+      return LiteralType::path(std::vector<std::string>{target_name});
+    }
+    return t;
+  }
+  if (t.is_tuple()) {
+    for (auto &el : t.as_tuple()) {
+      el = replace_self(el, target_name);
+    }
+    return t;
+  }
+  if (t.is_array()) {
+    *t.as_array().element =
+        replace_self(*t.as_array().element, target_name);
+    return t;
+  }
+  if (t.is_slice()) {
+    *t.as_slice().element =
+        replace_self(*t.as_slice().element, target_name);
+    return t;
+  }
+  if (t.is_reference()) {
+    *t.as_reference().target =
+        replace_self(*t.as_reference().target, target_name);
+    return t;
+  }
+  return t;
 }
 
 } // namespace rc
