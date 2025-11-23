@@ -80,12 +80,10 @@ private:
 class GetElementPtrInst : public Instruction {
 public:
   GetElementPtrInst(TypePtr sourceElemTy, std::shared_ptr<Value> basePtr,
-                    std::vector<std::shared_ptr<Value>> indices,
-                    bool inbounds = false, std::string name = {})
+                    std::vector<std::shared_ptr<Value>> indices, std::string name = {})
       : Instruction(std::make_shared<PointerType>(std::move(sourceElemTy)),
                     std::move(name)),
-        basePtr_(std::move(basePtr)), indices_(std::move(indices)),
-        inbounds_(inbounds) {
+        basePtr_(std::move(basePtr)), indices_(std::move(indices)) {
     if (!basePtr_)
       throw std::invalid_argument("GetElementPtrInst requires a base pointer");
     if (!std::dynamic_pointer_cast<const PointerType>(basePtr_->type()))
@@ -96,12 +94,10 @@ public:
   const std::vector<std::shared_ptr<Value>> &indices() const {
     return indices_;
   }
-  bool inbounds() const { return inbounds_; }
 
 private:
   std::shared_ptr<Value> basePtr_;
   std::vector<std::shared_ptr<Value>> indices_;
-  bool inbounds_;
 };
 
 } // namespace rc::ir

@@ -36,10 +36,10 @@ inline void SemanticAnalyzer::analyze(const std::shared_ptr<RootNode> &root) {
   // First pass collects item name
   FirstPassBuilder first;
   first.build(root);
-  if (first.root_scope) {
-    std::cout << "[Semantic] Scope tree:" << std::endl;
-    rc::print_scope_tree(*first.root_scope);
-  }
+  // if (first.root_scope) {
+  // std::cout << "[Semantic] Scope tree:" << std::endl;
+  // rc::print_scope_tree(*first.root_scope);
+  // }
 
   // Second pass resolves semantic type and evaluates constant expressions
   SecondPassResolver second;
