@@ -42,6 +42,15 @@ public:
     if (!structDeclOrder_.empty())
       out_ << "\n";
 
+    for (const auto &c : mod.constants()) {
+      if (!c)
+        continue;
+      out_ << "@" << constantName(*c) << " = constant "
+           << typeToString(c->type()) << " " << valueRef(*c) << "\n";
+    }
+    if (!mod.constants().empty())
+      out_ << "\n";
+
     // Functions
     for (const auto &fn : mod.functions()) {
       emitFunction(*fn);
@@ -57,7 +66,7 @@ public:
 
     const auto &fty = fn.type();
     const bool isDecl = fn.isExternal();
-    std::string mangledName = fn.name() + genFunction();
+    std::string mangledName = functionName(fn);
 
     if (isDecl) {
       out_ << "declare " << typeToString(fty->returnType()) << " @" << mangledName
@@ -66,8 +75,6 @@ public:
       out_ << "define " << typeToString(fty->returnType()) << " @" << mangledName
            << "(";
     }
-
-    functionNames_[&fn] = mangledName;
 
     // Arguments
     for (size_t i = 0; i < fn.args().size(); ++i) {
@@ -110,14 +117,24 @@ private:
   std::unordered_map<const Value *, std::string> nameState_;
   std::unordered_map<const BasicBlock *, std::string> blockNames_;
   std::unordered_map<const Function *, std::string> functionNames_;
-  unsigned nextValueId_{0};
-  unsigned nextBlockId_{0};
-  unsigned nextFunctionId_{0};
+  std::unordered_map<const StructType *, std::string> structNames_;
+  std::unordered_map<const Constant *, std::string> globalConstNames_;
+  std::unordered_map<std::string, int> functionNameCounters_;
+  std::unordered_map<std::string, int> structNameCounters_;
+  std::unordered_map<std::string, int> constantNameCounters_;
+  int nextValueId_{0};
+  int nextBlockId_{0};
 
   void reset() {
     identifiedNames_.clear();
     identifiedStructBody_.clear();
     structDeclOrder_.clear();
+    functionNames_.clear();
+    structNames_.clear();
+    globalConstNames_.clear();
+    functionNameCounters_.clear();
+    structNameCounters_.clear();
+    constantNameCounters_.clear();
   }
 
   // Naming helpers
@@ -141,7 +158,49 @@ private:
 
   std::string genTmp() { return "val" + std::to_string(nextValueId_++); }
   std::string genBlock() { return "bb" + std::to_string(nextBlockId_++); }
-  std::string genFunction() { return "fn" + std::to_string(nextFunctionId_++); }
+  std::string uniqueGlobal(
+      const std::string &base,
+      std::unordered_map<std::string, int> &counters) {
+    auto &ctr = counters[base];
+    std::string name = base;
+    if (ctr > 0) {
+      name += "." + std::to_string(ctr);
+    }
+    ++ctr;
+    return name;
+  }
+
+  std::string functionName(const Function &fn) {
+    auto it = functionNames_.find(&fn);
+    if (it != functionNames_.end())
+      return it->second;
+    auto base = fn.name().empty() ? "fn" : fn.name();
+    auto mangled = uniqueGlobal(base, functionNameCounters_);
+    functionNames_[&fn] = mangled;
+    return mangled;
+  }
+
+  std::string structName(const StructType &st) {
+    auto it = structNames_.find(&st);
+    if (it != structNames_.end()) {
+      return it->second;
+    }
+    auto base = st.name().empty() ? "struct" : st.name();
+    auto mangled = uniqueGlobal(base, structNameCounters_);
+    structNames_[&st] = mangled;
+    return mangled;
+  }
+
+  std::string constantName(const Constant &c) {
+    auto it = globalConstNames_.find(&c);
+    if (it != globalConstNames_.end()) {
+      return it->second;
+    }
+    auto base = c.name().empty() ? "cst" : c.name();
+    auto mangled = uniqueGlobal(base, constantNameCounters_);
+    globalConstNames_[&c] = mangled;
+    return mangled;
+  }
 
   // Type printing
   std::string typeToString(const TypePtr &ty) {
@@ -167,7 +226,7 @@ private:
     case TypeKind::Struct: {
       auto st = std::static_pointer_cast<const StructType>(ty);
       if (!st->name().empty()) {
-        return "%" + st->name();
+        return "%" + structName(*st);
       }
       std::ostringstream oss;
       oss << "{";
@@ -206,8 +265,12 @@ private:
       switch (t->kind()) {
       case TypeKind::Struct: {
         auto st = std::static_pointer_cast<const StructType>(t);
-        if (!st->name().empty() && !identifiedNames_.count(st->name())) {
-          identifiedNames_.insert(st->name());
+        if (!st->name().empty()) {
+          auto id = structName(*st);
+          if (identifiedNames_.count(id)) {
+            break;
+          }
+          identifiedNames_.insert(id);
           // Build body text
           std::ostringstream b;
           b << "{";
@@ -217,8 +280,8 @@ private:
             b << typeToString(st->fields()[i]);
           }
           b << "}";
-          identifiedStructBody_[st->name()] = b.str();
-          structDeclOrder_.push_back(st->name());
+          identifiedStructBody_[id] = b.str();
+          structDeclOrder_.push_back(id);
         }
         // Recurse into fields
         for (const auto &f : st->fields())
@@ -429,14 +492,11 @@ private:
     }
     if (auto gep = dynamic_cast<const GetElementPtrInst *>(&inst)) {
       out_ << localName(gep) << " = getelementptr ";
-      if (gep->inbounds())
-        out_ << "inbounds ";
       // Source element type and base pointer type
       // Note: We constructed result type as PointerType(sourceElemTy)
       auto basePtrTy = std::static_pointer_cast<const PointerType>(
           gep->basePointer()->type());
-      out_ << typeToString(basePtrTy->pointee()) << ", "
-           << typeToString(gep->basePointer()->type()) << " "
+      out_ << typeToString(basePtrTy->pointee()) << ", ptr "
            << valueRef(*gep->basePointer());
       for (const auto &idx : gep->indices()) {
         out_ << ", " << typedValueRef(*idx);
@@ -486,19 +546,18 @@ private:
   }
 
   std::string calleeRef(const Value &callee) {
-    if (!callee.name().empty()) {
-      auto callee_typ = std::dynamic_pointer_cast<const FunctionType>(callee.type());
-      if (callee_typ) {
-        throw std::invalid_argument(
-            "Callee must be a function pointer");
-      }
-      auto it = functionNames_.find(
-          callee_typ->function().get());
-      if (it != functionNames_.end()) {
-        return "@" + it->second;
-      }
+    auto callee_typ =
+        std::dynamic_pointer_cast<const FunctionType>(callee.type());
+    if (!callee_typ || !callee_typ->function()) {
+      throw std::invalid_argument("Callee must reference a function");
     }
-    throw std::invalid_argument("Callee must have a name");
+    const auto *fnPtr = callee_typ->function().get();
+    auto it = functionNames_.find(fnPtr);
+    if (it == functionNames_.end()) {
+      auto name = functionName(*fnPtr);
+      it = functionNames_.emplace(fnPtr, name).first;
+    }
+    return "@" + it->second;
   }
 
   const char *icmpPredToString(ICmpPred p) const {

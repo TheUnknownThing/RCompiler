@@ -978,6 +978,31 @@ inline void FourthPass::visit(PathExpression &node) {
     }
   }
 
+  // Single-segment path behaves like a simple name (covers `self`)
+  if (node.segments.size() == 1) {
+    const auto &ident = node.segments[0].ident;
+    if (auto t = lookup_binding(ident)) {
+      cache_expr(&node, *t);
+      return;
+    }
+    for (auto *s = current_scope_node; s; s = s->parent) {
+      if (auto *it = s->find_value_item(ident)) {
+        if (it->kind == ItemKind::Constant && it->has_constant_meta()) {
+          cache_expr(&node, it->as_constant_meta().type);
+          return;
+        }
+        if (it->kind == ItemKind::Function) {
+          throw SemanticException("function name '" + ident +
+                                  "' used as value");
+        }
+        if (it->kind == ItemKind::Struct) {
+          throw SemanticException("struct '" + ident + "' used as value");
+        }
+      }
+    }
+    throw SemanticException("identifier '" + ident + "' not found");
+  }
+
   if (node.segments.size() != 2) {
     throw SemanticException("only TypeName::value calls are supported");
   }
