@@ -16,7 +16,6 @@ class Function;
 
 enum class TypeKind {
   Void,
-  UnitZst,
   Integer,
   Pointer,
   Array,
@@ -32,7 +31,6 @@ public:
   TypeKind kind() const { return kind_; }
 
   bool isVoid() const { return kind_ == TypeKind::Void; }
-  bool isUnitZst() const { return kind_ == TypeKind::UnitZst; }
 
 private:
   TypeKind kind_;
@@ -43,11 +41,6 @@ using TypePtr = std::shared_ptr<const Type>;
 class VoidType final : public Type {
 public:
   VoidType() : Type(TypeKind::Void) {}
-};
-
-class UnitZstType final : public Type {
-public:
-  UnitZstType() : Type(TypeKind::UnitZst) {}
 };
 
 class IntegerType final : public Type {
@@ -184,7 +177,7 @@ private:
 
 class ConstantUnit final : public Constant {
 public:
-  ConstantUnit() : Constant(std::make_shared<UnitZstType>()) {}
+  ConstantUnit() : Constant(std::make_shared<VoidType>()) {}
 };
 
 class ConstantNull final : public Constant {

@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [ "${1:-}" = "" ]; then
+    echo "Usage: $0 <testcase_name>"
+    exit 1
+fi
+
+ARG="$1"
+
+# Resolve directories
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
+
+echo "Repository root: $ROOT_DIR"
+echo "Test case: $ARG"
+
+# Build project
+echo "Running: cmake --build build"
+cmake --build build
+
+RCOMPILER="./build/rcompiler"
+if [ ! -x "$RCOMPILER" ]; then
+    echo "Error: rcompiler not found or not executable at $RCOMPILER"
+    exit 2
+fi
+
+RX_FILE="testcases/IR-1/src/$ARG/$ARG.rx"
+if [ ! -f "$RX_FILE" ]; then
+    echo "Error: source file not found: $RX_FILE"
+    exit 3
+fi
+
+echo "Running: $RCOMPILER $RX_FILE"
+"$RCOMPILER" "$RX_FILE"
+
+# Move to tmp (expected output location)
+if [ ! -d "tmp" ]; then
+    echo "Error: tmp/ directory not found. rcompiler did not produce expected outputs."
+    exit 4
+fi
+cd tmp
+
+# Verify output.ll
+if [ ! -f "output.ll" ]; then
+    echo "Error: output.ll not found in tmp/"
+    ls -la
+    exit 5
+fi
+
+# Locate builtin.ll: prefer tmp/builtin.ll, fall back to repository search
+BUILTIN_LL=""
+if [ -f "builtin.ll" ]; then
+    BUILTIN_LL="./builtin.ll"
+else
+    if [ -f "$ROOT_DIR/builtin.ll" ]; then
+        BUILTIN_LL="$ROOT_DIR/builtin.ll"
+    else
+        FOUND=$(find "$ROOT_DIR" -maxdepth 3 -type f -name "builtin.ll" -print -quit || true)
+        if [ -n "$FOUND" ]; then
+            BUILTIN_LL="$FOUND"
+        fi
+    fi
+fi
+
+CLANG_CMD=(clang "output.ll")
+if [ -n "$BUILTIN_LL" ]; then
+    CLANG_CMD+=( "$BUILTIN_LL" )
+else
+    echo "Warning: builtin.ll not found. Attempting to link output.ll alone."
+fi
+CLANG_CMD+=( -o prog )
+
+echo "Running: ${CLANG_CMD[*]}"
+"${CLANG_CMD[@]}"
+
+echo "Making program executable: chmod +x ./prog"
+chmod +x ./prog
+
+echo "Compilation finished. Generated binary: $(pwd)/prog"
+echo
+echo "tmp/ contents:"
+ls -la
+
+echo
+echo "Running generated program (stdout/stderr):"
+if ./prog; then
+    echo "Program executed successfully."
+else
+    echo "Program exited with non-zero status (or failed to run)."
+fi

@@ -50,7 +50,7 @@ inline TypePtr Context::resolveType(const SemType &type) const {
     case SemPrimitiveKind::USIZE:
       return IntegerType::usize();
     case SemPrimitiveKind::UNIT:
-      return std::make_shared<UnitZstType>();
+      return std::make_shared<VoidType>();
     case SemPrimitiveKind::NEVER:
       return std::make_shared<VoidType>();
     case SemPrimitiveKind::ANY_INT:

@@ -186,9 +186,9 @@ private:
       return it->second;
     }
     auto base = st.name().empty() ? "struct" : st.name();
-    auto mangled = uniqueGlobal(base, structNameCounters_);
-    structNames_[&st] = mangled;
-    return mangled;
+    // auto mangled = uniqueGlobal(base, structNameCounters_);
+    structNames_[&st] = base;
+    return base;
   }
 
   std::string constantName(const Constant &c) {
@@ -197,9 +197,9 @@ private:
       return it->second;
     }
     auto base = c.name().empty() ? "cst" : c.name();
-    auto mangled = uniqueGlobal(base, constantNameCounters_);
-    globalConstNames_[&c] = mangled;
-    return mangled;
+    // auto mangled = uniqueGlobal(base, constantNameCounters_);
+    globalConstNames_[&c] = base;
+    return base;
   }
 
   // Type printing
@@ -207,8 +207,6 @@ private:
     switch (ty->kind()) {
     case TypeKind::Void:
       return "void";
-    case TypeKind::UnitZst:
-      return "{}";
     case TypeKind::Integer: {
       auto it = std::static_pointer_cast<const IntegerType>(ty);
       return "i" + std::to_string(it->bits());

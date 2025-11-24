@@ -56,3 +56,5 @@ coverage/
 third_party/llvm/ 
 
 examples/
+
+tmp/

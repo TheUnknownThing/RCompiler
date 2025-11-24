@@ -3,6 +3,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <fstream>
 
 #include "ast/parser.hpp"
 #include "ast/visitors/pretty_print.hpp"
@@ -56,7 +57,9 @@ int main(int argc, char *argv[]) {
       rc::ir::IREmitter emitter;
       emitter.run(ast, root_scope, irCtx);
 
-      rc::ir::emitLLVM(emitter.module(), std::cout);
+      std::ofstream outFile("tmp/output.ll");
+      rc::ir::emitLLVM(emitter.module(), outFile);
+      outFile.close();
     } else {
       LOG_ERROR("Failed!");
     }

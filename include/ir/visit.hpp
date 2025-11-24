@@ -400,7 +400,12 @@ inline void IREmitter::visit(ReturnExpression &node) {
     (*node.value)->accept(*this);
     auto v = popOperand();
     v = loadPtrValue(v, context->lookupType(node.value->get()));
-    current_block_->append<ReturnInst>(v);
+    if (v->type()->isVoid()) {
+      current_block_->append<ReturnInst>();
+      return;
+    } else {
+      current_block_->append<ReturnInst>(v);
+    }
   } else {
     current_block_->append<ReturnInst>();
   }
@@ -916,9 +921,14 @@ inline void IREmitter::visit(IfExpression &node) {
     current_block_->append<BranchInst>(mergeBlock);
     // merge block
     current_block_ = mergeBlock;
+    if (resultIrTy->isVoid()) {
+      pushOperand(std::make_shared<ConstantUnit>());
+      return;
+    }
     auto phi = current_block_->append<PhiInst>(
         resultIrTy,
-        std::vector<PhiInst::Incoming>{{thenVal, thenBlock}, {elseVal, elseBlock}},
+        std::vector<PhiInst::Incoming>{{thenVal, thenBlock},
+                                       {elseVal, elseBlock}},
         "ifval");
     pushOperand(phi);
   } else {
@@ -933,6 +943,10 @@ inline void IREmitter::visit(IfExpression &node) {
     // merge block
     current_block_ = mergeBlock;
     auto unit = std::make_shared<ConstantUnit>();
+    if (resultIrTy->isVoid()) {
+      pushOperand(unit);
+      return;
+    }
     auto phi = current_block_->append<PhiInst>(
         resultIrTy,
         std::vector<PhiInst::Incoming>{{thenVal, thenBlock},
@@ -1298,7 +1312,8 @@ inline void IREmitter::visit(IndexExpression &node) {
   if (!idxTy) {
     // LOG_ERROR("[IREmitter] array index must be integer");
     // throw IRException("array index must be integer");
-    auto loadedIdx = loadPtrValue(idxVal, context->lookupType(node.index.get()));
+    auto loadedIdx =
+        loadPtrValue(idxVal, context->lookupType(node.index.get()));
     idxVal = loadedIdx;
     if (!std::dynamic_pointer_cast<const IntegerType>(idxVal->type())) {
       LOG_ERROR("[IREmitter] array index must be integer");
@@ -1444,8 +1459,8 @@ inline void IREmitter::visit(PathExpression &node) {
     irConst =
         std::make_shared<ConstantInt>(IntegerType::usize(), cv.as_usize());
   } else if (cv.is_any_int()) {
-    irConst = ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_any_int()),
-                                  true);
+    irConst =
+        ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_any_int()), true);
   } else if (cv.type.is_primitive() &&
              cv.type.as_primitive().kind == SemPrimitiveKind::UNIT) {
     irConst = std::make_shared<ConstantUnit>();
@@ -1481,7 +1496,8 @@ inline void IREmitter::visit(BorrowExpression &node) {
   auto targetSem = context->lookupType(node.right.get());
   auto targetIrTy = context->resolveType(targetSem);
 
-  if (auto ptrTy = std::dynamic_pointer_cast<const PointerType>(value->type())) {
+  if (auto ptrTy =
+          std::dynamic_pointer_cast<const PointerType>(value->type())) {
     const auto &pointee = ptrTy->pointee();
     if (typeEquals(pointee, targetIrTy)) {
       LOG_DEBUG("[IREmitter] borrow returning existing pointer");
@@ -1612,7 +1628,6 @@ inline bool IREmitter::typeEquals(const TypePtr &a, const TypePtr &b) const {
     return false;
   switch (a->kind()) {
   case TypeKind::Void:
-  case TypeKind::UnitZst:
     return true;
   case TypeKind::Integer: {
     auto ia = std::static_pointer_cast<const IntegerType>(a);
@@ -1770,7 +1785,7 @@ inline std::string IREmitter::qualify_scope(const ScopeNode *scope) const {
   std::string qualified;
   for (size_t i = 0; i < parts.size(); ++i) {
     if (i)
-      qualified += "::";
+      qualified += "_";
     qualified += parts[i];
   }
   return qualified;
@@ -1779,9 +1794,9 @@ inline std::string IREmitter::qualify_scope(const ScopeNode *scope) const {
 inline std::string IREmitter::mangle_struct(const CollectedItem &item) const {
   auto qualified = qualify_scope(item.owner_scope);
   if (!qualified.empty())
-    qualified += "::";
+    qualified += "_";
   qualified += item.name;
-  return "_RS" + qualified;
+  return "_Struct_" + qualified;
 }
 
 inline std::string
@@ -1791,13 +1806,13 @@ IREmitter::mangle_constant(const std::string &name,
   std::string qualified = qualify_scope(owner_scope);
   if (member_of) {
     if (!qualified.empty())
-      qualified += "::";
+      qualified += "_";
     qualified += *member_of;
   }
   if (!qualified.empty())
-    qualified += "::";
+    qualified += "_";
   qualified += name;
-  return "_RC" + qualified;
+  return "_Const_" + qualified;
 }
 
 inline std::string
@@ -1807,15 +1822,14 @@ IREmitter::mangle_function(const FunctionMetaData &meta,
   std::string qualified = qualify_scope(owner_scope);
   if (member_of) {
     if (!qualified.empty())
-      qualified += "::";
+      qualified += "_";
     qualified += *member_of;
   }
   if (!qualified.empty())
-    qualified += "::";
+    qualified += "_";
   qualified += meta.name;
 
-  std::string signature = "_";
-  return "_RF" + qualified + signature;
+  return "_Function_" + qualified;
 }
 
 inline CollectedItem *
