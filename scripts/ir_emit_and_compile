@@ -2,12 +2,22 @@
 
 set -euo pipefail
 
-if [ "${1:-}" = "" ]; then
-    echo "Usage: $0 <testcase_name>"
+usage() {
+    echo "Usage:"
+    echo "  $0 <testcase_name>"
+    echo "  $0 -a | --all   # Run all comprehensive tests found in testcases/IR-1/src/"
     exit 1
+}
+
+if [ "${1:-}" = "" ]; then
+    usage
 fi
 
+ALL_MODE=0
 ARG="$1"
+if [ "$ARG" = "-a" ] || [ "$ARG" = "--all" ]; then
+    ALL_MODE=1
+fi
 
 # Resolve directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,9 +25,13 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "Repository root: $ROOT_DIR"
-echo "Test case: $ARG"
+if [ "$ALL_MODE" -eq 1 ]; then
+    echo "Mode: ALL tests"
+else
+    echo "Test case: $ARG"
+fi
 
-# Build project
+# Build project once
 echo "Running: cmake --build build"
 cmake --build build
 
@@ -27,68 +41,179 @@ if [ ! -x "$RCOMPILER" ]; then
     exit 2
 fi
 
-RX_FILE="testcases/IR-1/src/$ARG/$ARG.rx"
-if [ ! -f "$RX_FILE" ]; then
-    echo "Error: source file not found: $RX_FILE"
-    exit 3
-fi
-
-echo "Running: $RCOMPILER $RX_FILE"
-"$RCOMPILER" "$RX_FILE"
-
-# Move to tmp (expected output location)
-if [ ! -d "tmp" ]; then
-    echo "Error: tmp/ directory not found. rcompiler did not produce expected outputs."
-    exit 4
-fi
-cd tmp
-
-# Verify output.ll
-if [ ! -f "output.ll" ]; then
-    echo "Error: output.ll not found in tmp/"
-    ls -la
-    exit 5
-fi
-
-# Locate builtin.ll: prefer tmp/builtin.ll, fall back to repository search
-BUILTIN_LL=""
-if [ -f "builtin.ll" ]; then
-    BUILTIN_LL="./builtin.ll"
-else
-    if [ -f "$ROOT_DIR/builtin.ll" ]; then
-        BUILTIN_LL="$ROOT_DIR/builtin.ll"
-    else
-        FOUND=$(find "$ROOT_DIR" -maxdepth 3 -type f -name "builtin.ll" -print -quit || true)
-        if [ -n "$FOUND" ]; then
-            BUILTIN_LL="$FOUND"
+# Prepare test list
+TEST_NAMES=()
+if [ "$ALL_MODE" -eq 1 ]; then
+    # Find directories named comprehensive* that contain .rx files
+    while IFS= read -r -d $'\0' dir; do
+        basename="$(basename "$dir")"
+        rx="testcases/IR-1/src/$basename/$basename.rx"
+        if [ -f "$rx" ]; then
+            TEST_NAMES+=( "$basename" )
         fi
+    done < <(find testcases/IR-1/src -maxdepth 1 -type d -name "comprehensive*" -print0 | sort -z)
+    if [ "${#TEST_NAMES[@]}" -eq 0 ]; then
+        echo "No comprehensive tests found in testcases/IR-1/src/"
+        exit 0
     fi
-fi
-
-CLANG_CMD=(clang "output.ll")
-if [ -n "$BUILTIN_LL" ]; then
-    CLANG_CMD+=( "$BUILTIN_LL" )
 else
-    echo "Warning: builtin.ll not found. Attempting to link output.ll alone."
+    TEST_NAMES=( "$ARG" )
 fi
-CLANG_CMD+=( -o prog )
 
-echo "Running: ${CLANG_CMD[*]}"
-"${CLANG_CMD[@]}"
+# Helpers / state
+PASSED=()
+FAILED=()
 
-echo "Making program executable: chmod +x ./prog"
-chmod +x ./prog
+run_test() {
+    local NAME="$1"
+    echo
+    echo "========================================"
+    echo "Running test: $NAME"
+    echo "========================================"
 
-echo "Compilation finished. Generated binary: $(pwd)/prog"
+    RX_FILE="testcases/IR-1/src/$NAME/$NAME.rx"
+    if [ ! -f "$RX_FILE" ]; then
+        echo "Error: source file not found: $RX_FILE"
+        FAILED+=( "$NAME (missing RX)" )
+        return 1
+    fi
+
+    # Run rcompiler
+    echo "Running: $RCOMPILER $RX_FILE"
+    set +e
+    "$RCOMPILER" "$RX_FILE"
+    RCOMP_RC=$?
+    set -e
+    if [ "$RCOMP_RC" -ne 0 ]; then
+        echo "rcompiler failed (exit $RCOMP_RC)"
+        FAILED+=( "$NAME (compile failed)" )
+        return 1
+    fi
+
+    # Check tmp and output.ll
+    if [ ! -d "tmp" ]; then
+        echo "Error: tmp/ directory not found. rcompiler did not produce expected outputs."
+        FAILED+=( "$NAME (no tmp)" )
+        return 1
+    fi
+    cd tmp
+
+    if [ ! -f "output.ll" ]; then
+        echo "Error: output.ll not found in tmp/"
+        ls -la
+        cd "$ROOT_DIR"
+        FAILED+=( "$NAME (missing output.ll)" )
+        return 1
+    fi
+
+    # Prepare clang command
+    CLANG_CMD=(clang "output.ll" "builtin.ll" -o prog)
+
+    echo "Running: ${CLANG_CMD[*]}"
+    set +e
+    "${CLANG_CMD[@]}"
+    CLANG_RC=$?
+    set -e
+    if [ "$CLANG_RC" -ne 0 ]; then
+        echo "clang failed (exit $CLANG_RC)"
+        cd "$ROOT_DIR"
+        FAILED+=( "$NAME (clang/link failed)" )
+        return 1
+    fi
+
+    echo "Making program executable: chmod +x ./prog"
+    chmod +x ./prog
+
+    echo "tmp/ contents:"
+    ls -la
+
+    # Run program and capture output
+    INPUT_FILE="../testcases/IR-1/src/$NAME/$NAME.in"
+    EXPECTED_FILE="../testcases/IR-1/src/$NAME/$NAME.out"
+    if [ -f "$INPUT_FILE" ]; then
+        echo "Running generated program with input file: $INPUT_FILE"
+        set +e
+        ./prog < "$INPUT_FILE" > tmp.out 2> tmp.err
+        PROG_RC=$?
+        set -e
+    else
+        echo "Running generated program without input file"
+        set +e
+        ./prog > tmp.out 2> tmp.err
+        PROG_RC=$?
+        set -e
+    fi
+
+    if [ "$PROG_RC" -ne 0 ]; then
+        echo "Program exited with non-zero status ($PROG_RC). See tmp.err:"
+        sed -n '1,200p' tmp.err || true
+        cd "$ROOT_DIR"
+        FAILED+=( "$NAME (runtime exit $PROG_RC)" )
+        return 1
+    fi
+
+    if [ -f "$EXPECTED_FILE" ]; then
+        set +e
+        diff -w "$EXPECTED_FILE" tmp.out >/dev/null 2>&1
+        DIFF_RC=$?
+        set -e
+        if [ "$DIFF_RC" -ne 0 ]; then
+            echo "Output differs from expected output ($EXPECTED_FILE)."
+            echo "----- Expected (first 200 lines) -----"
+            sed -n '1,200p' "$EXPECTED_FILE" || true
+            echo "----- Actual (first 200 lines) -----"
+            sed -n '1,200p' tmp.out || true
+            cd "$ROOT_DIR"
+            FAILED+=( "$NAME (output mismatch)" )
+            return 1
+        else
+            echo "Output matches expected output."
+            PASSED+=( "$NAME" )
+            cd "$ROOT_DIR"
+            return 0
+        fi
+    else
+        echo "No expected output; program ran successfully."
+        PASSED+=( "$NAME" )
+        cd "$ROOT_DIR"
+        return 0
+    fi
+}
+
+# Run tests
+for t in "${TEST_NAMES[@]}"; do
+    if ! run_test "$t"; then
+        echo "Test $t: FAILED"
+    else
+        echo "Test $t: PASSED"
+    fi
+done
+
+# Summary
 echo
-echo "tmp/ contents:"
-ls -la
+echo "==================== SUMMARY ===================="
+total=$(( ${#PASSED[@]} + ${#FAILED[@]} ))
+echo "Total tested: $total"
+echo "Passed: ${#PASSED[@]}"
+echo "Failed: ${#FAILED[@]}"
 
-echo
-echo "Running generated program (stdout/stderr):"
-if ./prog < ../testcases/IR-1/src/"$ARG"/"$ARG".in > tmp.out; then
-    echo "Program executed successfully."
-    diff ../testcases/IR-1/src/"$ARG"/"$ARG".out tmp.out && echo "Output matches expected output." || echo "Output differs from expected output."
-else
-    echo "Program exited with non-zero status (or failed to run)."
+if [ "${#PASSED[@]}" -gt 0 ]; then
+    echo
+    echo "Passed tests:"
+    for p in "${PASSED[@]}"; do
+        echo "  - $p"
+    done
 fi
+
+if [ "${#FAILED[@]}" -gt 0 ]; then
+    echo
+    echo "Failed tests:"
+    for f in "${FAILED[@]}"; do
+        echo "  - $f"
+    done
+    exit 1
+fi
+
+echo
+echo "All tests passed."
+exit 0

@@ -331,12 +331,10 @@ private:
       return std::to_string(ci->value());
     }
     if (dynamic_cast<const ConstantNull *>(&v)) {
-      return "null";
+      return "";
     }
     if (dynamic_cast<const ConstantUnit *>(&v)) {
-      // In typed contexts, prefer 'zeroinitializer'; for untyped,
-      // 'zeroinitializer' is accepted
-      return "zeroinitializer";
+      return "";
     }
     return localName(&v);
   }
