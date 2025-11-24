@@ -86,8 +86,9 @@ ls -la
 
 echo
 echo "Running generated program (stdout/stderr):"
-if ./prog; then
+if ./prog < ../testcases/IR-1/src/"$ARG"/"$ARG".in > tmp.out; then
     echo "Program executed successfully."
+    diff ../testcases/IR-1/src/"$ARG"/"$ARG".out tmp.out && echo "Output matches expected output." || echo "Output differs from expected output."
 else
     echo "Program exited with non-zero status (or failed to run)."
 fi

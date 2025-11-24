@@ -162,14 +162,13 @@ struct ConstValue {
 
 class ConstEvaluator {
 public:
-  explicit ConstEvaluator(BaseVisitor *second_pass_visitor = nullptr);
+  explicit ConstEvaluator();
 
   std::optional<ConstValue> evaluate(const Expression *expr,
                                      ScopeNode *semantic_scope);
 
 private:
   ScopeNode *current_scope = nullptr;
-  BaseVisitor *second_pass_visitor = nullptr;
 
   static bool is_integer_value(const ConstValue &v);
   static ConstValue any_int_to(const ConstValue &v, SemPrimitiveKind target);
@@ -224,8 +223,7 @@ private:
 
 // Implementation
 
-inline ConstEvaluator::ConstEvaluator(BaseVisitor *second_pass_visitor)
-    : second_pass_visitor(second_pass_visitor) {}
+inline ConstEvaluator::ConstEvaluator() {}
 
 inline std::optional<ConstValue>
 ConstEvaluator::evaluate(const Expression *expr, ScopeNode *semantic_scope) {

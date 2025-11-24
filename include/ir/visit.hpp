@@ -460,6 +460,7 @@ inline void IREmitter::visit(LetStatement &node) {
 
   auto semTy = ScopeNode::resolve_type(node.type, current_scope_node);
   auto irTy = context->resolveType(semTy);
+  init = loadPtrValue(init, semTy);
 
   auto slot = current_block_->append<AllocaInst>(irTy, nullptr, 0, ident->name);
   current_block_->append<StoreInst>(init, slot);
@@ -1887,6 +1888,10 @@ IREmitter::mangle_function(const FunctionMetaData &meta,
     qualified += "_";
   qualified += meta.name;
 
+  if (meta.name == "main" && !member_of) {
+    return "main";
+  }
+
   return "_Function_" + qualified;
 }
 
@@ -1945,12 +1950,38 @@ IREmitter::resolve_ptr(std::shared_ptr<Value> value, const SemType &expected,
 
   if (expPtr) {
     if (valPtr) {
-      LOG_DEBUG("[IREmitter] resolve_ptr: value already a pointer");
-      return value;
+      auto current = value;
+      auto currentPtrTy = valPtr;
+      // Peel pointer
+      while (currentPtrTy && !typeEquals(current->type(), expectedTy)) {
+        auto innerPtrTy =
+            std::dynamic_pointer_cast<const PointerType>(currentPtrTy->pointee());
+        if (!innerPtrTy) {
+          break;
+        }
+        current = current_block_->append<LoadInst>(current,
+                                                   currentPtrTy->pointee());
+        currentPtrTy = innerPtrTy;
+      }
+      if (typeEquals(current->type(), expectedTy)) {
+        LOG_DEBUG(
+            "[IREmitter] resolve_ptr: matched pointer for expected reference");
+        return current;
+      }
+      // treat the loaded value as a scalar to be reborrowed.
+      value = current;
+      valPtr = std::dynamic_pointer_cast<const PointerType>(value->type());
     }
     auto tmp = current_block_->append<AllocaInst>(
         expPtr->pointee(), nullptr, 0, name_hint.empty() ? "tmp" : name_hint);
-    current_block_->append<StoreInst>(value, tmp);
+    std::shared_ptr<Value> toStore = value;
+    if (valPtr) {
+      toStore = current_block_->append<LoadInst>(value, valPtr->pointee());
+    }
+    if (!typeEquals(toStore->type(), expPtr->pointee())) {
+      throw IRException("resolve_ptr: reference type mismatch");
+    }
+    current_block_->append<StoreInst>(toStore, tmp);
     LOG_DEBUG("[IREmitter] resolve_ptr: created temporary pointer for value");
     return tmp;
   }
