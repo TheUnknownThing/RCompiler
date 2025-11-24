@@ -899,7 +899,8 @@ inline void IREmitter::visit(IfExpression &node) {
 
   auto cur_func = functions_.back();
   auto thenBlock = cur_func->createBlock("if_then");
-  auto resultIrTy = context->resolveType(context->lookupType(&node));
+  auto resultSemTy = context->lookupType(&node);
+  auto resultIrTy = context->resolveType(resultSemTy);
   auto entryBlock = current_block_;
 
   if (node.else_block) {
@@ -911,6 +912,7 @@ inline void IREmitter::visit(IfExpression &node) {
     if (node.then_block)
       node.then_block->accept(*this);
     auto thenVal = popOperand();
+    thenVal = loadPtrValue(thenVal, resultSemTy);
     current_block_->append<BranchInst>(mergeBlock);
     // else block
     current_block_ = elseBlock;
@@ -918,6 +920,7 @@ inline void IREmitter::visit(IfExpression &node) {
       std::static_pointer_cast<BlockExpression>(node.else_block.value())
           ->accept(*this);
     auto elseVal = popOperand();
+    elseVal = loadPtrValue(elseVal, resultSemTy);
     current_block_->append<BranchInst>(mergeBlock);
     // merge block
     current_block_ = mergeBlock;
@@ -939,6 +942,7 @@ inline void IREmitter::visit(IfExpression &node) {
     if (node.then_block)
       node.then_block->accept(*this);
     auto thenVal = popOperand();
+    thenVal = loadPtrValue(thenVal, resultSemTy);
     current_block_->append<BranchInst>(mergeBlock);
     // merge block
     current_block_ = mergeBlock;
@@ -1095,12 +1099,29 @@ inline void IREmitter::visit(FieldAccessExpression &node) {
     throw IRException("field access target is not addressable");
   }
 
+  auto structPtrTy =
+      std::dynamic_pointer_cast<const PointerType>(structPtr->type());
+  while (structPtrTy &&
+         !typeEquals(structPtrTy->pointee(), structIrTy)) {
+    if (structPtrTy->pointee()->kind() != TypeKind::Pointer) {
+      LOG_ERROR("[IREmitter] field access pointer mismatch for target type");
+      throw IRException("field access pointer mismatch for target type");
+    }
+    structPtr = current_block_->append<LoadInst>(structPtr, structPtrTy->pointee());
+    structPtrTy =
+        std::dynamic_pointer_cast<const PointerType>(structPtr->type());
+  }
+  if (!structPtrTy || !typeEquals(structPtrTy->pointee(), structIrTy)) {
+    LOG_ERROR("[IREmitter] field access unable to resolve struct pointer");
+    throw IRException("field access unable to resolve struct pointer");
+  }
+
   auto zero = ConstantInt::getI32(0, false);
   auto idxConst = ConstantInt::getI32(static_cast<std::uint32_t>(index), false);
   auto fieldIrTy = context->resolveType(fieldSem);
   auto gep = current_block_->append<GetElementPtrInst>(
-      fieldIrTy, structPtr, std::vector<std::shared_ptr<Value>>{zero, idxConst},
-      node.field_name);
+    fieldIrTy, structPtr,
+    std::vector<std::shared_ptr<Value>>{zero, idxConst}, node.field_name);
 
   auto loaded = current_block_->append<LoadInst>(gep, fieldIrTy, 0, false,
                                                  node.field_name);
@@ -1295,9 +1316,21 @@ inline void IREmitter::visit(IndexExpression &node) {
 
   const auto &arrSem = targetSem.as_array();
   auto elemIrTy = context->resolveType(*arrSem.element);
-  auto basePtr = std::dynamic_pointer_cast<const PointerType>(targetVal->type())
-                     ? targetVal
-                     : nullptr;
+  std::shared_ptr<Value> basePtr;
+  if (auto ptrTy = std::dynamic_pointer_cast<const PointerType>(targetVal->type())) {
+    auto pointee = ptrTy->pointee();
+    while (ptrTy && !std::dynamic_pointer_cast<const ArrayType>(pointee)) {
+      targetVal = current_block_->append<LoadInst>(targetVal, pointee);
+      ptrTy = std::dynamic_pointer_cast<const PointerType>(targetVal->type());
+      if (!ptrTy) {
+        break;
+      }
+      pointee = ptrTy->pointee();
+    }
+    if (ptrTy && std::dynamic_pointer_cast<const ArrayType>(ptrTy->pointee())) {
+      basePtr = targetVal;
+    }
+  }
   if (!basePtr) {
     auto arrIrTy = context->resolveType(targetSem);
     auto tmp =
@@ -1616,11 +1649,36 @@ inline std::shared_ptr<Value> IREmitter::loadPtrValue(std::shared_ptr<Value> v,
     throw IRException("attempt to materialize null value");
   }
   auto ptrTy = std::dynamic_pointer_cast<const PointerType>(v->type());
-  if (ptrTy && !semTy.is_reference()) {
+  if (!ptrTy) {
+    return v;
+  }
+
+  if (!semTy.is_reference()) {
     LOG_DEBUG("[IREmitter] loadPtrValue loading from pointer");
     return current_block_->append<LoadInst>(v, ptrTy->pointee());
   }
-  return v;
+
+  auto expectedTy = context->resolveType(semTy);
+  if (typeEquals(v->type(), expectedTy)) {
+    return v;
+  }
+
+  auto current = v;
+  auto currentPtrTy = ptrTy;
+  while (currentPtrTy && !typeEquals(current->type(), expectedTy)) {
+    current =
+        current_block_->append<LoadInst>(current, currentPtrTy->pointee());
+    currentPtrTy =
+        std::dynamic_pointer_cast<const PointerType>(current->type());
+  }
+
+  if (typeEquals(current->type(), expectedTy)) {
+    LOG_DEBUG("[IREmitter] loadPtrValue peeled pointer for reference");
+    return current;
+  }
+
+  LOG_ERROR("[IREmitter] loadPtrValue unable to match reference type");
+  throw IRException("loadPtrValue unable to match reference type");
 }
 
 inline bool IREmitter::typeEquals(const TypePtr &a, const TypePtr &b) const {
