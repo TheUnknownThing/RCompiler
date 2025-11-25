@@ -33,6 +33,16 @@
 
 namespace rc::ir {
 
+// BasicBlock::isTerminated() implementation
+inline bool BasicBlock::isTerminated() const {
+  if (instructions_.empty())
+    return false;
+  const auto &last = instructions_.back();
+  return dynamic_cast<BranchInst *>(last.get()) != nullptr ||
+         dynamic_cast<ReturnInst *>(last.get()) != nullptr ||
+         dynamic_cast<UnreachableInst *>(last.get()) != nullptr;
+}
+
 class IREmitter : public BaseVisitor {
 public:
   IREmitter() = default;
@@ -338,6 +348,20 @@ inline void IREmitter::visit(BinaryExpression &node) {
       auto cmp = current_block_->append<ICmpInst>(ICmpPred::NE, val, zero,
                                                   node.op.lexeme);
       pushOperand(cmp);
+      return;
+    }
+
+    if (srcInt && dstInt && srcInt->bits() < dstInt->bits()) {
+      LOG_DEBUG("[IREmitter] Emitting zext for widening cast");
+      auto zext = current_block_->append<ZExtInst>(val, targetTy, "cast");
+      pushOperand(zext);
+      return;
+    }
+
+    if (srcInt && dstInt && srcInt->bits() > dstInt->bits()) {
+      LOG_DEBUG("[IREmitter] Emitting trunc for narrowing cast");
+      auto trunc = current_block_->append<TruncInst>(val, targetTy, "cast");
+      pushOperand(trunc);
       return;
     }
 
@@ -914,7 +938,11 @@ inline void IREmitter::visit(IfExpression &node) {
       node.then_block->accept(*this);
     auto thenVal = popOperand();
     thenVal = loadPtrValue(thenVal, resultSemTy);
-    current_block_->append<BranchInst>(mergeBlock);
+    auto thenTerminated = current_block_->isTerminated();
+    auto thenExitBlock = current_block_;
+    if (!thenTerminated) {
+      current_block_->append<BranchInst>(mergeBlock);
+    }
     // else block
     current_block_ = elseBlock;
     if (node.else_block)
@@ -922,18 +950,35 @@ inline void IREmitter::visit(IfExpression &node) {
           ->accept(*this);
     auto elseVal = popOperand();
     elseVal = loadPtrValue(elseVal, resultSemTy);
-    current_block_->append<BranchInst>(mergeBlock);
+    auto elseTerminated = current_block_->isTerminated();
+    auto elseExitBlock = current_block_;
+    if (!elseTerminated) {
+      current_block_->append<BranchInst>(mergeBlock);
+    }
     // merge block
     current_block_ = mergeBlock;
+    if (thenTerminated && elseTerminated) {
+      current_block_->append<UnreachableInst>();
+      pushOperand(std::make_shared<ConstantUnit>());
+      return;
+    }
     if (resultIrTy->isVoid()) {
       pushOperand(std::make_shared<ConstantUnit>());
       return;
     }
-    auto phi = current_block_->append<PhiInst>(
-        resultIrTy,
-        std::vector<PhiInst::Incoming>{{thenVal, thenBlock},
-                                       {elseVal, elseBlock}},
-        "ifval");
+    std::vector<PhiInst::Incoming> incomings;
+    if (!thenTerminated) {
+      incomings.push_back({thenVal, thenExitBlock});
+    }
+    if (!elseTerminated) {
+      incomings.push_back({elseVal, elseExitBlock});
+    }
+    if (incomings.empty()) {
+      current_block_->append<UnreachableInst>();
+      pushOperand(std::make_shared<ConstantUnit>());
+      return;
+    }
+    auto phi = current_block_->append<PhiInst>(resultIrTy, incomings, "ifval");
     pushOperand(phi);
   } else {
     auto mergeBlock = cur_func->createBlock("if_merge");
@@ -944,7 +989,11 @@ inline void IREmitter::visit(IfExpression &node) {
       node.then_block->accept(*this);
     auto thenVal = popOperand();
     thenVal = loadPtrValue(thenVal, resultSemTy);
-    current_block_->append<BranchInst>(mergeBlock);
+    auto thenTerminated = current_block_->isTerminated();
+    auto thenExitBlock = current_block_;
+    if (!thenTerminated) {
+      current_block_->append<BranchInst>(mergeBlock);
+    }
     // merge block
     current_block_ = mergeBlock;
     auto unit = std::make_shared<ConstantUnit>();
@@ -952,11 +1001,12 @@ inline void IREmitter::visit(IfExpression &node) {
       pushOperand(unit);
       return;
     }
-    auto phi = current_block_->append<PhiInst>(
-        resultIrTy,
-        std::vector<PhiInst::Incoming>{{thenVal, thenBlock},
-                                       {unit, entryBlock}},
-        "ifval");
+    std::vector<PhiInst::Incoming> incomings;
+    if (!thenTerminated) {
+      incomings.push_back({thenVal, thenExitBlock});
+    }
+    incomings.push_back({unit, entryBlock});
+    auto phi = current_block_->append<PhiInst>(resultIrTy, incomings, "ifval");
     pushOperand(phi);
   }
 }
@@ -1102,13 +1152,13 @@ inline void IREmitter::visit(FieldAccessExpression &node) {
 
   auto structPtrTy =
       std::dynamic_pointer_cast<const PointerType>(structPtr->type());
-  while (structPtrTy &&
-         !typeEquals(structPtrTy->pointee(), structIrTy)) {
+  while (structPtrTy && !typeEquals(structPtrTy->pointee(), structIrTy)) {
     if (structPtrTy->pointee()->kind() != TypeKind::Pointer) {
       LOG_ERROR("[IREmitter] field access pointer mismatch for target type");
       throw IRException("field access pointer mismatch for target type");
     }
-    structPtr = current_block_->append<LoadInst>(structPtr, structPtrTy->pointee());
+    structPtr =
+        current_block_->append<LoadInst>(structPtr, structPtrTy->pointee());
     structPtrTy =
         std::dynamic_pointer_cast<const PointerType>(structPtr->type());
   }
@@ -1121,8 +1171,8 @@ inline void IREmitter::visit(FieldAccessExpression &node) {
   auto idxConst = ConstantInt::getI32(static_cast<std::uint32_t>(index), false);
   auto fieldIrTy = context->resolveType(fieldSem);
   auto gep = current_block_->append<GetElementPtrInst>(
-    fieldIrTy, structPtr,
-    std::vector<std::shared_ptr<Value>>{zero, idxConst}, node.field_name);
+      fieldIrTy, structPtr, std::vector<std::shared_ptr<Value>>{zero, idxConst},
+      node.field_name);
 
   auto loaded = current_block_->append<LoadInst>(gep, fieldIrTy, 0, false,
                                                  node.field_name);
@@ -1215,6 +1265,7 @@ inline void IREmitter::visit(LoopExpression &node) {
   block_stack_.pop_back();
 
   current_block_ = afterBlock;
+  pushOperand(std::make_shared<ConstantUnit>());
   LOG_DEBUG("[IREmitter] Finished loop expression");
 }
 
@@ -1240,6 +1291,7 @@ inline void IREmitter::visit(WhileExpression &node) {
   block_stack_.pop_back();
 
   current_block_ = afterBlock;
+  pushOperand(std::make_shared<ConstantUnit>());
   LOG_DEBUG("[IREmitter] Finished while expression");
 }
 
@@ -1318,7 +1370,8 @@ inline void IREmitter::visit(IndexExpression &node) {
   const auto &arrSem = targetSem.as_array();
   auto elemIrTy = context->resolveType(*arrSem.element);
   std::shared_ptr<Value> basePtr;
-  if (auto ptrTy = std::dynamic_pointer_cast<const PointerType>(targetVal->type())) {
+  if (auto ptrTy =
+          std::dynamic_pointer_cast<const PointerType>(targetVal->type())) {
     auto pointee = ptrTy->pointee();
     while (ptrTy && !std::dynamic_pointer_cast<const ArrayType>(pointee)) {
       targetVal = current_block_->append<LoadInst>(targetVal, pointee);
@@ -1954,13 +2007,13 @@ IREmitter::resolve_ptr(std::shared_ptr<Value> value, const SemType &expected,
       auto currentPtrTy = valPtr;
       // Peel pointer
       while (currentPtrTy && !typeEquals(current->type(), expectedTy)) {
-        auto innerPtrTy =
-            std::dynamic_pointer_cast<const PointerType>(currentPtrTy->pointee());
+        auto innerPtrTy = std::dynamic_pointer_cast<const PointerType>(
+            currentPtrTy->pointee());
         if (!innerPtrTy) {
           break;
         }
-        current = current_block_->append<LoadInst>(current,
-                                                   currentPtrTy->pointee());
+        current =
+            current_block_->append<LoadInst>(current, currentPtrTy->pointee());
         currentPtrTy = innerPtrTy;
       }
       if (typeEquals(current->type(), expectedTy)) {
@@ -2086,11 +2139,7 @@ IREmitter::emit_function(const FunctionMetaData &meta, const FunctionDecl &node,
     std::shared_ptr<Value> result =
         operand_stack_.empty() ? nullptr : popOperand();
     // Emit implicit return if block not terminated
-    bool terminated = false;
-    if (!current_block_->instructions().empty()) {
-      auto last = current_block_->instructions().back();
-      terminated = dynamic_cast<ReturnInst *>(last.get()) != nullptr;
-    }
+    bool terminated = current_block_->isTerminated();
     if (!terminated) {
       if (fnTy->returnType()->kind() == TypeKind::Void) {
         current_block_->append<ReturnInst>();
