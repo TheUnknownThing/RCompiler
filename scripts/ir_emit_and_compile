@@ -107,7 +107,7 @@ run_test() {
     fi
 
     # Prepare clang command
-    CLANG_CMD=(clang "output.ll" "builtin.ll" -o prog)
+    CLANG_CMD=(clang -O2 "output.ll" "builtin.ll" -o prog)
 
     echo "Running: ${CLANG_CMD[*]}"
     set +e

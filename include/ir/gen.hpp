@@ -213,7 +213,7 @@ private:
     }
     case TypeKind::Pointer: {
       auto pt = std::static_pointer_cast<const PointerType>(ty);
-      return typeToString(pt->pointee()) + "*";
+      return "ptr";
     }
     case TypeKind::Array: {
       auto at = std::static_pointer_cast<const ArrayType>(ty);
