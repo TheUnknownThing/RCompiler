@@ -169,7 +169,9 @@ private:
                                           const std::string &mangled_name);
 
   std::shared_ptr<Function> memset_fn_;
+  std::shared_ptr<Function> memcpy_fn_;
   std::shared_ptr<Function> createMemsetFn();
+  std::shared_ptr<Function> createMemcpyFn();
   std::size_t computeTypeByteSize(const TypePtr &ty) const;
   bool isZeroLiteral(const Expression *expr) const;
 };
@@ -194,8 +196,10 @@ inline void IREmitter::run(const std::shared_ptr<RootNode> &root,
   globals_.clear();
   functions_.clear();
   struct_types_.clear();
-  memset_fn_ = createMemsetFn();
   locals_.emplace_back();
+  
+  memset_fn_ = createMemsetFn();
+  memcpy_fn_ = createMemcpyFn();
   for (const auto &child : root->children) {
     if (child) {
       child->accept(*this);
@@ -2280,6 +2284,19 @@ inline std::shared_ptr<Function> IREmitter::createMemsetFn() {
       module_.createFunction("_Function_prelude_builtin_memset", fnTy, true);
   LOG_DEBUG("[IREmitter] Created builtin_memset function declaration");
   return memset_fn_;
+}
+
+inline std::shared_ptr<Function> IREmitter::createMemcpyFn() {
+  // Signature: ptr @_Function_prelude_builtin_memcpy(ptr, ptr, i32)
+  auto ptrTy =
+      std::make_shared<PointerType>(std::make_shared<IntegerType>(32, false));
+  auto i32Ty = IntegerType::i32(true);
+  auto fnTy = std::make_shared<FunctionType>(
+      ptrTy, std::vector<TypePtr>{ptrTy, ptrTy, i32Ty}, false);
+  memcpy_fn_ =
+      module_.createFunction("_Function_prelude_builtin_memcpy", fnTy, true);
+  LOG_DEBUG("[IREmitter] Created builtin_memcpy function declaration");
+  return memcpy_fn_;
 }
 
 inline std::size_t IREmitter::computeTypeByteSize(const TypePtr &ty) const {
