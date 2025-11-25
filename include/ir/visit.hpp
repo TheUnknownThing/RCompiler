@@ -167,6 +167,11 @@ private:
                                           const ScopeNode *scope,
                                           const std::vector<SemType> &params,
                                           const std::string &mangled_name);
+
+  std::shared_ptr<Function> memset_fn_;
+  std::shared_ptr<Function> createMemsetFn();
+  std::size_t computeTypeByteSize(const TypePtr &ty) const;
+  bool isZeroLiteral(const Expression *expr) const;
 };
 
 // Implementation
@@ -189,6 +194,7 @@ inline void IREmitter::run(const std::shared_ptr<RootNode> &root,
   globals_.clear();
   functions_.clear();
   struct_types_.clear();
+  memset_fn_ = createMemsetFn();
   locals_.emplace_back();
   for (const auto &child : root->children) {
     if (child) {
@@ -1216,8 +1222,8 @@ inline void IREmitter::visit(FieldAccessExpression &node) {
       fieldIrTy, structPtr, std::vector<std::shared_ptr<Value>>{zero, idxConst},
       node.field_name);
 
-  auto loaded = current_block_->append<LoadInst>(gep, fieldIrTy, 0, false,
-                                                 node.field_name);
+  // auto loaded = current_block_->append<LoadInst>(gep, fieldIrTy, 0, false,
+  // node.field_name);
   pushOperand(gep);
   LOG_DEBUG("[IREmitter] Loaded field '" + node.field_name + "'");
 }
@@ -1367,16 +1373,51 @@ inline void IREmitter::visit(ArrayExpression &node) {
   auto zero = ConstantInt::getI32(0, false);
 
   if (node.repeat) {
-    node.repeat->first->accept(*this);
-    auto val = popOperand();
-    auto resolved = resolve_ptr(val, *arrSem.element, "arr_init");
-    std::size_t repeatCount = count;
-    for (std::size_t i = 0; i < repeatCount; ++i) {
-      auto idxConst = ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
-      auto gep = current_block_->append<GetElementPtrInst>(
-          elemIrTy, slot, std::vector<std::shared_ptr<Value>>{zero, idxConst},
-          "elt");
-      current_block_->append<StoreInst>(resolved, gep);
+    if (isZeroLiteral(node.repeat->first.get())) {
+      std::size_t byteSize = computeTypeByteSize(arrIrTy);
+      if (byteSize > 0) {
+        LOG_DEBUG("[IREmitter] Using memset optimization for zero-initialized "
+                  "array of " +
+                  std::to_string(byteSize) + " bytes");
+        auto memsetFn = memset_fn_;
+        auto ptrTy = std::make_shared<PointerType>(IntegerType::i32(false));
+        // memset(dest, value=0, size)
+        std::vector<std::shared_ptr<Value>> args;
+        args.push_back(slot);
+        args.push_back(ConstantInt::getI32(0, true));
+        args.push_back(
+            ConstantInt::getI32(static_cast<std::uint32_t>(byteSize), false));
+
+        auto memsetSymbol =
+            std::make_shared<Value>(memsetFn->type(), memsetFn->name());
+        current_block_->append<CallInst>(memsetSymbol, args, ptrTy);
+      } else {
+        // otherwise, just do element-wise initialization
+        node.repeat->first->accept(*this);
+        auto val = popOperand();
+        auto resolved = resolve_ptr(val, *arrSem.element, "arr_init");
+        for (std::size_t i = 0; i < count; ++i) {
+          auto idxConst =
+              ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
+          auto gep = current_block_->append<GetElementPtrInst>(
+              elemIrTy, slot,
+              std::vector<std::shared_ptr<Value>>{zero, idxConst}, "elt");
+          current_block_->append<StoreInst>(resolved, gep);
+        }
+      }
+    } else {
+      node.repeat->first->accept(*this);
+      auto val = popOperand();
+      auto resolved = resolve_ptr(val, *arrSem.element, "arr_init");
+      std::size_t repeatCount = count;
+      for (std::size_t i = 0; i < repeatCount; ++i) {
+        auto idxConst =
+            ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
+        auto gep = current_block_->append<GetElementPtrInst>(
+            elemIrTy, slot, std::vector<std::shared_ptr<Value>>{zero, idxConst},
+            "elt");
+        current_block_->append<StoreInst>(resolved, gep);
+      }
     }
   } else {
     if (node.elements.size() != count) {
@@ -1460,7 +1501,7 @@ inline void IREmitter::visit(IndexExpression &node) {
   auto gep = current_block_->append<GetElementPtrInst>(
       elemIrTy, basePtr, std::vector<std::shared_ptr<Value>>{zero, idxVal},
       "idx");
-  auto loaded = current_block_->append<LoadInst>(gep, elemIrTy);
+  // auto loaded = current_block_->append<LoadInst>(gep, elemIrTy);
   pushOperand(gep);
   LOG_DEBUG("[IREmitter] Emitted index access");
 }
@@ -2227,6 +2268,60 @@ IREmitter::create_function(const std::string &name,
   auto fn = module_.createFunction(name, ty, is_external);
   function_table_[meta] = fn;
   return fn;
+}
+
+inline std::shared_ptr<Function> IREmitter::createMemsetFn() {
+  // Signature: ptr @_Function_prelude_builtin_memset(ptr, i32, i32)
+  auto ptrTy = std::make_shared<PointerType>(IntegerType::i32(false));
+  auto i32Ty = IntegerType::i32(true);
+  auto fnTy = std::make_shared<FunctionType>(
+      ptrTy, std::vector<TypePtr>{ptrTy, i32Ty, i32Ty}, false);
+  memset_fn_ =
+      module_.createFunction("_Function_prelude_builtin_memset", fnTy, true);
+  LOG_DEBUG("[IREmitter] Created builtin_memset function declaration");
+  return memset_fn_;
+}
+
+inline std::size_t IREmitter::computeTypeByteSize(const TypePtr &ty) const {
+  if (auto intTy = std::dynamic_pointer_cast<const IntegerType>(ty)) {
+    // Round up to bytes
+    return (intTy->bits() + 7) / 8;
+  }
+  if (auto arrTy = std::dynamic_pointer_cast<const ArrayType>(ty)) {
+    return arrTy->count() * computeTypeByteSize(arrTy->elem());
+  }
+  if (auto structTy = std::dynamic_pointer_cast<const StructType>(ty)) {
+    std::size_t total = 0;
+    for (const auto &field : structTy->fields()) {
+      total += computeTypeByteSize(field);
+    }
+    return total;
+  }
+  if (auto ptrTy = std::dynamic_pointer_cast<const PointerType>(ty)) {
+    return 4;
+  }
+  if (ty->isVoid()) {
+    return 0;
+  }
+  LOG_DEBUG("[IREmitter] Unknown type for byte size calculation");
+  return 0;
+}
+
+inline bool IREmitter::isZeroLiteral(const Expression *expr) const {
+  if (auto *lit = dynamic_cast<const LiteralExpression *>(expr)) {
+    if (lit->value == "false") {
+      return true;
+    }
+    try {
+      if (lit->value.empty())
+        return false;
+      long long val = std::stoll(lit->value, nullptr, 0);
+      return val == 0;
+    } catch (...) {
+      return false;
+    }
+  }
+  return false;
 }
 
 } // namespace rc::ir
