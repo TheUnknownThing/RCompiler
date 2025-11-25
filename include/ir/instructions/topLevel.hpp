@@ -48,6 +48,8 @@ public:
     return instructions_;
   }
 
+  bool isTerminated() const;
+
 private:
   std::string name_;
   std::vector<std::shared_ptr<Instruction>> instructions_;

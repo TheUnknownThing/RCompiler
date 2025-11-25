@@ -537,6 +537,25 @@ private:
            << " " << valueRef(*sel->ifFalse());
       return;
     }
+    if (dynamic_cast<const UnreachableInst *>(&inst)) {
+      out_ << "unreachable";
+      return;
+    }
+    if (auto zext = dynamic_cast<const ZExtInst *>(&inst)) {
+      out_ << localName(zext) << " = zext " << typedValueRef(*zext->source())
+           << " to " << typeToString(zext->type());
+      return;
+    }
+    if (auto sext = dynamic_cast<const SExtInst *>(&inst)) {
+      out_ << localName(sext) << " = sext " << typedValueRef(*sext->source())
+           << " to " << typeToString(sext->type());
+      return;
+    }
+    if (auto trunc = dynamic_cast<const TruncInst *>(&inst)) {
+      out_ << localName(trunc) << " = trunc " << typedValueRef(*trunc->source())
+           << " to " << typeToString(trunc->type());
+      return;
+    }
 
     out_ << "; <unknown instruction>";
   }
