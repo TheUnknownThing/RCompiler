@@ -163,6 +163,7 @@ run_test() {
             sed -n '1,200p' "$EXPECTED_FILE" || true
             echo "----- Actual (first 200 lines) -----"
             sed -n '1,200p' tmp.out || true
+            diff "$EXPECTED_FILE" tmp.out -w || true
             cd "$ROOT_DIR"
             FAILED+=( "$NAME (output mismatch)" )
             return 1

@@ -450,7 +450,7 @@ inline void IREmitter::visit(PrefixExpression &node) {
 
   switch (node.op.type) {
   case TokenType::NOT: {
-    auto lhs = std::make_shared<ConstantInt>(IntegerType::i1(), 1);
+    auto lhs = std::make_shared<ConstantInt>(IntegerType::i32(), -1);
     pushOperand(current_block_->append<BinaryOpInst>(BinaryOpKind::XOR, lhs,
                                                      operand, irTy));
     break;

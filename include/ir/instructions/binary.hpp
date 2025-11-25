@@ -38,10 +38,6 @@ public:
     if (!li || !ri || !riTy) {
       throw std::invalid_argument("BinaryOpInst requires integer types");
     }
-    if (li->bits() != ri->bits() || riTy->bits() != li->bits()) {
-      throw std::invalid_argument(
-          "BinaryOpInst operand/result bit width mismatch");
-    }
   }
 
   BinaryOpKind op() const { return op_; }
