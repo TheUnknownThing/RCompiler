@@ -413,14 +413,23 @@ private:
       case BinaryOpKind::SDIV:
         op = "sdiv";
         break;
+      case BinaryOpKind::UDIV:
+        op = "udiv";
+        break;
       case BinaryOpKind::SREM:
         op = "srem";
+        break;
+      case BinaryOpKind::UREM:
+        op = "urem";
         break;
       case BinaryOpKind::SHL:
         op = "shl";
         break;
       case BinaryOpKind::ASHR:
         op = "ashr";
+        break;
+      case BinaryOpKind::LSHR:
+        op = "lshr";
         break;
       case BinaryOpKind::AND:
         op = "and";

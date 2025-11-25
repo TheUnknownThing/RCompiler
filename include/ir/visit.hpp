@@ -111,7 +111,10 @@ private:
       locals_; // local mapped to their memory location or SSA
 
   std::vector<std::shared_ptr<Value>> operand_stack_;
-  std::vector<std::shared_ptr<BasicBlock>> block_stack_; // for break/continue
+  // pair<break_target, continue_target>
+  std::vector<
+      std::pair<std::shared_ptr<BasicBlock>, std::shared_ptr<BasicBlock>>>
+      loop_stack_;
 
   std::shared_ptr<Value> popOperand();
   void pushOperand(std::shared_ptr<Value> v);
@@ -179,7 +182,7 @@ inline void IREmitter::run(const std::shared_ptr<RootNode> &root,
   context = &ctx;
   locals_.clear();
   operand_stack_.clear();
-  block_stack_.clear();
+  loop_stack_.clear();
   name_mangle_.clear();
   function_table_.clear();
   function_symbols_.clear();
@@ -318,8 +321,28 @@ inline void IREmitter::visit(BinaryExpression &node) {
       LOG_ERROR("[IREmitter] unsupported compound assignment operator");
       throw IRException("unsupported compound assignment operator");
     }
-    auto combined = current_block_->append<BinaryOpInst>(*opKind, loaded, rhs,
-                                                         lhsPtrTy->pointee());
+
+    auto pointeeInt =
+        std::dynamic_pointer_cast<const IntegerType>(lhsPtrTy->pointee());
+    bool is_unsigned = pointeeInt && !pointeeInt->isSigned();
+    BinaryOpKind adjustedOp = *opKind;
+    if (is_unsigned) {
+      switch (*opKind) {
+      case BinaryOpKind::SDIV:
+        adjustedOp = BinaryOpKind::UDIV;
+        break;
+      case BinaryOpKind::SREM:
+        adjustedOp = BinaryOpKind::UREM;
+        break;
+      case BinaryOpKind::ASHR:
+        adjustedOp = BinaryOpKind::LSHR;
+        break;
+      default:
+        break;
+      }
+    }
+    auto combined = current_block_->append<BinaryOpInst>(
+        adjustedOp, loaded, rhs, lhsPtrTy->pointee());
     current_block_->append<StoreInst>(combined, lhs);
     pushOperand(combined);
     return;
@@ -380,8 +403,27 @@ inline void IREmitter::visit(BinaryExpression &node) {
   auto opKind = token_to_binop(node.op.type);
   if (opKind) {
     LOG_DEBUG("[IREmitter] Emitting binary arithmetic/logical op");
+
+    auto lhsIntTy = std::dynamic_pointer_cast<const IntegerType>(lhs->type());
+    bool is_unsigned = lhsIntTy && !lhsIntTy->isSigned();
+    BinaryOpKind adjustedOp = *opKind;
+    if (is_unsigned) {
+      switch (*opKind) {
+      case BinaryOpKind::SDIV:
+        adjustedOp = BinaryOpKind::UDIV;
+        break;
+      case BinaryOpKind::SREM:
+        adjustedOp = BinaryOpKind::UREM;
+        break;
+      case BinaryOpKind::ASHR:
+        adjustedOp = BinaryOpKind::LSHR;
+        break;
+      default:
+        break;
+      }
+    }
     auto result =
-        current_block_->append<BinaryOpInst>(*opKind, lhs, rhs, lhs->type());
+        current_block_->append<BinaryOpInst>(adjustedOp, lhs, rhs, lhs->type());
     pushOperand(result);
     return;
   }
@@ -1259,10 +1301,13 @@ inline void IREmitter::visit(LoopExpression &node) {
   current_block_->append<BranchInst>(bodyBlock);
 
   current_block_ = bodyBlock;
-  block_stack_.push_back(afterBlock); // break in loop goes to afterBlock
+  // break -> afterBlock, continue -> bodyBlock
+  loop_stack_.push_back({afterBlock, bodyBlock});
   node.body->accept(*this);
-  current_block_->append<BranchInst>(bodyBlock);
-  block_stack_.pop_back();
+  if (!current_block_->isTerminated()) {
+    current_block_->append<BranchInst>(bodyBlock);
+  }
+  loop_stack_.pop_back();
 
   current_block_ = afterBlock;
   pushOperand(std::make_shared<ConstantUnit>());
@@ -1285,10 +1330,13 @@ inline void IREmitter::visit(WhileExpression &node) {
   current_block_->append<BranchInst>(condVal, bodyBlock, afterBlock);
 
   current_block_ = bodyBlock;
-  block_stack_.push_back(afterBlock); // break in while goes to afterBlock
+  // break -> afterBlock, continue -> condBlock
+  loop_stack_.push_back({afterBlock, condBlock});
   node.body->accept(*this);
-  current_block_->append<BranchInst>(condBlock);
-  block_stack_.pop_back();
+  if (!current_block_->isTerminated()) {
+    current_block_->append<BranchInst>(condBlock);
+  }
+  loop_stack_.pop_back();
 
   current_block_ = afterBlock;
   pushOperand(std::make_shared<ConstantUnit>());
@@ -1424,11 +1472,12 @@ inline void IREmitter::visit(TupleExpression &) {
 
 inline void IREmitter::visit(BreakExpression &) {
   LOG_DEBUG("[IREmitter] Visiting break expression");
-  if (block_stack_.empty()) {
+  if (loop_stack_.empty()) {
     LOG_ERROR("[IREmitter] break used outside of loop");
     throw IRException("break used outside of loop"); // this should never happen
   }
-  auto targetBlock = block_stack_.back();
+  // break target is the first element of the pair
+  auto targetBlock = loop_stack_.back().first;
   pushOperand(std::make_shared<ConstantUnit>());
   current_block_->append<BranchInst>(targetBlock);
   // should never have dead code, but just in case
@@ -1439,12 +1488,12 @@ inline void IREmitter::visit(BreakExpression &) {
 
 inline void IREmitter::visit(ContinueExpression &) {
   LOG_DEBUG("[IREmitter] Visiting continue expression");
-  if (block_stack_.empty()) {
+  if (loop_stack_.empty()) {
     LOG_ERROR("[IREmitter] continue used outside of loop");
     throw IRException(
         "continue used outside of loop"); // this should never happen
   }
-  auto targetBlock = block_stack_.back();
+  auto targetBlock = loop_stack_.back().second;
   pushOperand(std::make_shared<ConstantUnit>());
   current_block_->append<BranchInst>(targetBlock);
   // should never have dead code, but just in case
