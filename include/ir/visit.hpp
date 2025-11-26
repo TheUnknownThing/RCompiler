@@ -116,6 +116,12 @@ private:
       std::pair<std::shared_ptr<BasicBlock>, std::shared_ptr<BasicBlock>>>
       loop_stack_;
 
+  // Track functions that use sret (structure return) for large aggregate returns
+  // Maps function metadata to the original return type (before sret transformation)
+  std::unordered_map<const FunctionMetaData *, TypePtr> sret_functions_;
+  // The sret pointer for the current function being emitted (if any)
+  std::shared_ptr<Value> current_sret_ptr_;
+
   std::shared_ptr<Value> popOperand();
   void pushOperand(std::shared_ptr<Value> v);
   std::shared_ptr<Value> loadPtrValue(std::shared_ptr<Value> v,
@@ -174,6 +180,18 @@ private:
   std::shared_ptr<Function> createMemcpyFn();
   std::size_t computeTypeByteSize(const TypePtr &ty) const;
   bool isZeroLiteral(const Expression *expr) const;
+
+  // Helper to check if a type is an aggregate (struct or array)
+  // Aggregates should be passed as pointers, not loaded as first-class values
+  bool isAggregateType(const TypePtr &ty) const;
+  
+  // Check if a return type should use sret (struct return) transformation
+  // Returns true for large aggregate types that would be inefficient to return by value
+  bool shouldUseSret(const TypePtr &ty) const;
+  
+  // Emit a memcpy call from src to dst
+  void emitMemcpy(std::shared_ptr<Value> dst, std::shared_ptr<Value> src,
+                  std::size_t byteSize);
 };
 
 // Implementation
@@ -196,6 +214,8 @@ inline void IREmitter::run(const std::shared_ptr<RootNode> &root,
   globals_.clear();
   functions_.clear();
   struct_types_.clear();
+  sret_functions_.clear();
+  current_sret_ptr_ = nullptr;
   locals_.emplace_back();
   
   memset_fn_ = createMemsetFn();
@@ -475,7 +495,36 @@ inline void IREmitter::visit(ReturnExpression &node) {
   if (node.value) {
     (*node.value)->accept(*this);
     auto v = popOperand();
-    v = loadPtrValue(v, context->lookupType(node.value->get()));
+    auto retSemTy = context->lookupType(node.value->get());
+    auto retIrTy = context->resolveType(retSemTy);
+    
+    // Check if we're in a function using sret
+    if (current_sret_ptr_) {
+      // For sret, copy result to sret pointer and return void
+      auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(v->type());
+      if (valPtrTy && isAggregateType(retIrTy)) {
+        // Result is a pointer to aggregate, use memcpy
+        std::size_t byteSize = computeTypeByteSize(retIrTy);
+        emitMemcpy(current_sret_ptr_, v, byteSize);
+      } else if (valPtrTy) {
+        auto loaded = current_block_->append<LoadInst>(v, retIrTy);
+        current_block_->append<StoreInst>(loaded, current_sret_ptr_);
+      } else {
+        current_block_->append<StoreInst>(v, current_sret_ptr_);
+      }
+      current_block_->append<ReturnInst>();
+      return;
+    }
+    
+    // For aggregates, we need to explicitly load since our convention
+    // is to keep them as pointers, but return statements need the value
+    auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(v->type());
+    if (valPtrTy && isAggregateType(retIrTy)) {
+      v = current_block_->append<LoadInst>(v, retIrTy);
+    } else {
+      v = loadPtrValue(v, retSemTy);
+    }
+    
     if (v->type()->isVoid()) {
       current_block_->append<ReturnInst>();
       return;
@@ -536,10 +585,20 @@ inline void IREmitter::visit(LetStatement &node) {
 
   auto semTy = ScopeNode::resolve_type(node.type, current_scope_node);
   auto irTy = context->resolveType(semTy);
-  init = loadPtrValue(init, semTy);
 
   auto slot = current_block_->append<AllocaInst>(irTy, nullptr, 0, ident->name);
-  current_block_->append<StoreInst>(init, slot);
+
+  // For aggregates, use memcpy instead of load+store
+  // This avoids creating massive SSA values for structs/arrays
+  auto initPtrTy = std::dynamic_pointer_cast<const PointerType>(init->type());
+  if (initPtrTy && isAggregateType(irTy)) {
+    std::size_t byteSize = computeTypeByteSize(irTy);
+    emitMemcpy(slot, init, byteSize);
+  } else {
+    init = loadPtrValue(init, semTy);
+    current_block_->append<StoreInst>(init, slot);
+  }
+
   bindLocal(ident->name, slot);
   LOG_DEBUG("[IREmitter] Bound local '" + ident->name + "'");
 }
@@ -778,7 +837,16 @@ inline void IREmitter::visit(CallExpression &node) {
   for (const auto &p : paramSems) {
     irParams.push_back(context->resolveType(p));
   }
-  auto retTy = context->resolveType(meta->return_type);
+  auto originalRetTy = context->resolveType(meta->return_type);
+  auto retTy = originalRetTy;
+  
+  // Check if this function uses sret (returns large aggregate)
+  bool usesSret = shouldUseSret(originalRetTy);
+  if (usesSret) {
+    auto sretPtrTy = std::make_shared<PointerType>(originalRetTy);
+    irParams.insert(irParams.begin(), sretPtrTy);
+    retTy = std::make_shared<VoidType>();
+  }
 
   auto found = find_function(meta);
   if (!found) { // this happens for builtins or forward declarations
@@ -787,12 +855,23 @@ inline void IREmitter::visit(CallExpression &node) {
     auto mangled = mangle_function(*meta, owner_scope, member_of);
     found = create_function(mangled, fnTy,
                             !meta->decl || !meta->decl->body.has_value(), meta);
+    if (usesSret) {
+      sret_functions_[meta] = originalRetTy;
+    }
   }
 
   auto callee = function_symbol(*meta, found);
 
   std::vector<std::shared_ptr<Value>> resolved;
-  resolved.reserve(args.size());
+  
+  // For sret functions, allocate result space and pass as first argument
+  std::shared_ptr<Value> sretSlot;
+  if (usesSret) {
+    sretSlot = current_block_->append<AllocaInst>(originalRetTy, nullptr, 0, "sret_result");
+    resolved.push_back(sretSlot);
+  }
+  
+  resolved.reserve(args.size() + (usesSret ? 1 : 0));
   for (size_t i = 0; i < args.size(); ++i) {
     resolved.push_back(
         resolve_ptr(args[i], paramSems[i], "arg" + std::to_string(i)));
@@ -800,7 +879,19 @@ inline void IREmitter::visit(CallExpression &node) {
 
   LOG_DEBUG("[IREmitter] Emitting call to function " + meta->name);
   auto callInst = current_block_->append<CallInst>(callee, resolved, retTy);
-  pushOperand(callInst);
+  
+  if (usesSret) {
+    // For sret, the result is already in sretSlot
+    pushOperand(sretSlot);
+  } else if (isAggregateType(retTy)) {
+    // For aggregate returns (non-sret), store the result and push the pointer
+    // This keeps our convention of passing aggregates as pointers
+    auto slot = current_block_->append<AllocaInst>(retTy, nullptr, 0, "calltmp");
+    current_block_->append<StoreInst>(callInst, slot);
+    pushOperand(slot);
+  } else {
+    pushOperand(callInst);
+  }
 }
 
 inline void IREmitter::visit(StructDecl &node) {
@@ -878,7 +969,18 @@ inline void IREmitter::visit(StructDecl &node) {
     for (const auto &p : params) {
       irParams.push_back(context->resolveType(p));
     }
-    auto retTy = context->resolveType(m.return_type);
+    auto originalRetTy = context->resolveType(m.return_type);
+    auto retTy = originalRetTy;
+    
+    // Check if this method should use sret
+    bool usesSret = shouldUseSret(originalRetTy);
+    if (usesSret) {
+      auto sretPtrTy = std::make_shared<PointerType>(originalRetTy);
+      irParams.insert(irParams.begin(), sretPtrTy);
+      retTy = std::make_shared<VoidType>();
+      sret_functions_[&m] = originalRetTy;
+    }
+    
     auto fnTy = std::make_shared<FunctionType>(retTy, irParams, false);
     auto mangled_fn = mangle_function(m, item->owner_scope, item->name);
     create_function(mangled_fn, fnTy, !m.decl || !m.decl->body.has_value(), &m);
@@ -1113,7 +1215,16 @@ inline void IREmitter::visit(MethodCallExpression &node) {
   for (const auto &p : paramSems) {
     paramIr.push_back(context->resolveType(p));
   }
-  auto retTy = context->resolveType(found->return_type);
+  auto originalRetTy = context->resolveType(found->return_type);
+  auto retTy = originalRetTy;
+  
+  // Check if this function uses sret (returns large aggregate)
+  bool usesSret = shouldUseSret(originalRetTy);
+  if (usesSret) {
+    auto sretPtrTy = std::make_shared<PointerType>(originalRetTy);
+    paramIr.insert(paramIr.begin(), sretPtrTy);
+    retTy = std::make_shared<VoidType>();
+  }
 
   auto foundFn = find_function(found);
   if (!foundFn) {
@@ -1121,13 +1232,24 @@ inline void IREmitter::visit(MethodCallExpression &node) {
     auto mangled = mangle_function(*found, ci->owner_scope, ci->name);
     foundFn = create_function(
         mangled, fnTy, !found->decl || !found->decl->body.has_value(), found);
+    if (usesSret) {
+      sret_functions_[found] = originalRetTy;
+    }
     LOG_DEBUG("[IREmitter] Predeclared method function: " + found->name +
               " mangled=" + mangled);
   }
   auto callee = function_symbol(*found, foundFn);
 
   std::vector<std::shared_ptr<Value>> args;
-  args.reserve(paramSems.size());
+  args.reserve(paramSems.size() + (usesSret ? 1 : 0));
+  
+  // For sret functions, allocate result space and pass as first argument
+  std::shared_ptr<Value> sretSlot;
+  if (usesSret) {
+    sretSlot = current_block_->append<AllocaInst>(originalRetTy, nullptr, 0, "sret_result");
+    args.push_back(sretSlot);
+  }
+  
   size_t argIndex = 0;
 
   if (selfSem) {
@@ -1145,7 +1267,19 @@ inline void IREmitter::visit(MethodCallExpression &node) {
   }
 
   auto call = current_block_->append<CallInst>(callee, args, retTy);
-  pushOperand(call);
+  
+  if (usesSret) {
+    // For sret, the result is already in sretSlot
+    pushOperand(sretSlot);
+  } else if (isAggregateType(retTy)) {
+    // For aggregate returns (non-sret), store the result and push the pointer
+    // This keeps our convention of passing aggregates as pointers
+    auto slot = current_block_->append<AllocaInst>(retTy, nullptr, 0, "callmethodtmp");
+    current_block_->append<StoreInst>(call, slot);
+    pushOperand(slot);
+  } else {
+    pushOperand(call);
+  }
   LOG_DEBUG("[IREmitter] Emitted method call to " + found->name);
 }
 
@@ -1283,17 +1417,26 @@ inline void IREmitter::visit(StructExpression &node) {
     }
     it->second->accept(*this);
     auto val = popOperand();
-    auto resolved = resolve_ptr(val, field.second, field.first);
     auto idxConst = ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
     auto fieldTy = context->resolveType(field.second);
     auto gep = current_block_->append<GetElementPtrInst>(
         fieldTy, slot, std::vector<std::shared_ptr<Value>>{zero, idxConst},
         field.first);
-    current_block_->append<StoreInst>(resolved, gep);
+    
+    // For aggregate fields, use memcpy instead of load+store
+    auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(val->type());
+    if (valPtrTy && isAggregateType(fieldTy)) {
+      std::size_t byteSize = computeTypeByteSize(fieldTy);
+      emitMemcpy(gep, val, byteSize);
+    } else {
+      auto resolved = resolve_ptr(val, field.second, field.first);
+      current_block_->append<StoreInst>(resolved, gep);
+    }
   }
 
-  auto loaded = current_block_->append<LoadInst>(slot, structIrTy);
-  pushOperand(loaded);
+  // Return pointer to struct, NOT the loaded struct value
+  // This avoids massive SSA loads like `load %StringProcessor`
+  pushOperand(slot);
   LOG_DEBUG("[IREmitter] Constructed struct instance for " + nameExpr->name);
 }
 
@@ -1412,15 +1555,33 @@ inline void IREmitter::visit(ArrayExpression &node) {
     } else {
       node.repeat->first->accept(*this);
       auto val = popOperand();
-      auto resolved = resolve_ptr(val, *arrSem.element, "arr_init");
+      
+      // For aggregate elements, we need to handle differently
+      auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(val->type());
+      bool elemIsAggregate = isAggregateType(elemIrTy);
+      
       std::size_t repeatCount = count;
-      for (std::size_t i = 0; i < repeatCount; ++i) {
-        auto idxConst =
-            ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
-        auto gep = current_block_->append<GetElementPtrInst>(
-            elemIrTy, slot, std::vector<std::shared_ptr<Value>>{zero, idxConst},
-            "elt");
-        current_block_->append<StoreInst>(resolved, gep);
+      if (elemIsAggregate && valPtrTy) {
+        // Use memcpy for each element
+        std::size_t elemByteSize = computeTypeByteSize(elemIrTy);
+        for (std::size_t i = 0; i < repeatCount; ++i) {
+          auto idxConst =
+              ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
+          auto gep = current_block_->append<GetElementPtrInst>(
+              elemIrTy, slot, std::vector<std::shared_ptr<Value>>{zero, idxConst},
+              "elt");
+          emitMemcpy(gep, val, elemByteSize);
+        }
+      } else {
+        auto resolved = resolve_ptr(val, *arrSem.element, "arr_init");
+        for (std::size_t i = 0; i < repeatCount; ++i) {
+          auto idxConst =
+              ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
+          auto gep = current_block_->append<GetElementPtrInst>(
+              elemIrTy, slot, std::vector<std::shared_ptr<Value>>{zero, idxConst},
+              "elt");
+          current_block_->append<StoreInst>(resolved, gep);
+        }
       }
     }
   } else {
@@ -1428,21 +1589,31 @@ inline void IREmitter::visit(ArrayExpression &node) {
       LOG_ERROR("[IREmitter] array literal size mismatch");
       throw IRException("array literal size mismatch");
     }
+    bool elemIsAggregate = isAggregateType(elemIrTy);
+    std::size_t elemByteSize = elemIsAggregate ? computeTypeByteSize(elemIrTy) : 0;
+    
     for (std::size_t i = 0; i < node.elements.size(); ++i) {
       node.elements[i]->accept(*this);
       auto val = popOperand();
-      auto resolved =
-          resolve_ptr(val, *arrSem.element, "elt" + std::to_string(i));
       auto idxConst = ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
       auto gep = current_block_->append<GetElementPtrInst>(
           elemIrTy, slot, std::vector<std::shared_ptr<Value>>{zero, idxConst},
           "elt");
-      current_block_->append<StoreInst>(resolved, gep);
+      
+      auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(val->type());
+      if (elemIsAggregate && valPtrTy) {
+        emitMemcpy(gep, val, elemByteSize);
+      } else {
+        auto resolved =
+            resolve_ptr(val, *arrSem.element, "elt" + std::to_string(i));
+        current_block_->append<StoreInst>(resolved, gep);
+      }
     }
   }
 
-  auto loaded = current_block_->append<LoadInst>(slot, arrIrTy);
-  pushOperand(loaded);
+  // Return pointer to array, NOT the loaded array value
+  // This avoids massive SSA loads like `load [5000 x i32]`
+  pushOperand(slot);
   LOG_DEBUG("[IREmitter] Constructed array of count " + std::to_string(count));
 }
 
@@ -1802,6 +1973,13 @@ inline std::shared_ptr<Value> IREmitter::loadPtrValue(std::shared_ptr<Value> v,
   }
 
   if (!semTy.is_reference()) {
+    // For aggregate types, DON'T load them - keep as pointer
+    // Aggregates should be passed around as pointers to avoid huge SSA values
+    // The caller will use memcpy when needed
+    if (isAggregateType(ptrTy->pointee())) {
+      LOG_DEBUG("[IREmitter] loadPtrValue: keeping aggregate as pointer");
+      return v;
+    }
     LOG_DEBUG("[IREmitter] loadPtrValue loading from pointer");
     return current_block_->append<LoadInst>(v, ptrTy->pointee());
   }
@@ -1814,6 +1992,11 @@ inline std::shared_ptr<Value> IREmitter::loadPtrValue(std::shared_ptr<Value> v,
   auto current = v;
   auto currentPtrTy = ptrTy;
   while (currentPtrTy && !typeEquals(current->type(), expectedTy)) {
+    // Don't load aggregates even when peeling pointers
+    if (isAggregateType(currentPtrTy->pointee())) {
+      LOG_DEBUG("[IREmitter] loadPtrValue: stopping at aggregate pointer");
+      return current;
+    }
     current =
         current_block_->append<LoadInst>(current, currentPtrTy->pointee());
     currentPtrTy =
@@ -2106,6 +2289,10 @@ IREmitter::resolve_ptr(std::shared_ptr<Value> value, const SemType &expected,
         if (!innerPtrTy) {
           break;
         }
+        // Don't load aggregates when peeling pointers
+        if (isAggregateType(currentPtrTy->pointee())) {
+          break;
+        }
         current =
             current_block_->append<LoadInst>(current, currentPtrTy->pointee());
         currentPtrTy = innerPtrTy;
@@ -2121,6 +2308,15 @@ IREmitter::resolve_ptr(std::shared_ptr<Value> value, const SemType &expected,
     }
     auto tmp = current_block_->append<AllocaInst>(
         expPtr->pointee(), nullptr, 0, name_hint.empty() ? "tmp" : name_hint);
+    
+    // For aggregates, use memcpy instead of load+store
+    if (valPtr && isAggregateType(expPtr->pointee())) {
+      std::size_t byteSize = computeTypeByteSize(expPtr->pointee());
+      emitMemcpy(tmp, value, byteSize);
+      LOG_DEBUG("[IREmitter] resolve_ptr: used memcpy for aggregate reference");
+      return tmp;
+    }
+    
     std::shared_ptr<Value> toStore = value;
     if (valPtr) {
       toStore = current_block_->append<LoadInst>(value, valPtr->pointee());
@@ -2131,6 +2327,13 @@ IREmitter::resolve_ptr(std::shared_ptr<Value> value, const SemType &expected,
     current_block_->append<StoreInst>(toStore, tmp);
     LOG_DEBUG("[IREmitter] resolve_ptr: created temporary pointer for value");
     return tmp;
+  }
+
+  // For aggregate types without expected pointer, return the pointer as-is
+  // (the caller should use memcpy to copy if needed)
+  if (valPtr && isAggregateType(expectedTy)) {
+    LOG_DEBUG("[IREmitter] resolve_ptr: keeping aggregate pointer");
+    return value;
   }
 
   if (valPtr) {
@@ -2185,7 +2388,20 @@ IREmitter::emit_function(const FunctionMetaData &meta, const FunctionDecl &node,
     paramTyp.push_back(context->resolveType(p));
   }
 
-  auto retTy = context->resolveType(meta.return_type);
+  auto originalRetTy = context->resolveType(meta.return_type);
+  auto retTy = originalRetTy;
+  bool useSret = shouldUseSret(originalRetTy);
+  
+  // For large aggregate returns, use sret transformation:
+  // Change return type to void and add sret pointer as first parameter
+  if (useSret) {
+    LOG_DEBUG("[IREmitter] Using sret for function returning large aggregate: " + meta.name);
+    auto sretPtrTy = std::make_shared<PointerType>(originalRetTy);
+    paramTyp.insert(paramTyp.begin(), sretPtrTy);
+    retTy = std::make_shared<VoidType>();
+    sret_functions_[&meta] = originalRetTy;
+  }
+
   auto fnTy = std::make_shared<FunctionType>(retTy, paramTyp, false);
 
   auto fn = create_function(mangled_name, fnTy, !node.body.has_value(), &meta);
@@ -2198,12 +2414,25 @@ IREmitter::emit_function(const FunctionMetaData &meta, const FunctionDecl &node,
   }
 
   auto saved_block = current_block_;
+  auto saved_sret_ptr = current_sret_ptr_;
   functions_.push_back(fn);
   auto *previousScope = current_scope_node;
   current_block_ = fn->createBlock("entry");
   pushLocalScope();
 
   std::vector<std::string> paramNames;
+  size_t argOffset = 0;
+  
+  // Handle sret parameter
+  if (useSret) {
+    fn->args()[0]->setName("sret");
+    current_sret_ptr_ = fn->args()[0];
+    argOffset = 1;
+    LOG_DEBUG("[IREmitter] emit_function: bound sret parameter");
+  } else {
+    current_sret_ptr_ = nullptr;
+  }
+  
   if (node.self_param) {
     paramNames.emplace_back("self");
   }
@@ -2213,12 +2442,15 @@ IREmitter::emit_function(const FunctionMetaData &meta, const FunctionDecl &node,
     }
   }
 
-  for (size_t i = 0; i < fn->args().size(); ++i) {
+  // Bind regular parameters (after sret if present)
+  for (size_t i = 0; i < paramNames.size(); ++i) {
     std::string paramName = paramNames[i];
-    fn->args()[i]->setName(paramName);
+    size_t argIdx = i + argOffset;
+    fn->args()[argIdx]->setName(paramName);
+    auto paramIrTy = paramTyp[argIdx];
     auto slot =
-        current_block_->append<AllocaInst>(paramTyp[i], nullptr, 0, paramName);
-    current_block_->append<StoreInst>(fn->args()[i], slot);
+        current_block_->append<AllocaInst>(paramIrTy, nullptr, 0, paramName);
+    current_block_->append<StoreInst>(fn->args()[argIdx], slot);
     bindLocal(paramName, slot);
     LOG_DEBUG("[IREmitter] emit_function: bound param '" + paramName + "'");
   }
@@ -2235,14 +2467,38 @@ IREmitter::emit_function(const FunctionMetaData &meta, const FunctionDecl &node,
     // Emit implicit return if block not terminated
     bool terminated = current_block_->isTerminated();
     if (!terminated) {
-      if (fnTy->returnType()->kind() == TypeKind::Void) {
+      if (useSret) {
+        // For sret, copy result to sret pointer and return void
+        if (result) {
+          auto resPtrTy = std::dynamic_pointer_cast<const PointerType>(result->type());
+          if (resPtrTy && isAggregateType(originalRetTy)) {
+            // Result is a pointer to aggregate, use memcpy
+            std::size_t byteSize = computeTypeByteSize(originalRetTy);
+            emitMemcpy(current_sret_ptr_, result, byteSize);
+          } else if (resPtrTy) {
+            auto loaded = current_block_->append<LoadInst>(result, originalRetTy);
+            current_block_->append<StoreInst>(loaded, current_sret_ptr_);
+          } else {
+            current_block_->append<StoreInst>(result, current_sret_ptr_);
+          }
+        }
+        current_block_->append<ReturnInst>();
+      } else if (fnTy->returnType()->kind() == TypeKind::Void) {
         current_block_->append<ReturnInst>();
       } else {
         if (!result) {
           result = std::make_shared<ConstantUnit>();
         }
-        auto retVal = loadPtrValue(result, meta.return_type);
-        current_block_->append<ReturnInst>(retVal);
+        // For aggregates, we need to explicitly load since our convention
+        // is to keep them as pointers, but return statements need the value
+        auto retIrTy = fnTy->returnType();
+        auto resPtrTy = std::dynamic_pointer_cast<const PointerType>(result->type());
+        if (resPtrTy && isAggregateType(retIrTy)) {
+          result = current_block_->append<LoadInst>(result, retIrTy);
+        } else {
+          result = loadPtrValue(result, meta.return_type);
+        }
+        current_block_->append<ReturnInst>(result);
       }
     }
     current_scope_node = previousScope;
@@ -2250,6 +2506,7 @@ IREmitter::emit_function(const FunctionMetaData &meta, const FunctionDecl &node,
 
   popLocalScope();
   current_block_ = saved_block;
+  current_sret_ptr_ = saved_sret_ptr;
   functions_.pop_back();
   LOG_INFO("[IREmitter] Finished emitting function: " + meta.name);
   return fn;
@@ -2339,6 +2596,39 @@ inline bool IREmitter::isZeroLiteral(const Expression *expr) const {
     }
   }
   return false;
+}
+
+inline bool IREmitter::isAggregateType(const TypePtr &ty) const {
+  return ty->kind() == TypeKind::Array || ty->kind() == TypeKind::Struct;
+}
+
+inline bool IREmitter::shouldUseSret(const TypePtr &ty) const {
+  // Use sret for aggregate types that are larger than a threshold
+  // This avoids the costly by-value return of large structs
+  if (!isAggregateType(ty)) {
+    return false;
+  }
+  // Use a conservative threshold - any struct larger than 2 machine words (16 bytes on 64-bit)
+  // should use sret. This includes all structs with arrays.
+  std::size_t byteSize = computeTypeByteSize(ty);
+  return byteSize > 16;
+}
+
+inline void IREmitter::emitMemcpy(std::shared_ptr<Value> dst,
+                                   std::shared_ptr<Value> src,
+                                   std::size_t byteSize) {
+  if (byteSize == 0) {
+    return;
+  }
+  auto memcpySymbol =
+      std::make_shared<Value>(memcpy_fn_->type(), memcpy_fn_->name());
+  std::vector<std::shared_ptr<Value>> args;
+  args.push_back(dst);
+  args.push_back(src);
+  args.push_back(
+      ConstantInt::getI32(static_cast<std::uint32_t>(byteSize), true));
+  auto ptrTy = std::make_shared<PointerType>(IntegerType::i32(false));
+  current_block_->append<CallInst>(memcpySymbol, args, ptrTy);
 }
 
 } // namespace rc::ir
