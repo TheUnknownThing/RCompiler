@@ -124,14 +124,11 @@ run_test() {
     echo "Making program executable: chmod +x ./prog"
     chmod +x ./prog
 
-    echo "tmp/ contents:"
-    ls -la
-
     # Run program and capture output
     INPUT_FILE="../testcases/IR-1/src/$NAME/$NAME.in"
     EXPECTED_FILE="../testcases/IR-1/src/$NAME/$NAME.out"
     if [ -f "$INPUT_FILE" ]; then
-        echo "Running generated program with input file: $INPUT_FILE"
+        echo "Running case $NAME program with input file: $INPUT_FILE"
         set +e
         ./prog < "$INPUT_FILE" > tmp.out 2> tmp.err
         PROG_RC=$?

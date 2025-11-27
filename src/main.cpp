@@ -1,4 +1,4 @@
-#define LOGGING_LEVEL_DEBUG
+#define LOGGING_LEVEL_NONE
 
 #include <sstream>
 #include <string>
@@ -11,9 +11,7 @@
 #include "ir/visit.hpp"
 #include "lexer/lexer.hpp"
 #include "preprocessor/preprocessor.hpp"
-#include "semantic/analyzer/controlAnalyzer.hpp"
 #include "semantic/semantic.hpp"
-#include "semantic/types.hpp"
 #include "utils/logger.hpp"
 
 int main(int argc, char *argv[]) {

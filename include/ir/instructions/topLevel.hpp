@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
@@ -44,6 +45,14 @@ public:
     return inst;
   }
 
+  template <class T, class... Args>
+  std::shared_ptr<T> prepend(Args &&...args) {
+    auto inst = std::make_shared<T>(std::forward<Args>(args)...);
+    instructions_.insert(instructions_.begin() + prologue_insert_pos_, inst);
+    ++prologue_insert_pos_;
+    return inst;
+  }
+
   const std::vector<std::shared_ptr<Instruction>> &instructions() const {
     return instructions_;
   }
@@ -53,6 +62,7 @@ public:
 private:
   std::string name_;
   std::vector<std::shared_ptr<Instruction>> instructions_;
+  std::size_t prologue_insert_pos_{0};
 };
 
 class Function : public std::enable_shared_from_this<Function> {
