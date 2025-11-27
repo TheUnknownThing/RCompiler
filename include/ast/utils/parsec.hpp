@@ -391,6 +391,11 @@ parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
     return rc::LiteralType::path(std::move(segments));
   }
 
+  if (pos < toks.size() && toks[pos].type == rc::TokenType::SELF_TYPE) {
+    pos++;
+    return rc::LiteralType::path(std::vector<std::string>{"Self"});
+  }
+
   return std::nullopt;
 }
 

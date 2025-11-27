@@ -29,6 +29,7 @@ public:
   void visit(StructDecl &node) override;
   void visit(EnumDecl &node) override;
   void visit(TraitDecl &node) override;
+  void visit(ImplDecl &node) override;
 
   // Statement visitors
   void visit(LetStatement &node) override;
@@ -92,6 +93,8 @@ inline void FirstPassBuilder::visit(BaseNode &node) {
   } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
     visit(*decl);
   } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
+    visit(*decl);
+  } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
     visit(*decl);
   }
   // Statements
@@ -159,6 +162,23 @@ inline void FirstPassBuilder::visit(TraitDecl &node) {
   }
   exitScope(current_scope);
   LOG_DEBUG("[FirstPass] Exit trait scope '" + node.name + "'");
+}
+
+inline void FirstPassBuilder::visit(ImplDecl &node) {
+  LOG_DEBUG("[FirstPass] Traverse impl block");
+  for (const auto &assoc : node.associated_items) {
+    if (!assoc)
+      continue;
+    if (auto *fn = dynamic_cast<FunctionDecl *>(assoc.get())) {
+      if (fn->body && fn->body.value()) {
+        fn->body.value()->accept(*this);
+      }
+    } else if (auto *cst = dynamic_cast<ConstantItem *>(assoc.get())) {
+      if (cst->value) {
+        cst->value.value()->accept(*this);
+      }
+    }
+  }
 }
 
 inline void FirstPassBuilder::visit(LetStatement &node) {

@@ -60,7 +60,8 @@ See [whitelist.md](whitelist.md) for the concrete, implementable subset of the R
         - Expression Analysis
     - [x] Control Flow Analysis
         - Return Path Verification
-    - [x] Dirty Workarounds
+- [x] Dirty Workarounds
         - Handling `exit(0)` in `main`
 
-- [ ] IR Codegen
+- [x] IR Codegen
+    - [x] LLVM IR Emission

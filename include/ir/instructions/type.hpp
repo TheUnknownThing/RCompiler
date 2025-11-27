@@ -6,11 +6,16 @@
 #include <utility>
 #include <vector>
 
+#include "semantic/scope.hpp"
+
 namespace rc::ir {
+
+// fwd decls
+class BasicBlock;
+class Function;
 
 enum class TypeKind {
   Void,
-  UnitZst,
   Integer,
   Pointer,
   Array,
@@ -26,7 +31,6 @@ public:
   TypeKind kind() const { return kind_; }
 
   bool isVoid() const { return kind_ == TypeKind::Void; }
-  bool isUnitZst() const { return kind_ == TypeKind::UnitZst; }
 
 private:
   TypeKind kind_;
@@ -37,11 +41,6 @@ using TypePtr = std::shared_ptr<const Type>;
 class VoidType final : public Type {
 public:
   VoidType() : Type(TypeKind::Void) {}
-};
-
-class UnitZstType final : public Type {
-public:
-  UnitZstType() : Type(TypeKind::UnitZst) {}
 };
 
 class IntegerType final : public Type {
@@ -110,17 +109,22 @@ private:
 class FunctionType final : public Type {
 public:
   FunctionType(TypePtr retTy, std::vector<TypePtr> paramTys,
-               bool isVarArg = false)
+               bool isVarArg = false,
+               std::shared_ptr<Function> function = nullptr)
       : Type(TypeKind::Function), ret_(std::move(retTy)),
-        params_(std::move(paramTys)), varArg_(isVarArg) {}
+        params_(std::move(paramTys)), varArg_(isVarArg),
+        function_(std::move(function)) {}
   const TypePtr &returnType() const { return ret_; }
   const std::vector<TypePtr> &paramTypes() const { return params_; }
   bool isVarArg() const { return varArg_; }
+  const std::shared_ptr<Function> &function() const { return function_; }
+  void setFunction(std::shared_ptr<Function> fn) { function_ = std::move(fn); }
 
 private:
   TypePtr ret_;
   std::vector<TypePtr> params_;
   bool varArg_;
+  std::shared_ptr<Function> function_;
 };
 
 class Value {
@@ -138,7 +142,7 @@ protected:
 
 private:
   TypePtr type_;
-  std::string name_;
+  std::string name_; // register name
 };
 
 class Constant : public Value {
@@ -173,16 +177,12 @@ private:
 
 class ConstantUnit final : public Constant {
 public:
-  ConstantUnit() : Constant(std::make_shared<UnitZstType>()) {}
+  ConstantUnit() : Constant(std::make_shared<VoidType>()) {}
 };
 
 class ConstantNull final : public Constant {
 public:
   explicit ConstantNull(TypePtr ptrTy) : Constant(std::move(ptrTy)) {}
 };
-
-// fwd decls
-class BasicBlock;
-class Function;
 
 } // namespace rc::ir

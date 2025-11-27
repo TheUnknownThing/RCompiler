@@ -1,16 +1,17 @@
-#define LOGGING_LEVEL_DEBUG
+#define LOGGING_LEVEL_NONE
 
 #include <sstream>
 #include <string>
 #include <vector>
+#include <fstream>
 
 #include "ast/parser.hpp"
 #include "ast/visitors/pretty_print.hpp"
+#include "ir/gen.hpp"
+#include "ir/visit.hpp"
 #include "lexer/lexer.hpp"
 #include "preprocessor/preprocessor.hpp"
-#include "semantic/analyzer/controlAnalyzer.hpp"
 #include "semantic/semantic.hpp"
-#include "semantic/types.hpp"
 #include "utils/logger.hpp"
 
 int main(int argc, char *argv[]) {
@@ -47,6 +48,16 @@ int main(int argc, char *argv[]) {
 
       rc::SemanticAnalyzer analyzer;
       analyzer.analyze(ast);
+
+      auto *root_scope = analyzer.root_scope();
+
+      rc::ir::Context irCtx(analyzer.expr_cache());
+      rc::ir::IREmitter emitter;
+      emitter.run(ast, root_scope, irCtx);
+
+      std::ofstream outFile("tmp/output.ll");
+      rc::ir::emitLLVM(emitter.module(), outFile);
+      outFile.close();
     } else {
       LOG_ERROR("Failed!");
     }

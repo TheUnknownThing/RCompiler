@@ -24,7 +24,7 @@ struct FunctionMetaData {
   std::vector<std::shared_ptr<BasePattern>> param_names;
   std::vector<SemType> param_types;
   SemType return_type;
-  const FunctionDecl *decl = nullptr;
+  FunctionDecl *decl = nullptr;
 };
 
 struct ConstantMetaData {
@@ -149,8 +149,20 @@ public:
       return nullptr;
     return &it->second;
   }
+  const CollectedItem *find_value_item(const std::string &name) const {
+    auto it = value_items_.find(name);
+    if (it == value_items_.end())
+      return nullptr;
+    return &it->second;
+  }
 
   CollectedItem *find_type_item(const std::string &name) {
+    auto it = type_items_.find(name);
+    if (it == type_items_.end())
+      return nullptr;
+    return &it->second;
+  }
+  const CollectedItem *find_type_item(const std::string &name) const {
     auto it = type_items_.find(name);
     if (it == type_items_.end())
       return nullptr;

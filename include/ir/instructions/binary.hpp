@@ -13,9 +13,12 @@ enum class BinaryOpKind {
   SUB,
   MUL,
   SDIV,
+  UDIV,
   SREM,
+  UREM,
   SHL,
   ASHR,
+  LSHR,
   AND,
   OR,
   XOR,
@@ -37,10 +40,6 @@ public:
     auto riTy = std::dynamic_pointer_cast<const IntegerType>(this->type());
     if (!li || !ri || !riTy) {
       throw std::invalid_argument("BinaryOpInst requires integer types");
-    }
-    if (li->bits() != ri->bits() || riTy->bits() != li->bits()) {
-      throw std::invalid_argument(
-          "BinaryOpInst operand/result bit width mismatch");
     }
   }
 

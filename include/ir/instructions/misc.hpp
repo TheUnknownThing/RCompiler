@@ -112,4 +112,49 @@ private:
   std::shared_ptr<Value> ifFalse_;
 };
 
+class ZExtInst : public Instruction {
+public:
+  ZExtInst(std::shared_ptr<Value> src, TypePtr destTy, std::string name = {})
+      : Instruction(std::move(destTy), std::move(name)), src_(std::move(src)) {
+    if (!src_) {
+      throw std::invalid_argument("ZExtInst source cannot be null");
+    }
+  }
+
+  const std::shared_ptr<Value> &source() const { return src_; }
+
+private:
+  std::shared_ptr<Value> src_;
+};
+
+class SExtInst : public Instruction {
+public:
+  SExtInst(std::shared_ptr<Value> src, TypePtr destTy, std::string name = {})
+      : Instruction(std::move(destTy), std::move(name)), src_(std::move(src)) {
+    if (!src_) {
+      throw std::invalid_argument("SExtInst source cannot be null");
+    }
+  }
+
+  const std::shared_ptr<Value> &source() const { return src_; }
+
+private:
+  std::shared_ptr<Value> src_;
+};
+
+class TruncInst : public Instruction {
+public:
+  TruncInst(std::shared_ptr<Value> src, TypePtr destTy, std::string name = {})
+      : Instruction(std::move(destTy), std::move(name)), src_(std::move(src)) {
+    if (!src_) {
+      throw std::invalid_argument("TruncInst source cannot be null");
+    }
+  }
+
+  const std::shared_ptr<Value> &source() const { return src_; }
+
+private:
+  std::shared_ptr<Value> src_;
+};
+
 } // namespace rc::ir

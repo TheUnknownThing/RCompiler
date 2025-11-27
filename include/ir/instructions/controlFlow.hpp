@@ -53,4 +53,9 @@ private:
   std::shared_ptr<Value> val_;
 };
 
+class UnreachableInst : public Instruction {
+public:
+  UnreachableInst() : Instruction(std::make_shared<VoidType>()) {}
+};
+
 } // namespace rc::ir
