@@ -58,3 +58,4 @@ third_party/llvm/
 examples/
 
 tmp/
+!ci/files/IR/builtin.ll
