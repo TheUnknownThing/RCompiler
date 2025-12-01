@@ -51,15 +51,17 @@ int main(int argc, char *argv[]) {
 
       auto *root_scope = analyzer.root_scope();
 
-      rc::ir::Context irCtx(analyzer.expr_cache());
-      rc::ir::IREmitter emitter;
-      emitter.run(ast, root_scope, irCtx);
-
-      std::ofstream outFile("tmp/output.ll");
-      rc::ir::emitLLVM(emitter.module(), outFile);
-      outFile.close();
-    } else {
-      LOG_ERROR("Failed!");
+      try {
+        rc::ir::Context irCtx(analyzer.expr_cache());
+        rc::ir::IREmitter emitter;
+        emitter.run(ast, root_scope, irCtx);
+        std::ofstream outFile("tmp/output.ll");
+        rc::ir::emitLLVM(emitter.module(), outFile);
+        outFile.close();
+      } catch (...) {
+        LOG_ERROR("Semantic error during IR emission");
+        return 0;
+      }
     }
 
   } catch (const std::exception &e) {
