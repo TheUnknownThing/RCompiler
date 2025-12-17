@@ -51,12 +51,17 @@ int main(int argc, char *argv[]) {
 
       auto *root_scope = analyzer.root_scope();
 
-      rc::ir::Context irCtx(analyzer.expr_cache());
-      rc::ir::IREmitter emitter;
-      emitter.run(ast, root_scope, irCtx);
-      std::ofstream outFile("tmp/output.ll");
-      rc::ir::emitLLVM(emitter.module(), outFile);
-      outFile.close();
+      try {
+        rc::ir::Context irCtx(analyzer.expr_cache());
+        rc::ir::IREmitter emitter;
+        emitter.run(ast, root_scope, irCtx);
+        std::ofstream outFile("tmp/output.ll");
+        rc::ir::emitLLVM(emitter.module(), outFile);
+        outFile.close();
+      } catch (...) {
+        LOG_ERROR("Error during IR generation");
+        return 0;
+      }
     }
 
   } catch (const std::exception &e) {
