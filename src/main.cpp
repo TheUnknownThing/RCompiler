@@ -1,6 +1,5 @@
 #define LOGGING_LEVEL_NONE
 
-#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -55,9 +54,7 @@ int main(int argc, char *argv[]) {
         rc::ir::Context irCtx(analyzer.expr_cache());
         rc::ir::IREmitter emitter;
         emitter.run(ast, root_scope, irCtx);
-        std::ofstream outFile("tmp/output.ll");
-        rc::ir::emitLLVM(emitter.module(), outFile);
-        outFile.close();
+        rc::ir::emitLLVM(emitter.module(), std::cout);
       } catch (...) {
         LOG_ERROR("Error during IR generation");
         return 0;
