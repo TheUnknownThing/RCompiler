@@ -10,9 +10,9 @@ target triple = "riscv32-unknown-unknown-elf"
 
 ; Function Attrs: noinline nounwind optnone ssp uwtable(sync)
 define void @_Function_prelude_print(ptr noundef %0) #0 {
-  %2 = alloca ptr, align 8
-  store ptr %0, ptr %2, align 8
-  %3 = load ptr, ptr %2, align 8
+  %2 = alloca ptr, align 4
+  store ptr %0, ptr %2, align 4
+  %3 = load ptr, ptr %2, align 4
   %4 = call i32 (ptr, ...) @printf(ptr noundef @.str, ptr noundef %3)
   ret void
 }
@@ -21,9 +21,9 @@ declare i32 @printf(ptr noundef, ...) #1
 
 ; Function Attrs: noinline nounwind optnone ssp uwtable(sync)
 define void @_Function_prelude_println(ptr noundef %0) #0 {
-  %2 = alloca ptr, align 8
-  store ptr %0, ptr %2, align 8
-  %3 = load ptr, ptr %2, align 8
+  %2 = alloca ptr, align 4
+  store ptr %0, ptr %2, align 4
+  %3 = load ptr, ptr %2, align 4
   %4 = call i32 (ptr, ...) @printf(ptr noundef @.str.1, ptr noundef %3)
   ret void
 }
@@ -48,12 +48,12 @@ define void @_Function_prelude_printlnInt(i32 noundef %0) #0 {
 
 ; Function Attrs: noinline nounwind optnone ssp uwtable(sync)
 define ptr @_Function_prelude_getString() #0 {
-  %1 = alloca ptr, align 8
+  %1 = alloca ptr, align 4
   %2 = call ptr @malloc(i32 noundef 256)
-  store ptr %2, ptr %1, align 8
-  %3 = load ptr, ptr %1, align 8
+  store ptr %2, ptr %1, align 4
+  %3 = load ptr, ptr %1, align 4
   %4 = call i32 (ptr, ...) @scanf(ptr noundef @.str, ptr noundef %3)
-  %5 = load ptr, ptr %1, align 8
+  %5 = load ptr, ptr %1, align 4
   ret ptr %5
 }
 
@@ -71,13 +71,13 @@ define i32 @_Function_prelude_getInt() #0 {
 
 ; Function Attrs: noinline nounwind optnone ssp uwtable(sync)
 define ptr @_Function_prelude_builtin_memset(ptr noundef %0, i32 noundef %1, i32 noundef %2) #0 {
-  %4 = alloca ptr, align 8
+  %4 = alloca ptr, align 4
   %5 = alloca i32, align 4
   %6 = alloca i32, align 4
-  store ptr %0, ptr %4, align 8
+  store ptr %0, ptr %4, align 4
   store i32 %1, ptr %5, align 4
   store i32 %2, ptr %6, align 4
-  %7 = load ptr, ptr %4, align 8
+  %7 = load ptr, ptr %4, align 4
   %8 = load i32, ptr %5, align 4
   %9 = load i32, ptr %6, align 4
   %10 = call ptr @memset(ptr noundef %7, i32 noundef %8, i32 noundef %9)
@@ -88,14 +88,14 @@ declare ptr @memset(ptr noundef, i32 noundef, i32 noundef) #1
 
 ; Function Attrs: noinline nounwind optnone ssp uwtable(sync)
 define ptr @_Function_prelude_builtin_memcpy(ptr noundef %0, ptr noundef %1, i32 noundef %2) #0 {
-  %4 = alloca ptr, align 8
-  %5 = alloca ptr, align 8
+  %4 = alloca ptr, align 4
+  %5 = alloca ptr, align 4
   %6 = alloca i32, align 4
-  store ptr %0, ptr %4, align 8
-  store ptr %1, ptr %5, align 8
+  store ptr %0, ptr %4, align 4
+  store ptr %1, ptr %5, align 4
   store i32 %2, ptr %6, align 4
-  %7 = load ptr, ptr %4, align 8
-  %8 = load ptr, ptr %5, align 8
+  %7 = load ptr, ptr %4, align 4
+  %8 = load ptr, ptr %5, align 4
   %9 = load i32, ptr %6, align 4
   %10 = call ptr @memcpy(ptr noundef %7, ptr noundef %8, i32 noundef %9)
   ret ptr %10

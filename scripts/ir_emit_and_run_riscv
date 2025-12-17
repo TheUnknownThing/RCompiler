@@ -31,6 +31,25 @@ else
     echo "Test case: $ARG"
 fi
 
+# Find clang (LLVM 15+)
+get_clang() {
+    (which clang-15 > /dev/null 2> /dev/null && echo clang-15) || \
+    (which clang-16 > /dev/null 2> /dev/null && echo clang-16) || \
+    (which clang-17 > /dev/null 2> /dev/null && echo clang-17) || \
+    (which clang-18 > /dev/null 2> /dev/null && echo clang-18) || \
+    (which clang > /dev/null 2> /dev/null && echo clang) || \
+    (echo "clang not found" >&2 && exit 1)
+}
+CLANG=$(get_clang)
+echo "Using clang: $CLANG"
+
+# Check reimu is available
+if ! which reimu > /dev/null 2>&1; then
+    echo "Error: reimu not found. Please install reimu (RISC-V emulator)."
+    exit 1
+fi
+echo "Using reimu: $(which reimu)"
+
 # Build project once
 echo "Running: cmake --build build"
 cmake --build build
@@ -63,6 +82,11 @@ fi
 # Helpers / state
 PASSED=()
 FAILED=()
+
+# Remove '@plt' suffix not supported by reimu
+remove_plt() {
+    sed 's/@plt//g' "$1" > "$2"
+}
 
 run_test() {
     local NAME="$1"
@@ -103,50 +127,77 @@ run_test() {
         FAILED+=( "$NAME (missing output.ll)" )
         return 1
     fi
+    if [ ! -f "builtin.ll" ]; then
+        echo "Error: builtin.ll not found in tmp/"
+        ls -la
+        cd "$ROOT_DIR"
+        FAILED+=( "$NAME (missing builtin.ll)" )
+        return 1
+    fi
 
-    # Prepare clang command
-    CLANG_CMD=(clang -O0 "output.ll" "builtin.ll" -o prog)
+    # Inject RISC-V 32-bit target info into output.ll if missing
+    if ! grep -q "target datalayout" output.ll; then
+        echo "Injecting RISC-V 32-bit target info into output.ll..."
+        {
+            echo 'target datalayout = "e-m:e-p:32:32-i64:64-n32-S128"'
+            echo 'target triple = "riscv32-unknown-unknown-elf"'
+            cat output.ll
+        } > output.ll.tmp && mv output.ll.tmp output.ll
+    fi
 
-    echo "Running: ${CLANG_CMD[*]}"
+    # Compile LLVM IR to RISC-V assembly
+    echo "Compiling output.ll to RISC-V assembly with $CLANG..."
     set +e
-    "${CLANG_CMD[@]}"
+    $CLANG -S --target=riscv32-unknown-elf "output.ll" -o "output.s.source" 2>&1
     CLANG_RC=$?
     set -e
     if [ "$CLANG_RC" -ne 0 ]; then
-        echo "clang failed (exit $CLANG_RC)"
+        echo "clang failed compiling output.ll (exit $CLANG_RC)"
         cd "$ROOT_DIR"
-        FAILED+=( "$NAME (clang/link failed)" )
+        FAILED+=( "$NAME (clang output.ll failed)" )
         return 1
     fi
 
-    echo "Making program executable: chmod +x ./prog"
-    chmod +x ./prog
+    echo "Compiling builtin.ll to RISC-V assembly with $CLANG..."
+    set +e
+    $CLANG -S --target=riscv32-unknown-elf -O0 -fno-builtin "builtin.ll" -o "builtin.s.source" 2>&1
+    CLANG_RC=$?
+    set -e
+    if [ "$CLANG_RC" -ne 0 ]; then
+        echo "clang failed compiling builtin.ll (exit $CLANG_RC)"
+        cd "$ROOT_DIR"
+        FAILED+=( "$NAME (clang builtin.ll failed)" )
+        return 1
+    fi
 
-    # Run program and capture output
+    # Remove @plt suffix
+    remove_plt "output.s.source" "test.s"
+    remove_plt "builtin.s.source" "builtin.s"
+
+    # Prepare input/output files
     INPUT_FILE="../testcases/IR-1/src/$NAME/$NAME.in"
     EXPECTED_FILE="../testcases/IR-1/src/$NAME/$NAME.out"
-    if [ -f "$INPUT_FILE" ]; then
-        echo "Running case $NAME program with input file: $INPUT_FILE"
-        set +e
-        ./prog < "$INPUT_FILE" > tmp.out 2> tmp.err
-        PROG_RC=$?
-        set -e
-    else
-        echo "Running generated program without input file"
-        set +e
-        ./prog > tmp.out 2> tmp.err
-        PROG_RC=$?
-        set -e
-    fi
 
-    if [ "$PROG_RC" -ne 0 ]; then
-        echo "Program exited with non-zero status ($PROG_RC). See tmp.err:"
-        sed -n '1,200p' tmp.err || true
+    # Run with reimu
+    echo "Running with reimu..."
+    set +e
+    if [ -f "$INPUT_FILE" ]; then
+        reimu -i="$INPUT_FILE" -s=8M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
+    else
+        reimu -s=8M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
+    fi
+    REIMU_RC=$?
+    set -e
+
+    if [ "$REIMU_RC" -ne 0 ]; then
+        echo "reimu exited with non-zero status ($REIMU_RC). See reimu_err.txt:"
+        sed -n '1,200p' reimu_err.txt || true
         cd "$ROOT_DIR"
-        FAILED+=( "$NAME (runtime exit $PROG_RC)" )
+        FAILED+=( "$NAME (reimu exit $REIMU_RC)" )
         return 1
     fi
 
+    # Compare output
     if [ -f "$EXPECTED_FILE" ]; then
         set +e
         diff -w "$EXPECTED_FILE" tmp.out >/dev/null 2>&1
@@ -154,7 +205,7 @@ run_test() {
         set -e
         if [ "$DIFF_RC" -ne 0 ]; then
             echo "Output differs from expected output ($EXPECTED_FILE)."
-            diff "$EXPECTED_FILE" tmp.out -w || true
+            diff -w "$EXPECTED_FILE" tmp.out || true
             cd "$ROOT_DIR"
             FAILED+=( "$NAME (output mismatch)" )
             return 1

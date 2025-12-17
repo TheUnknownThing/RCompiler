@@ -536,7 +536,15 @@ inline void IREmitter::visit(PrefixExpression &node) {
 
   switch (node.op.type) {
   case TokenType::NOT: {
-    auto lhs = std::make_shared<ConstantInt>(IntegerType::i32(), -1);
+    auto intTy = std::dynamic_pointer_cast<const IntegerType>(irTy);
+    if (!intTy) {
+      throw IRException("NOT operator requires integer type operand");
+    }
+    std::uint64_t allOnes =
+        (intTy->bits() == 64) ? ~0ULL : ((1ULL << intTy->bits()) - 1);
+    auto lhs = std::make_shared<ConstantInt>(
+        std::make_shared<IntegerType>(intTy->bits(), intTy->isSigned()),
+        allOnes);
     pushOperand(current_block_->append<BinaryOpInst>(BinaryOpKind::XOR, lhs,
                                                      operand, irTy));
     break;
