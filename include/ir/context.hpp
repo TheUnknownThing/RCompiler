@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <stdexcept>
-#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -25,7 +24,8 @@ public:
   TypePtr resolveType(const SemType &type) const;
 
 private:
-  const std::unordered_map<const BaseNode *, SemType> &exprCache_; // from semantic
+  const std::unordered_map<const BaseNode *, SemType>
+      &exprCache_; // from semantic
 };
 
 inline SemType Context::lookupType(const BaseNode *node) const {
@@ -49,6 +49,12 @@ inline TypePtr Context::resolveType(const SemType &type) const {
       return IntegerType::isize();
     case SemPrimitiveKind::USIZE:
       return IntegerType::usize();
+    case SemPrimitiveKind::CHAR:
+      return IntegerType::i8(false);
+    case SemPrimitiveKind::STR:
+      return IntegerType::i8(false);
+    case SemPrimitiveKind::STRING:
+      return std::make_shared<PointerType>(IntegerType::i8(false));
     case SemPrimitiveKind::UNIT:
       return std::make_shared<VoidType>();
     case SemPrimitiveKind::NEVER:
@@ -66,8 +72,8 @@ inline TypePtr Context::resolveType(const SemType &type) const {
         resolveType(*type.as_reference().target));
   }
   if (type.is_array()) {
-    return std::make_shared<ArrayType>(
-        resolveType(*type.as_array().element), type.as_array().size);
+    return std::make_shared<ArrayType>(resolveType(*type.as_array().element),
+                                       type.as_array().size);
   }
   if (type.is_tuple()) {
     std::vector<TypePtr> elems;
@@ -94,6 +100,5 @@ inline TypePtr Context::resolveType(const SemType &type) const {
   }
   throw std::runtime_error("Context::resolveType: unsupported type kind");
 }
-
 
 } // namespace rc::ir

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cassert>
+#include <cctype>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -45,8 +47,14 @@ public:
     for (const auto &c : mod.constants()) {
       if (!c)
         continue;
-      out_ << "@" << constantName(*c) << " = constant "
-           << typeToString(c->type()) << " " << valueRef(*c) << "\n";
+      if (auto cs = dynamic_cast<const ConstantString *>(c.get())) {
+        out_ << "@" << constantName(*c) << " = constant "
+             << typeToString(cs->arrayType()) << " " << encodeStringData(*cs)
+             << "\n";
+      } else {
+        out_ << "@" << constantName(*c) << " = constant "
+             << typeToString(c->type()) << " " << valueRef(*c) << "\n";
+      }
     }
     if (!mod.constants().empty())
       out_ << "\n";
@@ -69,11 +77,11 @@ public:
     std::string mangledName = functionName(fn);
 
     if (isDecl) {
-      out_ << "declare " << typeToString(fty->returnType()) << " @" << mangledName
-           << "(";
+      out_ << "declare " << typeToString(fty->returnType()) << " @"
+           << mangledName << "(";
     } else {
-      out_ << "define " << typeToString(fty->returnType()) << " @" << mangledName
-           << "(";
+      out_ << "define " << typeToString(fty->returnType()) << " @"
+           << mangledName << "(";
     }
 
     // Arguments
@@ -151,16 +159,16 @@ private:
     auto it = blockNames_.find(bb);
     if (it != blockNames_.end())
       return it->second;
-    std::string base = bb->name().empty() ? genBlock() : bb->name() + genBlock();
+    std::string base =
+        bb->name().empty() ? genBlock() : bb->name() + genBlock();
     blockNames_[bb] = base;
     return base;
   }
 
   std::string genTmp() { return "val" + std::to_string(nextValueId_++); }
   std::string genBlock() { return "bb" + std::to_string(nextBlockId_++); }
-  std::string uniqueGlobal(
-      const std::string &base,
-      std::unordered_map<std::string, int> &counters) {
+  std::string uniqueGlobal(const std::string &base,
+                           std::unordered_map<std::string, int> &counters) {
     auto &ctr = counters[base];
     std::string name = base;
     if (ctr > 0) {
@@ -330,6 +338,9 @@ private:
         return ci->value() ? "true" : "false";
       return std::to_string(ci->value());
     }
+    if (auto cs = dynamic_cast<const ConstantString *>(&v)) {
+      return "@" + constantName(*cs);
+    }
     if (dynamic_cast<const ConstantNull *>(&v)) {
       return "";
     }
@@ -337,6 +348,41 @@ private:
       return "";
     }
     return localName(&v);
+  }
+
+  std::string encodeStringData(const ConstantString &cs) const {
+    std::ostringstream oss;
+    oss << "c\"";
+    for (unsigned char ch : cs.data()) {
+      switch (ch) {
+      case '\\':
+        oss << "\\\\";
+        break;
+      case '"':
+        oss << "\\\"";
+        break;
+      case '\n':
+        oss << "\\0A";
+        break;
+      case '\r':
+        oss << "\\0D";
+        break;
+      case '\t':
+        oss << "\\09";
+        break;
+      default:
+        if (std::isprint(ch) && ch != '"') {
+          oss << static_cast<char>(ch);
+        } else {
+          oss << "\\" << std::uppercase << std::hex << std::setw(2)
+              << std::setfill('0') << static_cast<int>(ch) << std::nouppercase
+              << std::dec;
+        }
+        break;
+      }
+    }
+    oss << "\"";
+    return oss.str();
   }
 
   std::string typedValueRef(const Value &v) {
@@ -479,8 +525,7 @@ private:
       out_ << localName(ld) << " = load ";
       if (ld->isVolatile())
         out_ << "volatile ";
-      out_ << typeToString(ld->type()) << ", ptr "
-           << valueRef(*ld->pointer());
+      out_ << typeToString(ld->type()) << ", ptr " << valueRef(*ld->pointer());
       if (ld->alignment())
         out_ << ", align " << ld->alignment();
       return;

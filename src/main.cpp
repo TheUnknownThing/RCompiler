@@ -1,9 +1,9 @@
 #define LOGGING_LEVEL_NONE
 
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <fstream>
 
 #include "ast/parser.hpp"
 #include "ast/visitors/pretty_print.hpp"
@@ -51,17 +51,12 @@ int main(int argc, char *argv[]) {
 
       auto *root_scope = analyzer.root_scope();
 
-      try {
-        rc::ir::Context irCtx(analyzer.expr_cache());
-        rc::ir::IREmitter emitter;
-        emitter.run(ast, root_scope, irCtx);
-        std::ofstream outFile("tmp/output.ll");
-        rc::ir::emitLLVM(emitter.module(), outFile);
-        outFile.close();
-      } catch (...) {
-        LOG_ERROR("Semantic error during IR emission");
-        return 0;
-      }
+      rc::ir::Context irCtx(analyzer.expr_cache());
+      rc::ir::IREmitter emitter;
+      emitter.run(ast, root_scope, irCtx);
+      std::ofstream outFile("tmp/output.ll");
+      rc::ir::emitLLVM(emitter.module(), outFile);
+      outFile.close();
     }
 
   } catch (const std::exception &e) {

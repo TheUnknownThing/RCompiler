@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -109,6 +110,8 @@ private:
   std::unordered_map<const FunctionMetaData *, FuncPtr> function_table_;
   std::unordered_map<const FunctionMetaData *, ValuePtr> function_symbols_;
   std::unordered_map<std::string, ValuePtr> globals_;
+  std::unordered_map<std::string, std::shared_ptr<ConstantString>>
+      interned_strings_;
 
   std::vector<std::unordered_map<std::string, ValuePtr>>
       locals_; // local mapped to their memory location or SSA
@@ -121,6 +124,7 @@ private:
 
   std::unordered_map<const FunctionMetaData *, TypePtr> sret_functions_;
   ValuePtr current_sret_ptr_;
+  int next_string_id_{0};
 
   ValuePtr popOperand();
   void pushOperand(ValuePtr v);
@@ -175,6 +179,10 @@ private:
   FuncPtr memcpy_fn_;
   FuncPtr createMemsetFn();
   FuncPtr createMemcpyFn();
+  std::shared_ptr<ConstantString>
+  internStringLiteral(const std::string &data_with_null);
+  static char decodeCharLiteral(const std::string &literal);
+  static std::string decodeStringLiteral(const std::string &literal);
   struct TypeLayoutInfo {
     std::size_t size;
     std::size_t align;
@@ -209,6 +217,8 @@ inline void IREmitter::run(const std::shared_ptr<RootNode> &root,
   struct_types_.clear();
   sret_functions_.clear();
   current_sret_ptr_ = nullptr;
+  interned_strings_.clear();
+  next_string_id_ = 0;
   locals_.emplace_back();
 
   memset_fn_ = createMemsetFn();
@@ -602,11 +612,37 @@ inline void IREmitter::visit(LiteralExpression &node) {
   const auto semTy = context->lookupType(&node);
   const auto irTy = context->resolveType(semTy);
 
+  if (semTy.is_reference()) {
+    const auto &ref = semTy.as_reference();
+    if (ref.target->is_primitive() &&
+        ref.target->as_primitive().kind == SemPrimitiveKind::STR) {
+      auto decoded = decodeStringLiteral(node.value);
+      decoded.push_back('\0');
+      auto cst = internStringLiteral(decoded);
+      pushOperand(cst);
+      return;
+    }
+  }
+
   if (semTy.is_primitive()) {
     switch (semTy.as_primitive().kind) {
     case SemPrimitiveKind::BOOL: {
       bool value = node.value == "true";
       pushOperand(ConstantInt::getI1(value));
+      return;
+    }
+    case SemPrimitiveKind::CHAR: {
+      char ch = decodeCharLiteral(node.value);
+      pushOperand(std::make_shared<ConstantInt>(IntegerType::i8(false),
+                                                static_cast<std::uint8_t>(ch)));
+      return;
+    }
+    case SemPrimitiveKind::STRING:
+    case SemPrimitiveKind::STR: {
+      auto decoded = decodeStringLiteral(node.value);
+      decoded.push_back('\0');
+      auto cst = internStringLiteral(decoded);
+      pushOperand(cst);
       return;
     }
     case SemPrimitiveKind::UNIT: {
@@ -621,7 +657,6 @@ inline void IREmitter::visit(LiteralExpression &node) {
   // Integer
   auto intTy = std::dynamic_pointer_cast<const IntegerType>(irTy);
   if (!intTy) {
-    // TODO: support char & string literals
     throw IRException("unsupported literal type");
   }
   std::uint64_t parsed = 0;
@@ -690,6 +725,14 @@ inline void IREmitter::visit(ConstantItem &node) {
     // TODO: Treat ANY_INT as i32
     irConst =
         ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_any_int()), true);
+  } else if (cv.is_char()) {
+    irConst = std::make_shared<ConstantInt>(
+        IntegerType::i8(false), static_cast<std::uint8_t>(cv.as_char()));
+  } else if (cv.is_string()) {
+    auto decoded = decodeStringLiteral(cv.as_string());
+    decoded.push_back('\0');
+    auto strConst = std::make_shared<ConstantString>(decoded);
+    irConst = strConst;
   } else if (cv.type.is_primitive() &&
              cv.type.as_primitive().kind == SemPrimitiveKind::UNIT) {
     irConst = std::make_shared<ConstantUnit>();
@@ -849,11 +892,17 @@ inline void IREmitter::visit(StructDecl &node) {
     } else if (cv.is_any_int()) {
       irConst = ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_any_int()),
                                     true);
+    } else if (cv.is_char()) {
+      irConst = std::make_shared<ConstantInt>(
+          IntegerType::i8(false), static_cast<std::uint8_t>(cv.as_char()));
+    } else if (cv.is_string()) {
+      auto decoded = decodeStringLiteral(cv.as_string());
+      decoded.push_back('\0');
+      irConst = std::make_shared<ConstantString>(decoded);
     } else if (cv.type.is_primitive() &&
                cv.type.as_primitive().kind == SemPrimitiveKind::UNIT) {
       irConst = std::make_shared<ConstantUnit>();
     } else {
-      // TODO: support char & string constants
       continue;
     }
     auto mangled_const = mangle_constant(c.name, item->owner_scope, item->name);
@@ -1592,6 +1641,13 @@ inline void IREmitter::visit(PathExpression &node) {
   } else if (cv.is_any_int()) {
     irConst =
         ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_any_int()), true);
+  } else if (cv.is_char()) {
+    irConst = std::make_shared<ConstantInt>(
+        IntegerType::i8(false), static_cast<std::uint8_t>(cv.as_char()));
+  } else if (cv.is_string()) {
+    auto decoded = decodeStringLiteral(cv.as_string());
+    decoded.push_back('\0');
+    irConst = std::make_shared<ConstantString>(decoded);
   } else if (cv.type.is_primitive() &&
              cv.type.as_primitive().kind == SemPrimitiveKind::UNIT) {
     irConst = std::make_shared<ConstantUnit>();
@@ -2231,6 +2287,193 @@ inline FuncPtr IREmitter::create_function(const std::string &name,
   auto fn = module_.createFunction(name, ty, is_external);
   function_table_[meta] = fn;
   return fn;
+}
+
+inline std::shared_ptr<ConstantString>
+IREmitter::internStringLiteral(const std::string &data_with_null) {
+  auto it = interned_strings_.find(data_with_null);
+  if (it != interned_strings_.end()) {
+    return it->second;
+  }
+
+  auto name = "_StrLit_" + std::to_string(next_string_id_++);
+  auto cst = std::make_shared<ConstantString>(data_with_null);
+  cst->setName(name);
+  module_.createConstant(cst);
+  interned_strings_[data_with_null] = cst;
+  return cst;
+}
+
+inline char IREmitter::decodeCharLiteral(const std::string &literal) {
+  if (literal.size() < 3 || literal.front() != '\'' || literal.back() != '\'') {
+    throw IRException("invalid char literal: " + literal);
+  }
+
+  auto ensure_ascii = [](unsigned value) -> char {
+    if (value > 0x7F) {
+      throw IRException("non-ASCII char literal value");
+    }
+    return static_cast<char>(value);
+  };
+
+  if (literal[1] != '\\') {
+    return ensure_ascii(static_cast<unsigned char>(literal[1]));
+  }
+
+  if (literal.size() < 4) {
+    throw IRException("truncated escape in char literal: " + literal);
+  }
+
+  const char esc = literal[2];
+  switch (esc) {
+  case '\\':
+    return '\\';
+  case '\'':
+    return '\'';
+  case '"':
+    return '"';
+  case 'n':
+    return '\n';
+  case 'r':
+    return '\r';
+  case 't':
+    return '\t';
+  case '0':
+    return '\0';
+  case 'x': {
+    if (literal.size() < 6)
+      throw IRException("escape too short in char literal");
+    auto hexVal = [](char ch) -> int {
+      if (ch >= '0' && ch <= '9')
+        return ch - '0';
+      if (ch >= 'a' && ch <= 'f')
+        return 10 + (ch - 'a');
+      if (ch >= 'A' && ch <= 'F')
+        return 10 + (ch - 'A');
+      return -1;
+    };
+    int hi = hexVal(literal[3]);
+    int lo = hexVal(literal[4]);
+    if (hi < 0 || lo < 0) {
+      throw IRException("invalid hex escape in char literal");
+    }
+    return ensure_ascii(static_cast<unsigned>((hi << 4) | lo));
+  }
+  default:
+    return ensure_ascii(static_cast<unsigned char>(esc));
+  }
+}
+
+inline std::string IREmitter::decodeStringLiteral(const std::string &literal) {
+  if (literal.empty()) {
+    return {};
+  }
+
+  std::size_t pos = 0;
+  if (literal[pos] == 'c') {
+    ++pos; // c"..." treated the same as normal
+  }
+
+  bool isRaw = false;
+  std::size_t hashCount = 0;
+  if (pos < literal.size() && literal[pos] == 'r') {
+    isRaw = true;
+    ++pos;
+    while (pos < literal.size() && literal[pos] == '#') {
+      ++hashCount;
+      ++pos;
+    }
+  }
+
+  auto firstQuote = literal.find('"', pos);
+  auto lastQuote = literal.rfind('"');
+  if (firstQuote == std::string::npos || lastQuote == std::string::npos ||
+      lastQuote <= firstQuote) {
+    // Already normalized or malformed; return as-is to avoid blocking IR
+    return literal;
+  }
+
+  (void)hashCount; // hash count is validated by lexer/parser; silences unused
+                   // warning
+
+  // For raw strings, just slice out the payload between the matching quotes
+  if (isRaw) {
+    return literal.substr(firstQuote + 1, lastQuote - firstQuote - 1);
+  }
+
+  std::string body = literal.substr(firstQuote + 1, lastQuote - firstQuote - 1);
+  std::string out;
+  out.reserve(body.size());
+
+  auto hexVal = [](char ch) -> int {
+    if (ch >= '0' && ch <= '9')
+      return ch - '0';
+    if (ch >= 'a' && ch <= 'f')
+      return 10 + (ch - 'a');
+    if (ch >= 'A' && ch <= 'F')
+      return 10 + (ch - 'A');
+    return -1;
+  };
+
+  auto ensure_ascii = [](unsigned value) -> char {
+    if (value > 0x7F) {
+      throw IRException("non-ASCII string literal value");
+    }
+    return static_cast<char>(value);
+  };
+
+  for (std::size_t i = 0; i < body.size(); ++i) {
+    char ch = body[i];
+    if (ch != '\\') {
+      out.push_back(ch);
+      continue;
+    }
+    if (i + 1 >= body.size()) {
+      throw IRException("dangling escape in string literal");
+    }
+    char esc = body[++i];
+    switch (esc) {
+    case '\\':
+      out.push_back('\\');
+      break;
+    case '"':
+      out.push_back('"');
+      break;
+    case '\'':
+      out.push_back('\'');
+      break;
+    case 'n':
+      out.push_back('\n');
+      break;
+    case 'r':
+      out.push_back('\r');
+      break;
+    case 't':
+      out.push_back('\t');
+      break;
+    case '0':
+      out.push_back('\0');
+      break;
+    case 'x': {
+      if (i + 2 >= body.size()) {
+        throw IRException("\\x escape too short in string literal");
+      }
+      int hi = hexVal(body[i + 1]);
+      int lo = hexVal(body[i + 2]);
+      if (hi < 0 || lo < 0) {
+        throw IRException("invalid hex escape in string literal");
+      }
+      out.push_back(ensure_ascii(static_cast<unsigned>((hi << 4) | lo)));
+      i += 2;
+      break;
+    }
+    default:
+      out.push_back(ensure_ascii(static_cast<unsigned char>(esc)));
+      break;
+    }
+  }
+
+  return out;
 }
 
 inline FuncPtr IREmitter::createMemsetFn() {

@@ -54,6 +54,9 @@ public:
   static std::shared_ptr<IntegerType> i1() {
     return std::make_shared<IntegerType>(1, true);
   }
+  static std::shared_ptr<IntegerType> i8(bool s = false) {
+    return std::make_shared<IntegerType>(8, s);
+  }
   static std::shared_ptr<IntegerType> i32(bool s = true) {
     return std::make_shared<IntegerType>(32, s);
   }
@@ -183,6 +186,23 @@ public:
 class ConstantNull final : public Constant {
 public:
   explicit ConstantNull(TypePtr ptrTy) : Constant(std::move(ptrTy)) {}
+};
+
+class ConstantString final : public Constant {
+public:
+  explicit ConstantString(std::string data)
+      : Constant(nullptr), data_(std::move(data)),
+        arrayType_(
+            std::make_shared<ArrayType>(IntegerType::i8(false), data_.size())) {
+    setType(std::make_shared<PointerType>(IntegerType::i8(false)));
+  }
+
+  const std::string &data() const { return data_; }
+  TypePtr arrayType() const { return arrayType_; }
+
+private:
+  std::string data_;
+  TypePtr arrayType_;
 };
 
 } // namespace rc::ir
