@@ -182,9 +182,9 @@ run_test() {
     echo "Running with reimu..."
     set +e
     if [ -f "$INPUT_FILE" ]; then
-        reimu -i="$INPUT_FILE" -s=8M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
+        reimu -i="$INPUT_FILE" -s=1M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
     else
-        reimu -s=8M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
+        reimu -s=1M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
     fi
     REIMU_RC=$?
     set -e

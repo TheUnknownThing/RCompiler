@@ -6,7 +6,7 @@
 BUILD_DIR := build
 
 # Builtin file location
-BUILTIN := ci/files/IR/builtin.ll
+BUILTIN := ci/files/IR/builtin.c
 
 .PHONY: build run clean
 
