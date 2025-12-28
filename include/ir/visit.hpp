@@ -325,6 +325,64 @@ inline void IREmitter::visit(FunctionDecl &node) {
 
 inline void IREmitter::visit(BinaryExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting BinaryExpression op:" + node.op.lexeme);
+  
+  if (node.op.type == TokenType::AND || node.op.type == TokenType::OR) {
+    LOG_DEBUG("[IREmitter] Emitting short-circuit logical operator");
+    node.left->accept(*this);
+    auto lhs = popOperand();
+    lhs = loadPtrValue(lhs, context->lookupType(node.left.get()));
+
+    auto cur_func = functions_.back();
+    auto rhsBlock = cur_func->createBlock("shortcircuit_rhs");
+    auto mergeBlock = cur_func->createBlock("shortcircuit_merge");
+    auto entryBlock = current_block_;
+
+    if (node.op.type == TokenType::AND) {
+      // if lhs is false, skip rhs and use false
+      // if lhs is true, evaluate rhs
+      current_block_->append<BranchInst>(lhs, rhsBlock, mergeBlock);
+      
+      current_block_ = rhsBlock;
+      node.right->accept(*this);
+      auto rhs = popOperand();
+      rhs = loadPtrValue(rhs, context->lookupType(node.right.get()));
+      current_block_->append<BranchInst>(mergeBlock);
+      auto rhsExitBlock = current_block_;
+
+      current_block_ = mergeBlock;
+      auto i1_type = std::make_shared<IntegerType>(1, true);
+      auto false_val = ConstantInt::getI1(false);
+      std::vector<PhiInst::Incoming> incomings = {
+          {false_val, entryBlock},
+          {rhs, rhsExitBlock}
+      };
+      auto result = current_block_->append<PhiInst>(i1_type, incomings, "and_result");
+      pushOperand(result);
+    } else {
+      // if lhs is true, skip rhs and use true
+      // if lhs is false, evaluate rhs
+      current_block_->append<BranchInst>(lhs, mergeBlock, rhsBlock);
+      
+      current_block_ = rhsBlock;
+      node.right->accept(*this);
+      auto rhs = popOperand();
+      rhs = loadPtrValue(rhs, context->lookupType(node.right.get()));
+      current_block_->append<BranchInst>(mergeBlock);
+      auto rhsExitBlock = current_block_;
+
+      current_block_ = mergeBlock;
+      auto i1_type = std::make_shared<IntegerType>(1, true);
+      auto true_val = ConstantInt::getI1(true);
+      std::vector<PhiInst::Incoming> incomings = {
+          {true_val, entryBlock},
+          {rhs, rhsExitBlock}
+      };
+      auto result = current_block_->append<PhiInst>(i1_type, incomings, "or_result");
+      pushOperand(result);
+    }
+    return;
+  }
+  
   if (isAssignment(node.op.type)) {
     node.left->accept(*this);
     auto lhs = popOperand();
