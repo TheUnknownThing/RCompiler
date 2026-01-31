@@ -325,7 +325,7 @@ inline void IREmitter::visit(FunctionDecl &node) {
 
 inline void IREmitter::visit(BinaryExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting BinaryExpression op:" + node.op.lexeme);
-  
+
   if (node.op.type == TokenType::AND || node.op.type == TokenType::OR) {
     LOG_DEBUG("[IREmitter] Emitting short-circuit logical operator");
     node.left->accept(*this);
@@ -341,7 +341,7 @@ inline void IREmitter::visit(BinaryExpression &node) {
       // if lhs is false, skip rhs and use false
       // if lhs is true, evaluate rhs
       current_block_->append<BranchInst>(lhs, rhsBlock, mergeBlock);
-      
+
       current_block_ = rhsBlock;
       node.right->accept(*this);
       auto rhs = popOperand();
@@ -352,17 +352,16 @@ inline void IREmitter::visit(BinaryExpression &node) {
       current_block_ = mergeBlock;
       auto i1_type = std::make_shared<IntegerType>(1, true);
       auto false_val = ConstantInt::getI1(false);
-      std::vector<PhiInst::Incoming> incomings = {
-          {false_val, entryBlock},
-          {rhs, rhsExitBlock}
-      };
-      auto result = current_block_->append<PhiInst>(i1_type, incomings, "and_result");
+      std::vector<PhiInst::Incoming> incomings = {{false_val, entryBlock},
+                                                  {rhs, rhsExitBlock}};
+      auto result =
+          current_block_->append<PhiInst>(i1_type, incomings, "and_result");
       pushOperand(result);
     } else {
       // if lhs is true, skip rhs and use true
       // if lhs is false, evaluate rhs
       current_block_->append<BranchInst>(lhs, mergeBlock, rhsBlock);
-      
+
       current_block_ = rhsBlock;
       node.right->accept(*this);
       auto rhs = popOperand();
@@ -373,16 +372,15 @@ inline void IREmitter::visit(BinaryExpression &node) {
       current_block_ = mergeBlock;
       auto i1_type = std::make_shared<IntegerType>(1, true);
       auto true_val = ConstantInt::getI1(true);
-      std::vector<PhiInst::Incoming> incomings = {
-          {true_val, entryBlock},
-          {rhs, rhsExitBlock}
-      };
-      auto result = current_block_->append<PhiInst>(i1_type, incomings, "or_result");
+      std::vector<PhiInst::Incoming> incomings = {{true_val, entryBlock},
+                                                  {rhs, rhsExitBlock}};
+      auto result =
+          current_block_->append<PhiInst>(i1_type, incomings, "or_result");
       pushOperand(result);
     }
     return;
   }
-  
+
   if (isAssignment(node.op.type)) {
     node.left->accept(*this);
     auto lhs = popOperand();
@@ -1500,22 +1498,77 @@ inline void IREmitter::visit(ArrayExpression &node) {
       if (elemIsAggregate && valPtrTy) {
         // Use memcpy for each element
         std::size_t elemByteSize = computeTypeByteSize(elemIrTy);
-        for (std::size_t i = 0; i < repeatCount; ++i) {
-          auto idxConst =
-              ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
-          auto gep = current_block_->append<GetElementPtrInst>(
-              elemIrTy, slot, std::vector<ValuePtr>{zero, idxConst}, "elt");
-          emitMemcpy(gep, val, elemByteSize);
-        }
+        auto cur_func = functions_.back();
+        auto preheader = current_block_;
+        auto condBlock = cur_func->createBlock("arr_repeat_memcpy_cond");
+        auto bodyBlock = cur_func->createBlock("arr_repeat_memcpy_body");
+        auto afterBlock = cur_func->createBlock("arr_repeat_memcpy_after");
+
+        preheader->append<BranchInst>(condBlock);
+
+        // cond:
+        //   i = phi [0, preheader], [i_next, body]
+        //   br (i < N) body, after
+        current_block_ = condBlock;
+        auto i0 = ConstantInt::getI32(0, false);
+        auto n =
+            ConstantInt::getI32(static_cast<std::uint32_t>(repeatCount), false);
+        std::vector<PhiInst::Incoming> incomings = {{i0, preheader}};
+        auto i = current_block_->append<PhiInst>(IntegerType::i32(false),
+                                                 incomings, "i");
+        auto cmp = current_block_->append<ICmpInst>(ICmpPred::ULT, i, n,
+                                                    "arr_repeat_cmp");
+        current_block_->append<BranchInst>(cmp, bodyBlock, afterBlock);
+
+        // body:
+        //   memcpy(&slot[i], val, elemByteSize)
+        //   i_next = i + 1
+        //   br cond
+        current_block_ = bodyBlock;
+        auto gep = current_block_->append<GetElementPtrInst>(
+            elemIrTy, slot, std::vector<ValuePtr>{zero, i}, "elt");
+        emitMemcpy(gep, val, elemByteSize);
+        auto one = ConstantInt::getI32(1, false);
+        auto i_next = current_block_->append<BinaryOpInst>(
+            BinaryOpKind::ADD, i, one, IntegerType::i32(false), "i_next");
+        current_block_->append<BranchInst>(condBlock);
+        i->addIncoming(i_next, bodyBlock);
+
+        current_block_ = afterBlock;
+
       } else {
         auto resolved = resolve_ptr(val, *arrSem.element, "arr_init");
-        for (std::size_t i = 0; i < repeatCount; ++i) {
-          auto idxConst =
-              ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
-          auto gep = current_block_->append<GetElementPtrInst>(
-              elemIrTy, slot, std::vector<ValuePtr>{zero, idxConst}, "elt");
-          current_block_->append<StoreInst>(resolved, gep);
-        }
+
+        auto cur_func = functions_.back();
+        auto preheader = current_block_;
+        auto condBlock = cur_func->createBlock("arr_repeat_store_cond");
+        auto bodyBlock = cur_func->createBlock("arr_repeat_store_body");
+        auto afterBlock = cur_func->createBlock("arr_repeat_store_after");
+
+        preheader->append<BranchInst>(condBlock);
+
+        current_block_ = condBlock;
+        auto i0 = ConstantInt::getI32(0, false);
+        auto n =
+            ConstantInt::getI32(static_cast<std::uint32_t>(repeatCount), false);
+        std::vector<PhiInst::Incoming> incomings = {{i0, preheader}};
+        auto i = current_block_->append<PhiInst>(IntegerType::i32(false),
+                                                 incomings, "i");
+        auto cmp = current_block_->append<ICmpInst>(ICmpPred::ULT, i, n,
+                                                    "arr_repeat_cmp");
+        current_block_->append<BranchInst>(cmp, bodyBlock, afterBlock);
+
+        current_block_ = bodyBlock;
+        auto gep = current_block_->append<GetElementPtrInst>(
+            elemIrTy, slot, std::vector<ValuePtr>{zero, i}, "elt");
+        current_block_->append<StoreInst>(resolved, gep);
+        auto one = ConstantInt::getI32(1, false);
+        auto i_next = current_block_->append<BinaryOpInst>(
+            BinaryOpKind::ADD, i, one, IntegerType::i32(false), "i_next");
+        current_block_->append<BranchInst>(condBlock);
+        i->addIncoming(i_next, bodyBlock);
+
+        current_block_ = afterBlock;
       }
     }
   } else {
@@ -2455,14 +2508,11 @@ inline std::string IREmitter::decodeStringLiteral(const std::string &literal) {
   auto lastQuote = literal.rfind('"');
   if (firstQuote == std::string::npos || lastQuote == std::string::npos ||
       lastQuote <= firstQuote) {
-    // Already normalized or malformed; return as-is to avoid blocking IR
     return literal;
   }
 
-  (void)hashCount; // hash count is validated by lexer/parser; silences unused
-                   // warning
+  (void)hashCount;
 
-  // For raw strings, just slice out the payload between the matching quotes
   if (isRaw) {
     return literal.substr(firstQuote + 1, lastQuote - firstQuote - 1);
   }
