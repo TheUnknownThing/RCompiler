@@ -34,20 +34,42 @@ private:
 
 class BasicBlock : public std::enable_shared_from_this<BasicBlock> {
 public:
-  explicit BasicBlock(std::string name = {}) : name_(std::move(name)) {}
+  explicit BasicBlock(std::string name = {}, Function *parent = nullptr)
+      : name_(std::move(name)), parent_(parent) {}
 
   const std::string &name() const { return name_; }
   void setName(std::string n) { name_ = std::move(n); }
 
   template <class T, class... Args> std::shared_ptr<T> append(Args &&...args) {
-    auto inst = std::make_shared<T>(std::forward<Args>(args)...);
+    auto inst = std::make_shared<T>(this, std::forward<Args>(args)...);
+    std::static_pointer_cast<Instruction>(inst)->setPrev(
+        instructions_.empty() ? nullptr
+                             : instructions_.back().get());
+    if (!instructions_.empty()) {
+      instructions_.back()->setNext(inst.get());
+    }
+    std::static_pointer_cast<Instruction>(inst)->setNext(nullptr);
     instructions_.push_back(inst);
     return inst;
   }
 
   template <class T, class... Args> std::shared_ptr<T> prepend(Args &&...args) {
-    auto inst = std::make_shared<T>(std::forward<Args>(args)...);
+    auto inst = std::make_shared<T>(this, std::forward<Args>(args)...);
     instructions_.insert(instructions_.begin() + prologue_insert_pos_, inst);
+    if (prologue_insert_pos_ > 0) {
+      instructions_[prologue_insert_pos_ - 1]->setNext(inst.get());
+      std::static_pointer_cast<Instruction>(inst)->setPrev(
+          instructions_[prologue_insert_pos_ - 1].get());
+    } else {
+      std::static_pointer_cast<Instruction>(inst)->setPrev(nullptr);
+    }
+    if (prologue_insert_pos_ < instructions_.size() - 1) {
+      instructions_[prologue_insert_pos_ + 1]->setPrev(inst.get());
+      std::static_pointer_cast<Instruction>(inst)->setNext(
+          instructions_[prologue_insert_pos_ + 1].get());
+    } else {
+      std::static_pointer_cast<Instruction>(inst)->setNext(nullptr);
+    }
     ++prologue_insert_pos_;
     return inst;
   }
@@ -57,6 +79,24 @@ public:
   }
 
   bool isTerminated() const;
+
+  Function *parent() const { return parent_; }
+
+  void addPredecessor(BasicBlock *bb) {
+    predecessors_.push_back(bb);
+  }
+
+  const std::vector<BasicBlock *> &predecessors() const {
+    return predecessors_;
+  }
+
+  void addSuccessor(BasicBlock *bb) {
+    successors_.push_back(bb);
+  }
+
+  const std::vector<BasicBlock *> &successors() const {
+    return successors_;
+  }
 
 private:
   std::string name_;
@@ -92,7 +132,7 @@ public:
   const std::vector<std::shared_ptr<Argument>> &args() const { return args_; }
 
   std::shared_ptr<BasicBlock> createBlock(std::string label) {
-    auto bb = std::make_shared<BasicBlock>(std::move(label));
+    auto bb = std::make_shared<BasicBlock>(std::move(label), this);
     blocks_.push_back(bb);
     return bb;
   }

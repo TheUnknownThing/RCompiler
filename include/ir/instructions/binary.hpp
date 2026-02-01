@@ -26,10 +26,10 @@ enum class BinaryOpKind {
 
 class BinaryOpInst : public Instruction {
 public:
-  BinaryOpInst(BinaryOpKind op, std::shared_ptr<Value> lhs,
+  BinaryOpInst(BasicBlock* parent, BinaryOpKind op, std::shared_ptr<Value> lhs,
                std::shared_ptr<Value> rhs, TypePtr resultType,
                std::string name = {})
-      : Instruction(std::move(resultType), std::move(name)), op_(op),
+      : Instruction(parent, std::move(resultType), std::move(name)), op_(op),
         lhs_(std::move(lhs)), rhs_(std::move(rhs)) {
 
     if (!lhs_ || !rhs_) {
@@ -41,6 +41,9 @@ public:
     if (!li || !ri || !riTy) {
       throw std::invalid_argument("BinaryOpInst requires integer types");
     }
+
+    addOperand(lhs_);
+    addOperand(rhs_);
   }
 
   BinaryOpKind op() const { return op_; }

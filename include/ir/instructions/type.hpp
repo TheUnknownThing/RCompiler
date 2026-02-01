@@ -162,9 +162,18 @@ public:
 
 class Instruction : public Value {
 public:
+  explicit Instruction(BasicBlock* parent, TypePtr ty, std::string name = {})
+      : Value(std::move(ty), std::move(name)), parent_(parent) {}
+
   void addOperands(std::vector<Value *> ops) {
     operands.insert(operands.end(), ops.begin(), ops.end());
     for (auto *op : ops) {
+      op->addUse(this);
+    }
+  }
+  void addOperands(const std::vector<std::shared_ptr<Value>> &ops) {
+    for (const auto &op : ops) {
+      operands.push_back(op.get());
       op->addUse(this);
     }
   }
@@ -172,9 +181,12 @@ public:
     operands.push_back(op);
     op->addUse(this);
   }
+  void addOperand(const std::shared_ptr<Value> &op) {
+    operands.push_back(op.get());
+    op->addUse(this);
+  }
   const std::vector<Value *> &getOperands() const { return operands; }
 
-  void setParent(BasicBlock *bb) { parent_ = bb; }
   BasicBlock *parent() const { return parent_; }
 
   Instruction *next() const { return next_; }

@@ -25,9 +25,9 @@ enum class ICmpPred {
 
 class ICmpInst : public Instruction {
 public:
-  ICmpInst(ICmpPred pred, std::shared_ptr<Value> lhs,
+  ICmpInst(BasicBlock* parent, ICmpPred pred, std::shared_ptr<Value> lhs,
            std::shared_ptr<Value> rhs, std::string name = {})
-      : Instruction(IntegerType::i1(), std::move(name)), pred_(pred),
+      : Instruction(parent, IntegerType::i1(), std::move(name)), pred_(pred),
         lhs_(std::move(lhs)), rhs_(std::move(rhs)) {
     if (!lhs_ || !rhs_) {
       throw std::invalid_argument("ICmpInst operands cannot be null");
@@ -41,6 +41,9 @@ public:
       throw std::invalid_argument(
           "ICmpInst operands must have matching bit width");
     }
+
+    addOperand(lhs_);
+    addOperand(rhs_);
   }
 
   ICmpPred pred() const { return pred_; }
@@ -55,11 +58,18 @@ private:
 
 class CallInst : public Instruction {
 public:
-  CallInst(std::shared_ptr<Value> callee,
+  CallInst(BasicBlock* parent, std::shared_ptr<Value> callee,
            std::vector<std::shared_ptr<Value>> args, TypePtr retTy,
            std::string name = {})
-      : Instruction(std::move(retTy), std::move(name)),
-        callee_(std::move(callee)), args_(std::move(args)) {}
+      : Instruction(parent, std::move(retTy), std::move(name)),
+        callee_(std::move(callee)), args_(std::move(args)) {
+
+    if (!callee_) {
+      throw std::invalid_argument("CallInst requires a callee");
+    }
+    addOperand(callee_);
+    addOperands(args_);
+  }
 
   const std::shared_ptr<Value> &callee() const { return callee_; }
   const std::vector<std::shared_ptr<Value>> &args() const { return args_; }
@@ -74,8 +84,8 @@ public:
   using Incoming =
       std::pair<std::shared_ptr<Value>, std::shared_ptr<BasicBlock>>;
 
-  PhiInst(TypePtr ty, std::vector<Incoming> incomings, std::string name = {})
-      : Instruction(std::move(ty), std::move(name)),
+  PhiInst(BasicBlock* parent, TypePtr ty, std::vector<Incoming> incomings, std::string name = {})
+      : Instruction(parent, std::move(ty), std::move(name)),
         incomings_(std::move(incomings)) {}
 
   const std::vector<Incoming> &incomings() const { return incomings_; }
@@ -89,9 +99,9 @@ private:
 
 class SelectInst : public Instruction {
 public:
-  SelectInst(std::shared_ptr<Value> cond, std::shared_ptr<Value> ifTrue,
+  SelectInst(BasicBlock* parent, std::shared_ptr<Value> cond, std::shared_ptr<Value> ifTrue,
              std::shared_ptr<Value> ifFalse, TypePtr ty, std::string name = {})
-      : Instruction(std::move(ty), std::move(name)), cond_(std::move(cond)),
+      : Instruction(parent, std::move(ty), std::move(name)), cond_(std::move(cond)),
         ifTrue_(std::move(ifTrue)), ifFalse_(std::move(ifFalse)) {
     if (!cond_) {
       throw std::invalid_argument("SelectInst requires a condition");
@@ -100,6 +110,10 @@ public:
     if (!i1 || i1->bits() != 1) {
       throw std::invalid_argument("SelectInst condition must be i1");
     }
+
+    addOperand(cond_);
+    addOperand(ifTrue_);
+    addOperand(ifFalse_);
   }
 
   const std::shared_ptr<Value> &cond() const { return cond_; }
@@ -114,11 +128,13 @@ private:
 
 class ZExtInst : public Instruction {
 public:
-  ZExtInst(std::shared_ptr<Value> src, TypePtr destTy, std::string name = {})
-      : Instruction(std::move(destTy), std::move(name)), src_(std::move(src)) {
+  ZExtInst(BasicBlock* parent, std::shared_ptr<Value> src, TypePtr destTy, std::string name = {})
+      : Instruction(parent, std::move(destTy), std::move(name)), src_(std::move(src)) {
     if (!src_) {
       throw std::invalid_argument("ZExtInst source cannot be null");
     }
+
+    addOperand(src_);
   }
 
   const std::shared_ptr<Value> &source() const { return src_; }
@@ -129,11 +145,13 @@ private:
 
 class SExtInst : public Instruction {
 public:
-  SExtInst(std::shared_ptr<Value> src, TypePtr destTy, std::string name = {})
-      : Instruction(std::move(destTy), std::move(name)), src_(std::move(src)) {
+  SExtInst(BasicBlock* parent, std::shared_ptr<Value> src, TypePtr destTy, std::string name = {})
+      : Instruction(parent, std::move(destTy), std::move(name)), src_(std::move(src)) {
     if (!src_) {
       throw std::invalid_argument("SExtInst source cannot be null");
     }
+
+    addOperand(src_);
   }
 
   const std::shared_ptr<Value> &source() const { return src_; }
@@ -144,11 +162,13 @@ private:
 
 class TruncInst : public Instruction {
 public:
-  TruncInst(std::shared_ptr<Value> src, TypePtr destTy, std::string name = {})
-      : Instruction(std::move(destTy), std::move(name)), src_(std::move(src)) {
+  TruncInst(BasicBlock* parent, std::shared_ptr<Value> src, TypePtr destTy, std::string name = {})
+      : Instruction(parent, std::move(destTy), std::move(name)), src_(std::move(src)) {
     if (!src_) {
       throw std::invalid_argument("TruncInst source cannot be null");
     }
+
+    addOperand(src_);
   }
 
   const std::shared_ptr<Value> &source() const { return src_; }

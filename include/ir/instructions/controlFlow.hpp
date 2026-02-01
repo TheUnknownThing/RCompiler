@@ -9,13 +9,13 @@ namespace rc::ir {
 
 class BranchInst : public Instruction {
 public:
-  explicit BranchInst(std::shared_ptr<BasicBlock> dest)
-      : Instruction(std::make_shared<VoidType>()), isCond_(false),
+  explicit BranchInst(BasicBlock* parent, std::shared_ptr<BasicBlock> dest)
+      : Instruction(parent, std::make_shared<VoidType>()), isCond_(false),
         dest_(std::move(dest)) {}
 
-  BranchInst(std::shared_ptr<Value> cond, std::shared_ptr<BasicBlock> ifTrue,
+  BranchInst(BasicBlock* parent, std::shared_ptr<Value> cond, std::shared_ptr<BasicBlock> ifTrue,
              std::shared_ptr<BasicBlock> ifFalse)
-      : Instruction(std::make_shared<VoidType>()), isCond_(true),
+      : Instruction(parent, std::make_shared<VoidType>()), isCond_(true),
         cond_(std::move(cond)), dest_(std::move(ifTrue)),
         altDest_(std::move(ifFalse)) {
     if (!cond_) {
@@ -26,6 +26,8 @@ public:
     if (!i1 || i1->bits() != 1) {
       throw std::invalid_argument("BranchInst condition must be i1");
     }
+
+    addOperand(cond_);
   }
 
   bool isConditional() const { return isCond_; }
@@ -42,9 +44,11 @@ private:
 
 class ReturnInst : public Instruction {
 public:
-  ReturnInst() : Instruction(std::make_shared<VoidType>()) {}
-  explicit ReturnInst(std::shared_ptr<Value> val)
-      : Instruction(std::make_shared<VoidType>()), val_(std::move(val)) {}
+  ReturnInst(BasicBlock* parent) : Instruction(parent, std::make_shared<VoidType>()) {}
+  explicit ReturnInst(BasicBlock* parent, std::shared_ptr<Value> val)
+      : Instruction(parent, std::make_shared<VoidType>()), val_(std::move(val)) {
+    addOperand(val_);
+  }
 
   bool isVoid() const { return val_ == nullptr; }
   const std::shared_ptr<Value> &value() const { return val_; }
@@ -55,7 +59,7 @@ private:
 
 class UnreachableInst : public Instruction {
 public:
-  UnreachableInst() : Instruction(std::make_shared<VoidType>()) {}
+  UnreachableInst(BasicBlock* parent) : Instruction(parent, std::make_shared<VoidType>()) {}
 };
 
 } // namespace rc::ir
