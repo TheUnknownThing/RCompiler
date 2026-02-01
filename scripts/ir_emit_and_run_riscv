@@ -43,12 +43,36 @@ get_clang() {
 CLANG=$(get_clang)
 echo "Using clang: $CLANG"
 
-# Check reimu is available
-if ! which reimu > /dev/null 2>&1; then
-    echo "Error: reimu not found. Please install reimu (RISC-V emulator)."
+# Find reimu (RISC-V simulator)
+get_reimu() {
+    if [ "${REIMU_BIN:-}" != "" ]; then
+        if [ -x "$REIMU_BIN" ]; then
+            echo "$REIMU_BIN"
+            return 0
+        fi
+        echo "Error: REIMU_BIN is set but not executable: $REIMU_BIN" >&2
+        exit 1
+    fi
+
+    local local_reimu="$ROOT_DIR/third_party/REIMU/build/linux/x86_64/release/reimu"
+    if [ -x "$local_reimu" ]; then
+        echo "$local_reimu"
+        return 0
+    fi
+
+    if command -v reimu > /dev/null 2>&1; then
+        command -v reimu
+        return 0
+    fi
+
+    echo "Error: reimu not found." >&2
+    echo "  Build it locally at: $ROOT_DIR/third_party/REIMU (requires xmake)" >&2
+    echo "  Or set REIMU_BIN=/path/to/reimu" >&2
     exit 1
-fi
-echo "Using reimu: $(which reimu)"
+}
+
+REIMU=$(get_reimu)
+echo "Using reimu: $REIMU"
 
 # Build project once
 echo "Running: cmake --build build"
@@ -182,9 +206,9 @@ run_test() {
     echo "Running with reimu..."
     set +e
     if [ -f "$INPUT_FILE" ]; then
-        reimu -i="$INPUT_FILE" -s=8M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
+        "$REIMU" -i="$INPUT_FILE" -s=8M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
     else
-        reimu -s=8M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
+        "$REIMU" -s=8M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
     fi
     REIMU_RC=$?
     set -e

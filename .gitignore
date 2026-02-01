@@ -55,6 +55,7 @@ coverage/
 
 # Dependencies
 third_party/llvm/ 
+third_party/REIMU/
 
 examples/
 
