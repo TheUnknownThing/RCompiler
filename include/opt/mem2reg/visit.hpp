@@ -51,22 +51,17 @@ private:
 
 inline void Mem2RegVisitor::run(ir::Module &module) {
   for (const auto &function : module.functions()) {
+    dominators_.clear();
+    idom_.clear();
+    dominanceFrontiers_.clear();
+    renameStacks_.clear();
+    phiNodes_.clear();
+    toRemove_.clear();
+
     findDominators(*function);
-  }
-
-  for (const auto &function : module.functions()) {
     findIDom(*function);
-  }
-
-  for (const auto &function : module.functions()) {
     findDomFrontiers(*function);
-  }
-
-  for (const auto &function : module.functions()) {
     mem2reg(*function);
-  }
-
-  for (const auto &function : module.functions()) {
     removeDeadInstructions(*function);
   }
 }
@@ -176,17 +171,39 @@ inline void Mem2RegVisitor::findDomFrontiers(ir::Function &function) {
 }
 
 inline void Mem2RegVisitor::mem2reg(ir::Function &function) {
-  for (const auto &bb : function.blocks()) {
+  const auto &blocks = function.blocks();
+  if (blocks.empty()) {
+    return;
+  }
+
+  std::unordered_map<ir::AllocaInst *, std::unordered_set<ir::BasicBlock *>>
+      defBlocks;
+  std::vector<ir::AllocaInst *> allocas;
+
+  for (const auto &bb : blocks) {
     for (const auto &inst : bb->instructions()) {
       if (auto *alloca = dynamic_cast<ir::AllocaInst *>(inst.get())) {
-        placePhiNodes(*bb, alloca);
+        allocas.push_back(alloca);
+        continue;
+      }
+
+      if (auto *store = dynamic_cast<ir::StoreInst *>(inst.get())) {
+        if (auto *alloca =
+                dynamic_cast<ir::AllocaInst *>(store->pointer().get())) {
+          defBlocks[alloca].insert(bb.get());
+        }
       }
     }
   }
 
-  for (const auto &bb : function.blocks()) {
-    rename(*bb);
+  for (auto *alloca : allocas) {
+    const auto &defs = defBlocks[alloca];
+    for (auto *defBB : defs) {
+      placePhiNodes(*defBB, alloca);
+    }
   }
+
+  rename(*blocks.front());
 }
 
 inline void Mem2RegVisitor::placePhiNodes(ir::BasicBlock &bb,
@@ -198,7 +215,8 @@ inline void Mem2RegVisitor::placePhiNodes(ir::BasicBlock &bb,
     if (phiNodes_[df_bb].count(alloca)) {
       continue; // already placed
     }
-    auto phi = df_bb->prepend<ir::PhiInst>(alloca->type());
+
+    auto phi = df_bb->prepend<ir::PhiInst>(alloca->allocatedType());
     phiNodes_[df_bb][alloca] = phi.get();
 
     placePhiNodes(*df_bb, alloca);
@@ -243,9 +261,7 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
       if (stack.empty()) {
         throw std::runtime_error("Phi from uninitialized alloca");
       }
-      phi->addIncoming(
-          stack.back()->shared_from_this(),
-          std::shared_ptr<ir::BasicBlock>(&bb, [](ir::BasicBlock *) {}));
+      phi->addIncoming(stack.back()->shared_from_this(), bb.shared_from_this());
     }
   }
 
