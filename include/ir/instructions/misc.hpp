@@ -50,6 +50,23 @@ public:
   const std::shared_ptr<Value> &lhs() const { return lhs_; }
   const std::shared_ptr<Value> &rhs() const { return rhs_; }
 
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+
+    if (lhs_.get() == oldOp) {
+      lhs_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+    if (rhs_.get() == oldOp) {
+      rhs_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+  }
+
 private:
   ICmpPred pred_;
   std::shared_ptr<Value> lhs_;
@@ -74,6 +91,25 @@ public:
   const std::shared_ptr<Value> &callee() const { return callee_; }
   const std::vector<std::shared_ptr<Value>> &args() const { return args_; }
 
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+
+    if (callee_.get() == oldOp) {
+      callee_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+    for (auto &arg : args_) {
+      if (arg.get() == oldOp) {
+        arg = std::static_pointer_cast<Value>(newOp->shared_from_this());
+      }
+    }
+  }
+
 private:
   std::shared_ptr<Value> callee_;
   std::vector<std::shared_ptr<Value>> args_;
@@ -84,13 +120,29 @@ public:
   using Incoming =
       std::pair<std::shared_ptr<Value>, std::shared_ptr<BasicBlock>>;
 
-  PhiInst(BasicBlock* parent, TypePtr ty, std::vector<Incoming> incomings, std::string name = {})
+  PhiInst(BasicBlock* parent, TypePtr ty, std::vector<Incoming> incomings = std::vector<Incoming>{}, std::string name = {})
       : Instruction(parent, std::move(ty), std::move(name)),
         incomings_(std::move(incomings)) {}
 
   const std::vector<Incoming> &incomings() const { return incomings_; }
   void addIncoming(std::shared_ptr<Value> v, std::shared_ptr<BasicBlock> bb) {
     incomings_.emplace_back(std::move(v), std::move(bb));
+  }
+
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+
+    for (auto &inc : incomings_) {
+      if (inc.first.get() == oldOp) {
+        inc.first = std::static_pointer_cast<Value>(newOp->shared_from_this());
+      }
+    }
   }
 
 private:
@@ -120,6 +172,26 @@ public:
   const std::shared_ptr<Value> &ifTrue() const { return ifTrue_; }
   const std::shared_ptr<Value> &ifFalse() const { return ifFalse_; }
 
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+
+    if (cond_.get() == oldOp) {
+      cond_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+    if (ifTrue_.get() == oldOp) {
+      ifTrue_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+    if (ifFalse_.get() == oldOp) {
+      ifFalse_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+  }
+
 private:
   std::shared_ptr<Value> cond_;
   std::shared_ptr<Value> ifTrue_;
@@ -139,6 +211,19 @@ public:
 
   const std::shared_ptr<Value> &source() const { return src_; }
 
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+    if (src_.get() == oldOp) {
+      src_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+  }
+
 private:
   std::shared_ptr<Value> src_;
 };
@@ -156,6 +241,19 @@ public:
 
   const std::shared_ptr<Value> &source() const { return src_; }
 
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+    if (src_.get() == oldOp) {
+      src_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+  }
+
 private:
   std::shared_ptr<Value> src_;
 };
@@ -172,6 +270,19 @@ public:
   }
 
   const std::shared_ptr<Value> &source() const { return src_; }
+
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+    if (src_.get() == oldOp) {
+      src_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+  }
 
 private:
   std::shared_ptr<Value> src_;

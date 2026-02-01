@@ -133,7 +133,7 @@ private:
 
 class Instruction;
 
-class Value {
+class Value : public std::enable_shared_from_this<Value> {
 public:
   explicit Value(TypePtr ty, std::string name = {})
       : type_(std::move(ty)), name_(std::move(name)) {}
@@ -144,7 +144,8 @@ public:
   void setName(std::string n) { name_ = std::move(n); }
   void addUse(Instruction *ins) { use_list.push_back(ins); }
   void removeUse(Instruction *ins) { use_list.remove(ins); }
-  void getUses(std::list<Instruction *> &outs) const { outs = use_list; }
+  std::list<Instruction *> &getUses() { return use_list; }
+  const std::list<Instruction *> &getUses() const { return use_list; }
 
 protected:
   void setType(TypePtr t) { type_ = std::move(t); }
@@ -162,7 +163,7 @@ public:
 
 class Instruction : public Value {
 public:
-  explicit Instruction(BasicBlock* parent, TypePtr ty, std::string name = {})
+  explicit Instruction(BasicBlock *parent, TypePtr ty, std::string name = {})
       : Value(std::move(ty), std::move(name)), parent_(parent) {}
 
   void addOperands(std::vector<Value *> ops) {
@@ -187,6 +188,8 @@ public:
   }
   const std::vector<Value *> &getOperands() const { return operands; }
 
+  virtual void replaceOperand(Value *oldOp, Value *newOp) = 0;
+
   BasicBlock *parent() const { return parent_; }
 
   Instruction *next() const { return next_; }
@@ -197,8 +200,10 @@ public:
   using Value::Value;
   ~Instruction() override = default;
 
-private:
+protected:
   std::vector<Value *> operands;
+
+private:
   BasicBlock *parent_{nullptr};
   Instruction *next_{nullptr}, *prev_{nullptr};
 };

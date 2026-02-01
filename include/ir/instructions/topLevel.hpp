@@ -74,6 +74,10 @@ public:
     return inst;
   }
 
+  std::vector<std::shared_ptr<Instruction>> &instructions() {
+    return instructions_;
+  }
+
   const std::vector<std::shared_ptr<Instruction>> &instructions() const {
     return instructions_;
   }

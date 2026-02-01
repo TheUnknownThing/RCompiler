@@ -50,6 +50,23 @@ public:
   const std::shared_ptr<Value> &lhs() const { return lhs_; }
   const std::shared_ptr<Value> &rhs() const { return rhs_; }
 
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+
+    if (lhs_.get() == oldOp) {
+      lhs_ = std::dynamic_pointer_cast<Value>(newOp->shared_from_this());
+    }
+    if (rhs_.get() == oldOp) {
+      rhs_ = std::dynamic_pointer_cast<Value>(newOp->shared_from_this());
+    }
+  }
+
 private:
   BinaryOpKind op_;
   std::shared_ptr<Value> lhs_;

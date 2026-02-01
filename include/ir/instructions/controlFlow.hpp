@@ -37,6 +37,20 @@ public:
   std::shared_ptr<BasicBlock> &altDest() { return altDest_; }
   const std::shared_ptr<BasicBlock> &altDest() const { return altDest_; }
 
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+
+    if (cond_.get() == oldOp) {
+      cond_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+  }
+
 private:
   bool isCond_;
   std::shared_ptr<Value> cond_;
@@ -55,6 +69,20 @@ public:
   bool isVoid() const { return val_ == nullptr; }
   const std::shared_ptr<Value> &value() const { return val_; }
 
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+
+    if (val_.get() == oldOp) {
+      val_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+  }
+
 private:
   std::shared_ptr<Value> val_;
 };
@@ -62,6 +90,10 @@ private:
 class UnreachableInst : public Instruction {
 public:
   UnreachableInst(BasicBlock* parent) : Instruction(parent, std::make_shared<VoidType>()) {}
+
+  void replaceOperand(Value * /*oldOp*/, Value * /*newOp*/) override {
+    // No operands to replace
+  }
 };
 
 } // namespace rc::ir

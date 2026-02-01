@@ -10,6 +10,7 @@
 #include "ir/visit.hpp"
 #include "lexer/lexer.hpp"
 #include "opt/cfg/visit.hpp"
+#include "opt/mem2reg/visit.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/semantic.hpp"
 #include "utils/logger.hpp"
@@ -55,10 +56,16 @@ int main(int argc, char *argv[]) {
         rc::ir::Context irCtx(analyzer.expr_cache());
         rc::ir::IREmitter emitter;
         emitter.run(ast, root_scope, irCtx);
-        rc::ir::emitLLVM(emitter.module(), std::cout);
+        rc::ir::emitLLVM(emitter.module(), std::cerr);
+
         // opt pass
         rc::opt::IRVisitor irVisitor;
         irVisitor.run(emitter.module());
+
+        rc::opt::Mem2RegVisitor mem2reg;
+        mem2reg.run(emitter.module());
+
+        rc::ir::emitLLVM(emitter.module(), std::cout);
       } catch (...) {
         LOG_ERROR("Error during IR generation");
         return 0;
