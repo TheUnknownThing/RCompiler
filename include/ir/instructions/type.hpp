@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <list>
 #include <memory>
 #include <string>
 #include <utility>
@@ -130,6 +131,8 @@ private:
   std::shared_ptr<Function> function_;
 };
 
+class Instruction;
+
 class Value {
 public:
   explicit Value(TypePtr ty, std::string name = {})
@@ -139,6 +142,9 @@ public:
   const TypePtr &type() const { return type_; }
   const std::string &name() const { return name_; }
   void setName(std::string n) { name_ = std::move(n); }
+  void addUse(Instruction *ins) { use_list.push_back(ins); }
+  void removeUse(Instruction *ins) { use_list.remove(ins); }
+  void getUses(std::list<Instruction *> &outs) const { outs = use_list; }
 
 protected:
   void setType(TypePtr t) { type_ = std::move(t); }
@@ -146,6 +152,7 @@ protected:
 private:
   TypePtr type_;
   std::string name_; // register name
+  std::list<Instruction *> use_list;
 };
 
 class Constant : public Value {
@@ -155,8 +162,33 @@ public:
 
 class Instruction : public Value {
 public:
+  void addOperands(std::vector<Value *> ops) {
+    operands.insert(operands.end(), ops.begin(), ops.end());
+    for (auto *op : ops) {
+      op->addUse(this);
+    }
+  }
+  void addOperand(Value *op) {
+    operands.push_back(op);
+    op->addUse(this);
+  }
+  const std::vector<Value *> &getOperands() const { return operands; }
+
+  void setParent(BasicBlock *bb) { parent_ = bb; }
+  BasicBlock *parent() const { return parent_; }
+
+  Instruction *next() const { return next_; }
+  void setNext(Instruction *next) { next_ = next; }
+  Instruction *prev() const { return prev_; }
+  void setPrev(Instruction *prev) { prev_ = prev; }
+
   using Value::Value;
   ~Instruction() override = default;
+
+private:
+  std::vector<Value *> operands;
+  BasicBlock *parent_{nullptr};
+  Instruction *next_{nullptr}, *prev_{nullptr};
 };
 
 class ConstantInt final : public Constant {

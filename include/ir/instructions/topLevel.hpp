@@ -1,7 +1,7 @@
 #pragma once
 
-#include <memory>
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -45,8 +45,7 @@ public:
     return inst;
   }
 
-  template <class T, class... Args>
-  std::shared_ptr<T> prepend(Args &&...args) {
+  template <class T, class... Args> std::shared_ptr<T> prepend(Args &&...args) {
     auto inst = std::make_shared<T>(std::forward<Args>(args)...);
     instructions_.insert(instructions_.begin() + prologue_insert_pos_, inst);
     ++prologue_insert_pos_;
@@ -63,6 +62,9 @@ private:
   std::string name_;
   std::vector<std::shared_ptr<Instruction>> instructions_;
   std::size_t prologue_insert_pos_{0};
+  Function *parent_{nullptr};
+  std::vector<BasicBlock *> predecessors_;
+  std::vector<BasicBlock *> successors_;
 };
 
 class Function : public std::enable_shared_from_this<Function> {
@@ -133,8 +135,9 @@ public:
     return fn;
   }
 
-  std::shared_ptr<StructType> createStructType(const std::vector<std::pair<std::string, TypePtr>> &fields,
-                                               const std::string &name = {}) {
+  std::shared_ptr<StructType>
+  createStructType(const std::vector<std::pair<std::string, TypePtr>> &fields,
+                   const std::string &name = {}) {
     std::vector<TypePtr> fieldTypes;
     fieldTypes.reserve(fields.size());
     for (const auto &f : fields) {
