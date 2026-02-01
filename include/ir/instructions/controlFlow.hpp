@@ -32,7 +32,9 @@ public:
 
   bool isConditional() const { return isCond_; }
   const std::shared_ptr<Value> &cond() const { return cond_; }
+  std::shared_ptr<BasicBlock> &dest() { return dest_; }
   const std::shared_ptr<BasicBlock> &dest() const { return dest_; }
+  std::shared_ptr<BasicBlock> &altDest() { return altDest_; }
   const std::shared_ptr<BasicBlock> &altDest() const { return altDest_; }
 
 private:

@@ -90,21 +90,12 @@ public:
     return predecessors_;
   }
 
-  void addSuccessor(BasicBlock *bb) {
-    successors_.push_back(bb);
-  }
-
-  const std::vector<BasicBlock *> &successors() const {
-    return successors_;
-  }
-
 private:
   std::string name_;
   std::vector<std::shared_ptr<Instruction>> instructions_;
   std::size_t prologue_insert_pos_{0};
   Function *parent_{nullptr};
   std::vector<BasicBlock *> predecessors_;
-  std::vector<BasicBlock *> successors_;
 };
 
 class Function : public std::enable_shared_from_this<Function> {

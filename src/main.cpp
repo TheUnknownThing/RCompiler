@@ -1,4 +1,4 @@
-#define LOGGING_LEVEL_NONE
+#define LOGGING_LEVEL_DEBUG
 
 #include <sstream>
 #include <string>
@@ -9,6 +9,7 @@
 #include "ir/gen.hpp"
 #include "ir/visit.hpp"
 #include "lexer/lexer.hpp"
+#include "opt/cfg/visit.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/semantic.hpp"
 #include "utils/logger.hpp"
@@ -55,6 +56,9 @@ int main(int argc, char *argv[]) {
         rc::ir::IREmitter emitter;
         emitter.run(ast, root_scope, irCtx);
         rc::ir::emitLLVM(emitter.module(), std::cout);
+        // opt pass
+        rc::opt::IRVisitor irVisitor;
+        irVisitor.run(emitter.module());
       } catch (...) {
         LOG_ERROR("Error during IR generation");
         return 0;
