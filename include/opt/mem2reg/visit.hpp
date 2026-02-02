@@ -9,6 +9,8 @@
 #include <opt/base/baseVisitor.hpp>
 #include <opt/utils/cfgPrettyPrint.hpp>
 
+#include <utils/logger.hpp>
+
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -212,7 +214,7 @@ inline void Mem2RegVisitor::placePhiNodes(ir::BasicBlock &bb,
   // place it at bb's dominance frontiers
   const auto &frontiers = dominanceFrontiers_[&bb];
   for (auto *df_bb : frontiers) {
-    if (phiNodes_[df_bb].count(alloca)) {
+    if (phiNodes_[df_bb].count(alloca) || df_bb == &bb) {
       continue; // already placed
     }
 
@@ -224,9 +226,12 @@ inline void Mem2RegVisitor::placePhiNodes(ir::BasicBlock &bb,
 }
 
 inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
+  std::vector<const ir::AllocaInst *> pushedAllocas;
+
   const auto &phi_bb = phiNodes_[&bb];
   for (const auto &[alloca, phi] : phi_bb) {
     renameStacks_[alloca].push_back(phi);
+    pushedAllocas.push_back(alloca);
   }
 
   for (const auto &inst : bb.instructions()) {
@@ -235,6 +240,10 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
               dynamic_cast<ir::AllocaInst *>(store->pointer().get())) {
         auto &stack = renameStacks_[alloca];
         stack.push_back(store->value().get());
+        pushedAllocas.push_back(alloca);
+
+        LOG_DEBUG("[Mem2Reg] Replacing store to alloca " + alloca->name() +
+                  " with value " + store->value()->name());
 
         toRemove_.insert(inst.get());
       }
@@ -243,9 +252,14 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
               dynamic_cast<ir::AllocaInst *>(load->pointer().get())) {
         auto &stack = renameStacks_[alloca];
         if (stack.empty()) {
-          throw std::runtime_error("Load from uninitialized alloca");
-        }
+          // No reaching definition - use undef value
+          auto undef =
+              std::make_shared<ir::UndefValue>(alloca->allocatedType());
+          undefValues_.push_back(undef); // Keep alive
+          replaceAllUsesWith(*load, undef.get());
+        } else {
         replaceAllUsesWith(*load, stack.back());
+        }
 
         toRemove_.insert(inst.get());
       }
@@ -259,9 +273,14 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
     for (const auto &[alloca, phi] : phi_succ_bb) {
       auto &stack = renameStacks_[alloca];
       if (stack.empty()) {
-        throw std::runtime_error("Phi from uninitialized alloca");
+        // No reaching definition - use undef value
+        auto undef = std::make_shared<ir::UndefValue>(alloca->allocatedType());
+        undefValues_.push_back(undef); // Keep alive
+        phi->addIncoming(undef, bb.shared_from_this());
+      } else {
+        phi->addIncoming(stack.back()->shared_from_this(),
+                         bb.shared_from_this());
       }
-      phi->addIncoming(stack.back()->shared_from_this(), bb.shared_from_this());
     }
   }
 
@@ -273,8 +292,11 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
   }
 
   // pop
-  for (const auto &[alloca, phi] : phi_bb) {
-    renameStacks_[alloca].pop_back();
+  for (auto it = pushedAllocas.rbegin(); it != pushedAllocas.rend(); ++it) {
+    auto &stack = renameStacks_[*it];
+    if (!stack.empty()) {
+      stack.pop_back();
+    }
   }
 }
 

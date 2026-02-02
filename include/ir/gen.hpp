@@ -347,6 +347,9 @@ private:
     if (dynamic_cast<const ConstantUnit *>(&v)) {
       return "";
     }
+    if (dynamic_cast<const UndefValue *>(&v)) {
+      return "undef";
+    }
     return localName(&v);
   }
 

@@ -53,8 +53,8 @@ inline void IRVisitor::visit(ir::Function &function) {
     visit(*basicBlock);
   }
 
-  LOG_DEBUG("\n" + rc::opt::utils::cfgToString(function));
-  LOG_DEBUG("\n" + rc::opt::utils::cfgToDot(function));
+  //   LOG_DEBUG("\n" + rc::opt::utils::cfgToString(function));
+  //   LOG_DEBUG("\n" + rc::opt::utils::cfgToDot(function));
 }
 
 inline void IRVisitor::visit(ir::BasicBlock &basicBlock) {

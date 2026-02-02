@@ -237,6 +237,11 @@ public:
   explicit ConstantNull(TypePtr ptrTy) : Constant(std::move(ptrTy)) {}
 };
 
+class UndefValue final : public Constant {
+public:
+  explicit UndefValue(TypePtr ty) : Constant(std::move(ty)) {}
+};
+
 class ConstantString final : public Constant {
 public:
   explicit ConstantString(std::string data)
