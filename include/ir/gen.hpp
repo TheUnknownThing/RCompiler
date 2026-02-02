@@ -443,6 +443,12 @@ private:
       out_ << "  ";
       emitInstruction(*inst);
       out_ << "\n";
+
+      if (dynamic_cast<const BranchInst *>(inst.get()) ||
+          dynamic_cast<const ReturnInst *>(inst.get()) ||
+          dynamic_cast<const UnreachableInst *>(inst.get())) {
+        break;
+      }
     }
   }
 

@@ -50,6 +50,10 @@ inline void IRVisitor::visit(ir::Module &module) {
 
 inline void IRVisitor::visit(ir::Function &function) {
   for (const auto &basicBlock : function.blocks()) {
+    basicBlock->clearPredecessors();
+  }
+
+  for (const auto &basicBlock : function.blocks()) {
     visit(*basicBlock);
   }
 

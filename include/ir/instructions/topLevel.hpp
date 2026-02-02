@@ -90,6 +90,8 @@ public:
     predecessors_.push_back(bb);
   }
 
+  void clearPredecessors() { predecessors_.clear(); }
+
   const std::vector<BasicBlock *> &predecessors() const {
     return predecessors_;
   }

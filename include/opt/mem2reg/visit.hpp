@@ -49,6 +49,8 @@ private:
       phiNodes_; // this indicates the phi nodes placed for each alloca
 
   std::unordered_set<ir::Instruction *> toRemove_;
+  std::unordered_set<const ir::AllocaInst *> promotableAllocas_;
+  std::vector<std::shared_ptr<ir::UndefValue>> undefValues_;
 };
 
 inline void Mem2RegVisitor::run(ir::Module &module) {
@@ -59,6 +61,8 @@ inline void Mem2RegVisitor::run(ir::Module &module) {
     renameStacks_.clear();
     phiNodes_.clear();
     toRemove_.clear();
+    undefValues_.clear();
+    promotableAllocas_.clear();
 
     findDominators(*function);
     findIDom(*function);
@@ -168,7 +172,6 @@ inline void Mem2RegVisitor::findDomFrontiers(ir::Function &function) {
         }
       }
     }
-    dominanceFrontiers_[bb.get()].insert(bb.get());
   }
 }
 
@@ -198,7 +201,35 @@ inline void Mem2RegVisitor::mem2reg(ir::Function &function) {
     }
   }
 
+  // Compute which allocas are safe to promote.
+  // We may pass a ptr to another function, so we need to be careful.
   for (auto *alloca : allocas) {
+    bool promotable = true;
+    for (auto *user : alloca->getUses()) {
+      if (auto *load = dynamic_cast<ir::LoadInst *>(user)) {
+        if (load->pointer().get() == alloca) {
+          continue;
+        }
+      }
+      if (auto *store = dynamic_cast<ir::StoreInst *>(user)) {
+        if (store->pointer().get() == alloca) {
+          continue;
+        }
+      }
+
+      promotable = false;
+      break;
+    }
+
+    if (promotable) {
+      promotableAllocas_.insert(alloca);
+    }
+  }
+
+  for (auto *alloca : allocas) {
+    if (!promotableAllocas_.count(alloca)) {
+      continue;
+    }
     const auto &defs = defBlocks[alloca];
     for (auto *defBB : defs) {
       placePhiNodes(*defBB, alloca);
@@ -238,6 +269,9 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
     if (auto *store = dynamic_cast<ir::StoreInst *>(inst.get())) {
       if (auto *alloca =
               dynamic_cast<ir::AllocaInst *>(store->pointer().get())) {
+        if (!promotableAllocas_.count(alloca)) {
+          continue;
+        }
         auto &stack = renameStacks_[alloca];
         stack.push_back(store->value().get());
         pushedAllocas.push_back(alloca);
@@ -250,6 +284,9 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
     } else if (auto *load = dynamic_cast<ir::LoadInst *>(inst.get())) {
       if (auto *alloca =
               dynamic_cast<ir::AllocaInst *>(load->pointer().get())) {
+        if (!promotableAllocas_.count(alloca)) {
+          continue;
+        }
         auto &stack = renameStacks_[alloca];
         if (stack.empty()) {
           // No reaching definition - use undef value
@@ -258,7 +295,7 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
           undefValues_.push_back(undef); // Keep alive
           replaceAllUsesWith(*load, undef.get());
         } else {
-        replaceAllUsesWith(*load, stack.back());
+          replaceAllUsesWith(*load, stack.back());
         }
 
         toRemove_.insert(inst.get());
@@ -302,7 +339,7 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
 
 inline void Mem2RegVisitor::replaceAllUsesWith(ir::Value &from, ir::Value *to) {
   auto uses = from.getUses();
-  for (auto &use : uses) {
+  for (auto *use : uses) {
     use->replaceOperand(&from, to);
   }
   from.getUses().clear();

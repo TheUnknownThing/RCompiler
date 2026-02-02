@@ -44,17 +44,22 @@ inline std::vector<const ir::BasicBlock *> successors(const ir::BasicBlock &bb) 
     return outs;
   }
 
-  const auto *last = ins.back().get();
-  if (!last) {
-    return outs;
-  }
-
-  if (auto *br = dynamic_cast<const ir::BranchInst *>(last)) {
-    if (br->dest()) {
-      outs.push_back(br->dest().get());
+  for (const auto &inst : ins) {
+    if (!inst) {
+      continue;
     }
-    if (br->isConditional() && br->altDest()) {
-      outs.push_back(br->altDest().get());
+    if (auto *br = dynamic_cast<const ir::BranchInst *>(inst.get())) {
+      if (br->dest()) {
+        outs.push_back(br->dest().get());
+      }
+      if (br->isConditional() && br->altDest()) {
+        outs.push_back(br->altDest().get());
+      }
+      break;
+    }
+    if (dynamic_cast<const ir::ReturnInst *>(inst.get()) ||
+        dynamic_cast<const ir::UnreachableInst *>(inst.get())) {
+      break;
     }
   }
 
