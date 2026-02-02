@@ -1,10 +1,10 @@
 #pragma once
 
-#include <ir/instructions/controlFlow.hpp>
-#include <ir/instructions/memory.hpp>
-#include <ir/instructions/misc.hpp>
-#include <ir/instructions/topLevel.hpp>
-#include <ir/instructions/type.hpp>
+#include "ir/instructions/controlFlow.hpp"
+#include "ir/instructions/memory.hpp"
+#include "ir/instructions/misc.hpp"
+#include "ir/instructions/topLevel.hpp"
+#include "ir/instructions/type.hpp"
 
 namespace rc::opt {
 class IRBaseVisitor {

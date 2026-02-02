@@ -1,9 +1,9 @@
 #pragma once
 
-#include <ir/instructions/controlFlow.hpp>
-#include <ir/instructions/topLevel.hpp>
+#include "ir/instructions/controlFlow.hpp"
+#include "ir/instructions/topLevel.hpp"
 
-#include <opt/utils/cfgPrettyPrint.hpp>
+#include "opt/utils/cfgPrettyPrint.hpp"
 
 #include <unordered_set>
 #include <vector>

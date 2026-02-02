@@ -1,15 +1,13 @@
 #pragma once
 
-#include <ir/instructions/controlFlow.hpp>
-#include <ir/instructions/memory.hpp>
-#include <ir/instructions/misc.hpp>
-#include <ir/instructions/topLevel.hpp>
-#include <ir/instructions/type.hpp>
+#include "ir/instructions/controlFlow.hpp"
+#include "ir/instructions/topLevel.hpp"
+#include "ir/instructions/type.hpp"
 
-#include <opt/base/baseVisitor.hpp>
-#include <opt/utils/cfgPrettyPrint.hpp>
+#include "opt/base/baseVisitor.hpp"
+#include "opt/utils/cfgPrettyPrint.hpp"
 
-#include <utils/logger.hpp>
+#include "utils/logger.hpp"
 
 namespace rc::opt {
 

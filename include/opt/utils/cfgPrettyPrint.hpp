@@ -8,8 +8,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include <ir/instructions/controlFlow.hpp>
-#include <ir/instructions/topLevel.hpp>
+#include "ir/instructions/controlFlow.hpp"
+#include "ir/instructions/topLevel.hpp"
 
 namespace rc::opt::utils {
 

@@ -1,15 +1,16 @@
 #pragma once
 
-#include <ir/instructions/controlFlow.hpp>
-#include <ir/instructions/memory.hpp>
-#include <ir/instructions/misc.hpp>
-#include <ir/instructions/topLevel.hpp>
-#include <ir/instructions/type.hpp>
+#include <cstddef>
+#include "ir/instructions/controlFlow.hpp"
+#include "ir/instructions/memory.hpp"
+#include "ir/instructions/misc.hpp"
+#include "ir/instructions/topLevel.hpp"
+#include "ir/instructions/type.hpp"
 
-#include <opt/base/baseVisitor.hpp>
-#include <opt/utils/cfgPrettyPrint.hpp>
+#include "opt/base/baseVisitor.hpp"
+#include "opt/utils/cfgPrettyPrint.hpp"
 
-#include <utils/logger.hpp>
+#include "utils/logger.hpp"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -21,6 +22,9 @@ public:
   virtual ~Mem2RegVisitor() = default;
 
   void run(ir::Module &module);
+
+  void removeUnusedAllocas(ir::Function &function);
+  void replaceUseWithValue(ir::Function &function);
 
   void findDominators(ir::Function &function);
   void findIDom(ir::Function &function);
@@ -64,11 +68,85 @@ inline void Mem2RegVisitor::run(ir::Module &module) {
     undefValues_.clear();
     promotableAllocas_.clear();
 
+    removeUnusedAllocas(*function);
+    replaceUseWithValue(*function);
+
     findDominators(*function);
     findIDom(*function);
     findDomFrontiers(*function);
     mem2reg(*function);
     removeDeadInstructions(*function);
+  }
+}
+
+inline void Mem2RegVisitor::removeUnusedAllocas(ir::Function &function) {
+  for (const auto &bb : function.blocks()) {
+    for (const auto &inst : bb->instructions()) {
+      if (auto *alloca = dynamic_cast<ir::AllocaInst *>(inst.get())) {
+        if (alloca->getUses().empty()) {
+          toRemove_.insert(alloca);
+        }
+      }
+    }
+  }
+}
+
+inline void Mem2RegVisitor::replaceUseWithValue(ir::Function &function) {
+  // if an alloca is only used by 1 store and > 1 load, we can replace loads with the stored value
+  std::unordered_map<ir::AllocaInst *, ir::Value *> allocaStoreValues;
+  std::unordered_map<ir::AllocaInst *, std::vector<ir::LoadInst *>> allocaLoadInsts;
+  std::unordered_map<ir::AllocaInst *, size_t> allocaStoreCounts;
+
+  for (const auto &bb : function.blocks()) {
+    for (const auto &inst : bb->instructions()) {
+      if (auto *store = dynamic_cast<ir::StoreInst *>(inst.get())) {
+        if (auto *alloca = dynamic_cast<ir::AllocaInst *>(store->pointer().get())) {
+          allocaStoreCounts[alloca]++;
+          allocaStoreValues[alloca] = store->value().get();
+        }
+      } else if (auto *load = dynamic_cast<ir::LoadInst *>(inst.get())) {
+        if (auto *alloca = dynamic_cast<ir::AllocaInst *>(load->pointer().get())) {
+          allocaLoadInsts[alloca].push_back(load);
+        }
+      }
+    }
+  }
+
+  for (const auto &[alloca, storeCount] : allocaStoreCounts) {
+    if (storeCount == 1 && allocaLoadInsts.count(alloca) > 0) {
+      bool canReplace = true;
+      for (auto *user : alloca->getUses()) {
+        if (dynamic_cast<ir::StoreInst *>(user)) {
+          continue;
+        }
+        if (dynamic_cast<ir::LoadInst *>(user)) {
+          continue;
+        }
+        // getelementptr or other use - cannot replace
+        canReplace = false;
+        break;
+      }
+      if (!canReplace) {
+        continue;
+      }
+
+      ir::Value *storedValue = allocaStoreValues[alloca];
+      for (auto *loadInst : allocaLoadInsts[alloca]) {
+        replaceAllUsesWith(*loadInst, storedValue);
+        toRemove_.insert(loadInst);
+      }
+      // Also remove the store instruction
+      for (const auto &bb : function.blocks()) {
+        for (const auto &inst : bb->instructions()) {
+          if (auto *store = dynamic_cast<ir::StoreInst *>(inst.get())) {
+            if (store->pointer().get() == alloca) {
+              toRemove_.insert(store);
+            }
+          }
+        }
+      }
+      toRemove_.insert(alloca);
+    }
   }
 }
 
