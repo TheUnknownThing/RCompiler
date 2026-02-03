@@ -74,6 +74,8 @@ int main(int argc, char *argv[]) {
       rc::opt::SCCPVisitor sccp(&constCtx);
       sccp.run(emitter.module());
 
+      dce.run(emitter.module());
+
       rc::ir::emitLLVM(emitter.module(), std::cout);
     }
 

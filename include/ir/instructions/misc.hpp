@@ -258,6 +258,8 @@ public:
     }
   }
 
+  TypePtr destType() const { return type(); }
+
 private:
   std::shared_ptr<Value> src_;
 };
@@ -290,6 +292,8 @@ public:
     }
   }
 
+  TypePtr destType() const { return type(); }
+
 private:
   std::shared_ptr<Value> src_;
 };
@@ -308,6 +312,16 @@ public:
   }
 
   const std::shared_ptr<Value> &source() const { return src_; }
+
+  TypePtr destType() const { return type(); }
+
+  size_t destBits() const {
+    auto destInt = std::dynamic_pointer_cast<const IntegerType>(type());
+    if (!destInt) {
+      throw std::invalid_argument("TruncInst destination type is not integer");
+    }
+    return destInt->bits();
+  }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {

@@ -59,7 +59,14 @@ private:
       constantValues_;
   std::unordered_set<const ir::BasicBlock *> executableBlocks_;
 
+  std::unordered_set<ir::Instruction *> instructionsToRemove_;
+
   ConstantContext *context_{nullptr};
+
+  void replaceAllUsesWith(ir::Value &from, ir::Value *to);
+
+  void removeDeadInstructions(ir::Function &function);
+  void removeDeadBlocks(ir::Function &function);
 
   LatticeValueKind getLatticeValue(ir::Value *value) {
     auto it = latticeValues_.find(value);
@@ -119,6 +126,7 @@ inline void SCCPVisitor::run(ir::Module &module) {
     latticeValues_.clear();
     constantValues_.clear();
     executableBlocks_.clear();
+    instructionsToRemove_.clear();
 
     visit(*function);
   }
@@ -216,6 +224,19 @@ inline void SCCPVisitor::visit(ir::Function &function) {
       visit(*inst);
     }
   }
+
+  // cleanup
+  for (auto bb : function.blocks()) {
+    for (const auto &inst : bb->instructions()) {
+      if (getLatticeValue(inst.get()) == LatticeValueKind::CONSTANT) {
+        auto constVal = constantValues_[inst.get()];
+        replaceAllUsesWith(*inst, constVal.get());
+        instructionsToRemove_.insert(inst.get());
+      }
+    }
+  }
+
+  removeDeadInstructions(function);
 }
 
 inline void SCCPVisitor::visit(ir::BasicBlock &basicBlock) {
@@ -245,18 +266,22 @@ inline void SCCPVisitor::visit(ir::BinaryOpInst &binaryOpInst) {
           auto rhsValue = rhsInt->value();
           switch (binaryOpInst.op()) {
           case ir::BinaryOpKind::ADD:
-            resultConst = ir::ConstantInt::getI32(lhsValue + rhsValue, false);
+            resultConst = context_->getIntConstant(
+                static_cast<std::int32_t>(lhsValue + rhsValue), false);
             break;
           case ir::BinaryOpKind::SUB:
-            resultConst = ir::ConstantInt::getI32(lhsValue - rhsValue, false);
+            resultConst = context_->getIntConstant(
+                static_cast<std::int32_t>(lhsValue - rhsValue), false);
             break;
           case ir::BinaryOpKind::MUL:
-            resultConst = ir::ConstantInt::getI32(lhsValue * rhsValue, false);
+            resultConst = context_->getIntConstant(
+                static_cast<std::int32_t>(lhsValue * rhsValue), false);
             break;
           case ir::BinaryOpKind::SDIV:
           case ir::BinaryOpKind::UDIV:
             if (rhsValue != 0) {
-              resultConst = ir::ConstantInt::getI32(lhsValue / rhsValue, false);
+              resultConst = context_->getIntConstant(
+                  static_cast<std::int32_t>(lhsValue / rhsValue), false);
             } else {
               kind = LatticeValueKind::OVERDEF;
             }
@@ -350,7 +375,6 @@ inline void SCCPVisitor::visit(ir::LoadInst &loadInst) {
   LOG_DEBUG("SCCP visiting load instruction");
   auto prev = getLatticeValue(&loadInst);
   if (auto ptr = dynamic_cast<ir::ConstantPtr *>(loadInst.pointer().get())) {
-    /// TODO: load constant value
     latticeValues_[&loadInst] = LatticeValueKind::CONSTANT;
     constantValues_[&loadInst] = ptr->pointee();
     if (prev != LatticeValueKind::CONSTANT) {
@@ -548,7 +572,7 @@ inline void SCCPVisitor::visit(ir::ICmpInst &icmpInst) {
             kind = LatticeValueKind::OVERDEF;
             break;
           }
-          resultConst = ir::ConstantInt::getI1(cmpResult);
+          resultConst = context_->getIntConstant(cmpResult ? 1 : 0, false);
         } else {
           kind = LatticeValueKind::OVERDEF;
         }
@@ -575,6 +599,20 @@ inline void SCCPVisitor::visit(ir::SExtInst &sextInst) {
   auto kind = getLatticeValue(sextInst.source().get());
   auto prev = getLatticeValue(&sextInst);
   if (kind != prev) {
+    if (kind == LatticeValueKind::CONSTANT) {
+      auto srcConst = constantValues_[sextInst.source().get()];
+      if (auto srcInt = std::dynamic_pointer_cast<ir::ConstantInt>(srcConst)) {
+        LOG_DEBUG("SCCP folding sext constant");
+        auto srcValue = srcInt->value();
+        std::int32_t signedValue = static_cast<std::int32_t>(srcValue);
+        std::int32_t extendedValue = signedValue;
+        constantValues_[&sextInst] = context_->getIntConstant(
+            static_cast<std::uint32_t>(extendedValue), false);
+      } else {
+        kind = LatticeValueKind::OVERDEF;
+      }
+    }
+
     latticeValues_[&sextInst] = kind;
 
     for (auto *user : sextInst.getUses()) {
@@ -590,6 +628,17 @@ inline void SCCPVisitor::visit(ir::ZExtInst &zextInst) {
   auto kind = getLatticeValue(zextInst.source().get());
   auto prev = getLatticeValue(&zextInst);
   if (kind != prev) {
+    if (kind == LatticeValueKind::CONSTANT) {
+      auto srcConst = constantValues_[zextInst.source().get()];
+      if (auto srcInt = std::dynamic_pointer_cast<ir::ConstantInt>(srcConst)) {
+        auto srcValue = srcInt->value();
+        LOG_DEBUG("SCCP folding zext constant");
+        constantValues_[&zextInst] = context_->getIntConstant(srcValue, false);
+      } else {
+        kind = LatticeValueKind::OVERDEF;
+      }
+    }
+
     latticeValues_[&zextInst] = kind;
 
     for (auto *user : zextInst.getUses()) {
@@ -605,6 +654,19 @@ inline void SCCPVisitor::visit(ir::TruncInst &truncInst) {
   auto kind = getLatticeValue(truncInst.source().get());
   auto prev = getLatticeValue(&truncInst);
   if (kind != prev) {
+    if (kind == LatticeValueKind::CONSTANT) {
+      auto srcConst = constantValues_[truncInst.source().get()];
+      if (auto srcInt = std::dynamic_pointer_cast<ir::ConstantInt>(srcConst)) {
+        LOG_DEBUG("SCCP folding trunc constant");
+        auto srcValue = srcInt->value();
+        std::uint32_t truncatedValue =
+            srcValue & ((1u << truncInst.destBits()) - 1);
+        constantValues_[&truncInst] =
+            context_->getIntConstant(static_cast<int>(truncatedValue), false);
+      } else {
+        kind = LatticeValueKind::OVERDEF;
+      }
+    }
     latticeValues_[&truncInst] = kind;
 
     for (auto *user : truncInst.getUses()) {
@@ -712,6 +774,73 @@ inline void SCCPVisitor::visit(ir::SelectInst &selectInst) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
         instructionWorklist_.push_back(inst);
       }
+    }
+  }
+}
+
+inline void SCCPVisitor::replaceAllUsesWith(ir::Value &from, ir::Value *to) {
+  auto uses = from.getUses();
+  for (auto *use : uses) {
+    use->replaceOperand(&from, to);
+  }
+  from.getUses().clear();
+}
+
+inline void SCCPVisitor::removeDeadInstructions(ir::Function &function) {
+
+  auto instructionSafeToRemove = [&](ir::Instruction *inst) -> bool {
+    // An instruction is safe to remove if it has no side effects.
+    if (dynamic_cast<ir::StoreInst *>(inst) ||
+        dynamic_cast<ir::CallInst *>(inst) ||
+        dynamic_cast<ir::BranchInst *>(inst) ||
+        dynamic_cast<ir::ReturnInst *>(inst) ||
+        dynamic_cast<ir::UnreachableInst *>(inst)) {
+      return false;
+    }
+    return true;
+  };
+
+  for (const auto &bb : function.blocks()) {
+    auto &instrs = bb->instructions();
+    // NOTE: upon removing the instructions, we also need to adjust its next &
+    // prev ptr.
+    for (auto it = instrs.begin(); it != instrs.end();) {
+      if (instructionsToRemove_.count(it->get()) &&
+          instructionSafeToRemove(
+              std::static_pointer_cast<ir::Instruction>(*it).get())) {
+        auto inst = std::static_pointer_cast<ir::Instruction>(*it);
+        inst->dropAllReferences();
+
+        auto *prev = inst->prev();
+        auto *next = inst->next();
+        if (prev) {
+          prev->setNext(next);
+        }
+        if (next) {
+          next->setPrev(prev);
+        }
+        it = instrs.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+}
+
+inline void SCCPVisitor::removeDeadBlocks(ir::Function &function) {
+
+  for (auto &bb : function.blocks()) {
+    // remove predecessors' entries to this block
+    for (auto *pred : bb->predecessors()) {
+      pred->removePredecessor(bb.get());
+    }
+  }
+
+  for (auto it = function.blocks().begin(); it != function.blocks().end();) {
+    if (executableBlocks_.count(it->get()) == 0) {
+      it = function.blocks().erase(it);
+    } else {
+      ++it;
     }
   }
 }

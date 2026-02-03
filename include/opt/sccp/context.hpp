@@ -18,16 +18,21 @@ public:
   ConstantContext() = default;
   ~ConstantContext() = default;
 
-  std::shared_ptr<ir::ConstantInt> getIntConstant(int value) {
+  std::shared_ptr<ir::ConstantInt> getIntConstant(int value,
+                                                  bool isSigned = true) {
     auto it = intConstants.find(value);
     if (it != intConstants.end()) {
       return it->second;
     } else {
       auto constInt =
-          ir::ConstantInt::getI32(static_cast<std::uint32_t>(value));
+          ir::ConstantInt::getI32(static_cast<std::uint32_t>(value), isSigned);
       intConstants[value] = constInt;
       return constInt;
     }
+  }
+
+  std::shared_ptr<ir::ConstantInt> getBoolConstant(bool value) {
+    return getIntConstant(value ? 1 : 0, true);
   }
 
   std::shared_ptr<ir::ConstantPtr>

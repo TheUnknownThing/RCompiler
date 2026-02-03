@@ -43,8 +43,7 @@ public:
   template <class T, class... Args> std::shared_ptr<T> append(Args &&...args) {
     auto inst = std::make_shared<T>(this, std::forward<Args>(args)...);
     std::static_pointer_cast<Instruction>(inst)->setPrev(
-        instructions_.empty() ? nullptr
-                             : instructions_.back().get());
+        instructions_.empty() ? nullptr : instructions_.back().get());
     if (!instructions_.empty()) {
       instructions_.back()->setNext(inst.get());
     }
@@ -86,8 +85,12 @@ public:
 
   Function *parent() const { return parent_; }
 
-  void addPredecessor(BasicBlock *bb) {
-    predecessors_.push_back(bb);
+  void addPredecessor(BasicBlock *bb) { predecessors_.push_back(bb); }
+
+  void removePredecessor(BasicBlock *bb) {
+    predecessors_.erase(
+        std::remove(predecessors_.begin(), predecessors_.end(), bb),
+        predecessors_.end());
   }
 
   void clearPredecessors() { predecessors_.clear(); }
@@ -133,6 +136,8 @@ public:
     blocks_.push_back(bb);
     return bb;
   }
+
+  std::vector<std::shared_ptr<BasicBlock>> &blocks() { return blocks_; }
 
   const std::vector<std::shared_ptr<BasicBlock>> &blocks() const {
     return blocks_;

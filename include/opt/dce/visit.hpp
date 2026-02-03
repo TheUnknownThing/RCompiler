@@ -16,6 +16,7 @@ public:
 
 private:
   void trimAfterTerminator(ir::BasicBlock &bb);
+  void foldConstantConditionalBranches(ir::Function &function);
   std::unordered_set<ir::BasicBlock *> computeReachable(ir::Function &function);
   void squashUnreachableBlocks(
       ir::Function &function,
@@ -28,6 +29,8 @@ inline void DeadCodeElimVisitor::run(ir::Module &module) {
     for (const auto &bb : function->blocks()) {
       trimAfterTerminator(*bb);
     }
+
+    foldConstantConditionalBranches(*function);
 
     auto reachable = computeReachable(*function);
     squashUnreachableBlocks(*function, reachable);
@@ -70,6 +73,70 @@ inline void DeadCodeElimVisitor::trimAfterTerminator(ir::BasicBlock &bb) {
     }
 
     ++it;
+  }
+}
+
+inline void
+DeadCodeElimVisitor::foldConstantConditionalBranches(ir::Function &function) {
+  for (const auto &bbPtr : function.blocks()) {
+    if (!bbPtr) {
+      continue;
+    }
+
+    auto &bb = *bbPtr;
+    auto &instrs = bb.instructions();
+    if (instrs.empty()) {
+      continue;
+    }
+
+    for (auto it = instrs.begin(); it != instrs.end(); ++it) {
+      auto *br = dynamic_cast<ir::BranchInst *>(it->get());
+      if (!br) {
+        continue;
+      }
+      if (!br->isConditional()) {
+        break;
+      }
+
+      auto *ci = dynamic_cast<ir::ConstantInt *>(br->cond().get());
+      if (!ci) {
+        break;
+      }
+
+      const bool takeTrue = (ci->value() != 0);
+      auto chosen = takeTrue ? br->dest() : br->altDest();
+      if (!chosen) {
+        break;
+      }
+
+      // Replace the conditional branch with an unconditional one.
+      auto oldInst = std::static_pointer_cast<ir::Instruction>(*it);
+      oldInst->dropAllReferences();
+
+      auto *prev = oldInst->prev();
+      auto *next = oldInst->next();
+      if (prev) {
+        prev->setNext(next);
+      }
+      if (next) {
+        next->setPrev(prev);
+      }
+
+      it = instrs.erase(it);
+
+      auto newBr = std::make_shared<ir::BranchInst>(&bb, chosen);
+      newBr->setPrev(prev);
+      newBr->setNext(next);
+      if (prev) {
+        prev->setNext(newBr.get());
+      }
+      if (next) {
+        next->setPrev(newBr.get());
+      }
+
+      instrs.insert(it, std::move(newBr));
+      break;
+    }
   }
 }
 
