@@ -51,6 +51,10 @@ public:
         out_ << "@" << constantName(*c) << " = constant "
              << typeToString(cs->arrayType()) << " " << encodeStringData(*cs)
              << "\n";
+      } else if (auto ca = dynamic_cast<const ConstantArray *>(c.get())) {
+        out_ << "@" << constantName(*c) << " = constant "
+             << typeToString(ca->arrayType()) << " " << encodeArrayData(*ca)
+             << "\n";
       } else {
         out_ << "@" << constantName(*c) << " = constant "
              << typeToString(c->type()) << " " << valueRef(*c) << "\n";
@@ -341,6 +345,9 @@ private:
     if (auto cs = dynamic_cast<const ConstantString *>(&v)) {
       return "@" + constantName(*cs);
     }
+    if (auto ca = dynamic_cast<const ConstantArray *>(&v)) {
+      return "@" + constantName(*ca);
+    }
     if (dynamic_cast<const ConstantNull *>(&v)) {
       return "";
     }
@@ -385,6 +392,20 @@ private:
       }
     }
     oss << "\"";
+    return oss.str();
+  }
+
+  std::string encodeArrayData(const ConstantArray &ca) {
+    auto at = std::static_pointer_cast<const ArrayType>(ca.arrayType());
+    const auto &elemTy = at->elem();
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < ca.elements().size(); ++i) {
+      if (i)
+        oss << ", ";
+      oss << typeToString(elemTy) << " " << valueRef(*ca.elements()[i]);
+    }
+    oss << "]";
     return oss.str();
   }
 

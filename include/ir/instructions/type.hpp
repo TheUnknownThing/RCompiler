@@ -306,4 +306,36 @@ private:
   std::shared_ptr<Constant> pointee_;
 };
 
+class ConstantArray final : public Constant {
+public:
+  ConstantArray(TypePtr elemTy, std::vector<std::shared_ptr<Constant>> elems)
+      : Constant(nullptr), elements_(std::move(elems)),
+        arrayType_(std::make_shared<ArrayType>(std::move(elemTy),
+                                               elements_.size())) {
+    setType(std::make_shared<PointerType>(arrayType_));
+  }
+
+  const std::vector<std::shared_ptr<Constant>> &elements() const {
+    return elements_;
+  }
+  TypePtr arrayType() const { return arrayType_; }
+
+  bool equals(const Constant &other) const override {
+    auto otherArr = dynamic_cast<const ConstantArray *>(&other);
+    if (!otherArr)
+      return false;
+    if (elements_.size() != otherArr->elements_.size())
+      return false;
+    for (size_t i = 0; i < elements_.size(); ++i) {
+      if (!elements_[i]->equals(*otherArr->elements_[i]))
+        return false;
+    }
+    return true;
+  }
+
+private:
+  std::vector<std::shared_ptr<Constant>> elements_;
+  TypePtr arrayType_;
+};
+
 } // namespace rc::ir

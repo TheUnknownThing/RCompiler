@@ -772,37 +772,65 @@ inline void IREmitter::visit(ConstantItem &node) {
   const auto &cv = *meta.evaluated_value;
   std::shared_ptr<Constant> irConst;
 
-  if (cv.is_bool()) {
-    irConst = ConstantInt::getI1(cv.as_bool());
-  } else if (cv.is_i32()) {
-    irConst =
-        ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_i32()), true);
-  } else if (cv.is_u32()) {
-    irConst = ConstantInt::getI32(cv.as_u32(), false);
-  } else if (cv.is_isize()) {
-    irConst = std::make_shared<ConstantInt>(
-        IntegerType::isize(), static_cast<std::uint64_t>(cv.as_isize()));
-  } else if (cv.is_usize()) {
-    irConst =
-        std::make_shared<ConstantInt>(IntegerType::usize(), cv.as_usize());
-  } else if (cv.is_any_int()) {
-    // TODO: Treat ANY_INT as i32
-    irConst =
-        ConstantInt::getI32(static_cast<std::uint32_t>(cv.as_any_int()), true);
-  } else if (cv.is_char()) {
-    irConst = std::make_shared<ConstantInt>(
-        IntegerType::i8(false), static_cast<std::uint8_t>(cv.as_char()));
-  } else if (cv.is_string()) {
-    auto decoded = decodeStringLiteral(cv.as_string());
-    decoded.push_back('\0');
-    auto strConst = std::make_shared<ConstantString>(decoded);
-    irConst = strConst;
-  } else if (cv.type.is_primitive() &&
-             cv.type.as_primitive().kind == SemPrimitiveKind::UNIT) {
-    irConst = std::make_shared<ConstantUnit>();
+  auto emitScalarConst = [&](const ConstValue &v) -> std::shared_ptr<Constant> {
+    if (v.is_bool()) {
+      return ConstantInt::getI1(v.as_bool());
+    }
+    if (v.is_i32()) {
+      return ConstantInt::getI32(static_cast<std::uint32_t>(v.as_i32()), true);
+    }
+    if (v.is_u32()) {
+      return ConstantInt::getI32(v.as_u32(), false);
+    }
+    if (v.is_isize()) {
+      return std::make_shared<ConstantInt>(IntegerType::isize(),
+                                           static_cast<std::uint64_t>(
+                                               v.as_isize()));
+    }
+    if (v.is_usize()) {
+      return std::make_shared<ConstantInt>(IntegerType::usize(), v.as_usize());
+    }
+    if (v.is_any_int()) {
+      // TODO: Treat ANY_INT as i32
+      return ConstantInt::getI32(static_cast<std::uint32_t>(v.as_any_int()),
+                                 true);
+    }
+    if (v.is_char()) {
+      return std::make_shared<ConstantInt>(
+          IntegerType::i8(false), static_cast<std::uint8_t>(v.as_char()));
+    }
+    if (v.is_string()) {
+      auto decoded = decodeStringLiteral(v.as_string());
+      decoded.push_back('\0');
+      return internStringLiteral(decoded);
+    }
+    if (v.type.is_primitive() &&
+        v.type.as_primitive().kind == SemPrimitiveKind::UNIT) {
+      return std::make_shared<ConstantUnit>();
+    }
+    return nullptr;
+  };
+
+  if (cv.is_array()) {
+    const auto &arrSem = cv.type.as_array();
+    auto elemIrTy = context->resolveType(*arrSem.element);
+    std::vector<std::shared_ptr<Constant>> elems;
+    elems.reserve(cv.as_array().size());
+    for (const auto &elem : cv.as_array()) {
+      auto c = emitScalarConst(elem);
+      if (!c) {
+        throw IRException("constant '" + node.name +
+                          "' has unsupported array element type for IR emission");
+      }
+      elems.push_back(std::move(c));
+    }
+    irConst = std::make_shared<ConstantArray>(elemIrTy, std::move(elems));
   } else {
-    throw IRException("constant '" + node.name +
-                      "' has unsupported type for IR emission");
+    irConst = emitScalarConst(cv);
+    if (!irConst) {
+      throw IRException("constant '" + node.name +
+                        "' has unsupported type for IR emission");
+    }
   }
 
   auto mangled = mangle_constant(meta.name, item->owner_scope);
