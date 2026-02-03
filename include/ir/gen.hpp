@@ -346,6 +346,9 @@ private:
       return "@" + constantName(*cs);
     }
     if (auto ca = dynamic_cast<const ConstantArray *>(&v)) {
+      if (ca->name().empty()) {
+        return encodeArrayData(*ca);
+      }
       return "@" + constantName(*ca);
     }
     if (dynamic_cast<const ConstantNull *>(&v)) {
@@ -403,7 +406,12 @@ private:
     for (size_t i = 0; i < ca.elements().size(); ++i) {
       if (i)
         oss << ", ";
-      oss << typeToString(elemTy) << " " << valueRef(*ca.elements()[i]);
+      if (auto inner =
+              dynamic_cast<const ConstantArray *>(ca.elements()[i].get())) {
+        oss << typeToString(elemTy) << " " << encodeArrayData(*inner);
+      } else {
+        oss << typeToString(elemTy) << " " << valueRef(*ca.elements()[i]);
+      }
     }
     oss << "]";
     return oss.str();

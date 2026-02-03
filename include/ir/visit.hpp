@@ -783,9 +783,8 @@ inline void IREmitter::visit(ConstantItem &node) {
       return ConstantInt::getI32(v.as_u32(), false);
     }
     if (v.is_isize()) {
-      return std::make_shared<ConstantInt>(IntegerType::isize(),
-                                           static_cast<std::uint64_t>(
-                                               v.as_isize()));
+      return std::make_shared<ConstantInt>(
+          IntegerType::isize(), static_cast<std::uint64_t>(v.as_isize()));
     }
     if (v.is_usize()) {
       return std::make_shared<ConstantInt>(IntegerType::usize(), v.as_usize());
@@ -811,26 +810,30 @@ inline void IREmitter::visit(ConstantItem &node) {
     return nullptr;
   };
 
-  if (cv.is_array()) {
-    const auto &arrSem = cv.type.as_array();
-    auto elemIrTy = context->resolveType(*arrSem.element);
-    std::vector<std::shared_ptr<Constant>> elems;
-    elems.reserve(cv.as_array().size());
-    for (const auto &elem : cv.as_array()) {
-      auto c = emitScalarConst(elem);
-      if (!c) {
-        throw IRException("constant '" + node.name +
-                          "' has unsupported array element type for IR emission");
+  std::function<std::shared_ptr<Constant>(const ConstValue &)> emitConst;
+  emitConst = [&](const ConstValue &v) -> std::shared_ptr<Constant> {
+    if (v.is_array()) {
+      const auto &arrSem = v.type.as_array();
+      auto elemIrTy = context->resolveType(*arrSem.element);
+      std::vector<std::shared_ptr<Constant>> elems;
+      elems.reserve(v.as_array().size());
+      for (const auto &elem : v.as_array()) {
+        auto c = emitConst(elem);
+        if (!c) {
+          return nullptr;
+        }
+        elems.push_back(std::move(c));
       }
-      elems.push_back(std::move(c));
+      return std::make_shared<ConstantArray>(elemIrTy, std::move(elems));
     }
-    irConst = std::make_shared<ConstantArray>(elemIrTy, std::move(elems));
-  } else {
-    irConst = emitScalarConst(cv);
-    if (!irConst) {
-      throw IRException("constant '" + node.name +
-                        "' has unsupported type for IR emission");
-    }
+
+    return emitScalarConst(v);
+  };
+
+  irConst = emitConst(cv);
+  if (!irConst) {
+    throw IRException("constant '" + node.name +
+                      "' has unsupported type for IR emission");
   }
 
   auto mangled = mangle_constant(meta.name, item->owner_scope);
