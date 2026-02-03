@@ -69,6 +69,19 @@ private:
   void removeDeadBlocks(ir::Function &function);
 
   LatticeValueKind getLatticeValue(ir::Value *value) {
+    if (!value) {
+      return LatticeValueKind::UNDEF;
+    }
+
+    if (auto *c = dynamic_cast<ir::Constant *>(value)) {
+      latticeValues_[value] = LatticeValueKind::CONSTANT;
+      if (constantValues_.find(value) == constantValues_.end()) {
+        constantValues_[value] = std::dynamic_pointer_cast<ir::Constant>(
+            c->shared_from_this());
+      }
+      return LatticeValueKind::CONSTANT;
+    }
+
     auto it = latticeValues_.find(value);
     if (it != latticeValues_.end()) {
       return it->second;
@@ -100,6 +113,9 @@ private:
       return {LatticeValueKind::OVERDEF, nullptr};
     } else if (kind1 == LatticeValueKind::CONSTANT &&
                kind2 == LatticeValueKind::CONSTANT) {
+      if (!value1 || !value2) {
+        return {LatticeValueKind::OVERDEF, nullptr};
+      }
       auto const1 = constantValues_[value1];
       auto const2 = constantValues_[value2];
       if (const1->equals(*const2)) {
@@ -188,7 +204,6 @@ inline void SCCPVisitor::visit(ir::Function &function) {
     while (!edges_.empty()) {
       auto edge = edges_.back();
       edges_.pop_back();
-      auto *fromBB = edge.first;
       auto *toBB = edge.second;
       if (executableBlocks_.count(toBB) == 0) {
         executableBlocks_.insert(toBB);
@@ -319,23 +334,19 @@ inline void SCCPVisitor::visit(ir::BranchInst &branchInst) {
     if (condKind == LatticeValueKind::CONSTANT) {
       auto condConst = constantValues_[branchInst.cond().get()];
       auto constBool = std::dynamic_pointer_cast<ir::ConstantInt>(condConst);
-      if (constBool != 0) {
+      if (constBool && constBool->value() != 0) {
         auto *targetBB = branchInst.dest().get();
         edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
-        executableBlocks_.insert(targetBB);
       } else {
         auto *targetBB = branchInst.altDest().get();
         edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
-        executableBlocks_.insert(targetBB);
       }
     } else if (condKind == LatticeValueKind::OVERDEF) {
       auto *targetBB = branchInst.dest().get();
       edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
-      executableBlocks_.insert(targetBB);
 
       auto *altBB = branchInst.altDest().get();
       edges_.push_back(std::make_pair(branchInst.parent(), altBB));
-      executableBlocks_.insert(altBB);
     } else {
       // undef cond, do nothing
       return;
@@ -698,6 +709,7 @@ inline void SCCPVisitor::visit(ir::PhiInst &phiInst) {
   auto prev = getLatticeValue(&phiInst);
   LatticeValueKind resultKind = LatticeValueKind::UNDEF;
   std::shared_ptr<ir::Constant> constValue = nullptr;
+  ir::Value *mergedValue = nullptr;
 
   auto incoming = phiInst.incomings();
   for (const auto &[value, bb] : incoming) {
@@ -706,7 +718,7 @@ inline void SCCPVisitor::visit(ir::PhiInst &phiInst) {
     }
     auto kind = getLatticeValue(value.get());
     auto [mergedKind, mergedConst] =
-        mergePHIValues(resultKind, nullptr, kind, value.get());
+        mergePHIValues(resultKind, mergedValue, kind, value.get());
 
     if (mergedKind == LatticeValueKind::OVERDEF) {
       resultKind = LatticeValueKind::OVERDEF;
@@ -717,8 +729,12 @@ inline void SCCPVisitor::visit(ir::PhiInst &phiInst) {
     resultKind = mergedKind;
     if (resultKind == LatticeValueKind::CONSTANT) {
       constValue = mergedConst;
+      if (!mergedValue) {
+        mergedValue = value.get();
+      }
     } else {
       constValue = nullptr;
+      mergedValue = nullptr;
     }
   }
 
@@ -743,14 +759,15 @@ inline void SCCPVisitor::visit(ir::SelectInst &selectInst) {
   auto prev = getLatticeValue(&selectInst);
   auto cond = getLatticeValue(selectInst.cond().get());
   if (cond == LatticeValueKind::CONSTANT) {
-    auto trueKind = getLatticeValue(selectInst.ifTrue().get());
-    auto falseKind = getLatticeValue(selectInst.ifFalse().get());
-    LatticeValueKind resultKind;
-
-    resultKind =
-        dynamic_cast<ir::ConstantInt *>(selectInst.cond().get())->value() != 0
-            ? trueKind
-            : falseKind;
+    auto condConst = constantValues_[selectInst.cond().get()];
+    auto condInt = std::dynamic_pointer_cast<ir::ConstantInt>(condConst);
+    const bool takeTrue = condInt && condInt->value() != 0;
+    auto chosen = takeTrue ? selectInst.ifTrue() : selectInst.ifFalse();
+    auto chosenKind = getLatticeValue(chosen.get());
+    latticeValues_[&selectInst] = chosenKind;
+    if (chosenKind == LatticeValueKind::CONSTANT) {
+      constantValues_[&selectInst] = constantValues_[chosen.get()];
+    }
 
   } else if (cond == LatticeValueKind::UNDEF) {
     // result is UNDEF
