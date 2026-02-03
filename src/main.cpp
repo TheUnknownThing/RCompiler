@@ -12,6 +12,8 @@
 #include "opt/cfg/visit.hpp"
 #include "opt/dce/visit.hpp"
 #include "opt/mem2reg/visit.hpp"
+#include "opt/sccp/context.hpp"
+#include "opt/sccp/visit.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/semantic.hpp"
 #include "utils/logger.hpp"
@@ -67,6 +69,10 @@ int main(int argc, char *argv[]) {
 
       rc::opt::Mem2RegVisitor mem2reg;
       mem2reg.run(emitter.module());
+
+      rc::opt::ConstantContext constCtx;
+      rc::opt::SCCPVisitor sccp(&constCtx);
+      sccp.run(emitter.module());
 
       rc::ir::emitLLVM(emitter.module(), std::cout);
     }

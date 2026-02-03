@@ -30,8 +30,24 @@ public:
     }
   }
 
+  std::shared_ptr<ir::ConstantPtr>
+  getPtrToConstElement(const std::shared_ptr<ir::Constant> &element) {
+    auto ptrType = std::make_shared<ir::PointerType>(element->type());
+    auto basePtr = std::make_shared<ir::ConstantPtr>(ptrType, element);
+    auto it = ptrConstants.find(basePtr);
+    if (it != ptrConstants.end()) {
+      return it->second;
+    } else {
+      ptrConstants[basePtr] = basePtr;
+      return basePtr;
+    }
+  }
+
 private:
   std::unordered_map<int, std::shared_ptr<ir::ConstantInt>> intConstants;
+  std::unordered_map<std::shared_ptr<ir::Constant>,
+                     std::shared_ptr<ir::ConstantPtr>>
+      ptrConstants;
 };
 
 } // namespace rc::opt
