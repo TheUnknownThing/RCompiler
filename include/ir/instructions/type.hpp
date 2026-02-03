@@ -159,6 +159,10 @@ private:
 class Constant : public Value {
 public:
   using Value::Value;
+
+  virtual ~Constant() override = default;
+
+  virtual bool equals(const Constant &other) const = 0;
 };
 
 class Instruction : public Value {
@@ -223,6 +227,13 @@ public:
     return std::make_shared<ConstantInt>(IntegerType::i32(isSigned), v);
   }
 
+  bool equals(const Constant &other) const override {
+    if (auto otherInt = dynamic_cast<const ConstantInt *>(&other)) {
+      return value_ == otherInt->value();
+    }
+    return false;
+  }
+
 private:
   std::uint64_t value_;
 };
@@ -230,16 +241,28 @@ private:
 class ConstantUnit final : public Constant {
 public:
   ConstantUnit() : Constant(std::make_shared<VoidType>()) {}
+
+  bool equals(const Constant &other) const override {
+    return dynamic_cast<const ConstantUnit *>(&other) != nullptr;
+  }
 };
 
 class ConstantNull final : public Constant {
 public:
   explicit ConstantNull(TypePtr ptrTy) : Constant(std::move(ptrTy)) {}
+
+  bool equals(const Constant &other) const override {
+    return dynamic_cast<const ConstantNull *>(&other) != nullptr;
+  }
 };
 
 class UndefValue final : public Constant {
 public:
   explicit UndefValue(TypePtr ty) : Constant(std::move(ty)) {}
+
+  bool equals(const Constant &other) const override {
+    return dynamic_cast<const UndefValue *>(&other) != nullptr;
+  }
 };
 
 class ConstantString final : public Constant {
@@ -254,9 +277,33 @@ public:
   const std::string &data() const { return data_; }
   TypePtr arrayType() const { return arrayType_; }
 
+  bool equals(const Constant &other) const override {
+    if (auto otherStr = dynamic_cast<const ConstantString *>(&other)) {
+      return data_ == otherStr->data();
+    }
+    return false;
+  }
+
 private:
   std::string data_;
   TypePtr arrayType_;
+};
+
+class ConstantPtr final : public Constant {
+public:
+  ConstantPtr(TypePtr ptrTy, std::shared_ptr<Constant> pointee)
+      : Constant(std::move(ptrTy)), pointee_(std::move(pointee)) {}
+  const std::shared_ptr<Constant> &pointee() const { return pointee_; }
+
+  bool equals(const Constant &other) const override {
+    if (auto otherPtr = dynamic_cast<const ConstantPtr *>(&other)) {
+      return pointee_->equals(*otherPtr->pointee());
+    }
+    return false;
+  }
+
+private:
+  std::shared_ptr<Constant> pointee_;
 };
 
 } // namespace rc::ir
