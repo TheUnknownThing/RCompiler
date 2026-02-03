@@ -430,8 +430,11 @@ inline void Mem2RegVisitor::removeDeadInstructions(ir::Function &function) {
     // prev ptr.
     for (auto it = instrs.begin(); it != instrs.end();) {
       if (toRemove_.count(it->get())) {
-        auto *prev = std::static_pointer_cast<ir::Instruction>(*it)->prev();
-        auto *next = std::static_pointer_cast<ir::Instruction>(*it)->next();
+        auto inst = std::static_pointer_cast<ir::Instruction>(*it);
+        inst->dropAllReferences();
+
+        auto *prev = inst->prev();
+        auto *next = inst->next();
         if (prev) {
           prev->setNext(next);
         }

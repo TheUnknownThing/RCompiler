@@ -159,6 +159,22 @@ public:
     }
   }
 
+  void dropAllReferences() override {
+    for (auto *op : operands) {
+      if (op) {
+        op->removeUse(this);
+      }
+    }
+    operands.clear();
+
+    for (auto &inc : incomings_) {
+      if (inc.first) {
+        inc.first->removeUse(this);
+      }
+    }
+    incomings_.clear();
+  }
+
 private:
   std::vector<Incoming> incomings_;
 };

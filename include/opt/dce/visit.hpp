@@ -48,8 +48,11 @@ inline void DeadCodeElimVisitor::trimAfterTerminator(ir::BasicBlock &bb) {
     }
 
     if (foundTerminator) {
-      auto *prev = std::static_pointer_cast<ir::Instruction>(*it)->prev();
-      auto *next = std::static_pointer_cast<ir::Instruction>(*it)->next();
+      auto inst = std::static_pointer_cast<ir::Instruction>(*it);
+      inst->dropAllReferences();
+
+      auto *prev = inst->prev();
+      auto *next = inst->next();
       if (prev) {
         prev->setNext(next);
       }
@@ -106,6 +109,11 @@ inline void DeadCodeElimVisitor::squashUnreachableBlocks(
     }
 
     auto &instrs = bb->instructions();
+    for (auto &inst : instrs) {
+      if (inst) {
+        std::static_pointer_cast<ir::Instruction>(inst)->dropAllReferences();
+      }
+    }
     instrs.clear();
     bb->append<ir::UnreachableInst>();
   }

@@ -125,9 +125,7 @@ inline void SCCPVisitor::run(ir::Module &module) {
 }
 
 inline void SCCPVisitor::visit(ir::Value &value) {
-  if (auto module = dynamic_cast<ir::Module *>(&value)) {
-    run(*module);
-  } else if (auto function = dynamic_cast<ir::Function *>(&value)) {
+  if (auto function = dynamic_cast<ir::Function *>(&value)) {
     visit(*function);
   } else if (auto basicBlock = dynamic_cast<ir::BasicBlock *>(&value)) {
     visit(*basicBlock);
@@ -163,6 +161,11 @@ inline void SCCPVisitor::visit(ir::Value &value) {
 inline void SCCPVisitor::visit(ir::Function &function) {
   LOG_DEBUG("Starting SCCP on function: " + function.name());
   //   executableBlocks_.insert(function.blocks().front().get());
+
+  if (function.blocks().empty()) {
+    return;
+  }
+
   auto initBlock =
       std::make_shared<ir::BasicBlock>("__sccp_init_block__", &function);
   edges_.push_back(

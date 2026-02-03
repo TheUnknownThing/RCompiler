@@ -194,6 +194,15 @@ public:
 
   virtual void replaceOperand(Value *oldOp, Value *newOp) = 0;
 
+  virtual void dropAllReferences() {
+    for (auto *op : operands) {
+      if (op) {
+        op->removeUse(this);
+      }
+    }
+    operands.clear();
+  }
+
   BasicBlock *parent() const { return parent_; }
 
   Instruction *next() const { return next_; }
