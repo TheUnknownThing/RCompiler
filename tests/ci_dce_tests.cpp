@@ -4,7 +4,7 @@
 
 #include "ir/instructions/controlFlow.hpp"
 #include "ir/instructions/topLevel.hpp"
-#include "opt/dce/visit.hpp"
+#include "opt/dce/dce.hpp"
 
 namespace {
 int failures = 0;
