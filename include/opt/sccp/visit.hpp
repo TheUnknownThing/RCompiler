@@ -822,7 +822,7 @@ inline void SCCPVisitor::removeDeadInstructions(ir::Function &function) {
     // NOTE: upon removing the instructions, we also need to adjust its next &
     // prev ptr.
     for (auto it = instrs.begin(); it != instrs.end();) {
-      if (instructionsToRemove_.count(it->get()) &&
+      if ((instructionsToRemove_.count(it->get()) || it->get()->getUses().empty()) &&
           instructionSafeToRemove(
               std::static_pointer_cast<ir::Instruction>(*it).get())) {
         auto inst = std::static_pointer_cast<ir::Instruction>(*it);
