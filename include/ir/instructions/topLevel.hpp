@@ -150,6 +150,24 @@ public:
     return blocks_;
   }
 
+  std::shared_ptr<BasicBlock> splitBlock(std::shared_ptr<BasicBlock> bb,
+                                         Instruction *inst) {
+    auto newBB = std::make_shared<BasicBlock>(bb->name() + "_split", this);
+    appendBlock(newBB);
+    auto &insts = bb->instructions();
+    auto it = std::find_if(insts.begin(), insts.end(),
+                           [inst](const std::shared_ptr<Instruction> &i) {
+                             return i.get() == inst;
+                           });
+    if (it + 1 != insts.end()) {
+      newBB->instructions().insert(newBB->instructions().end(), it + 1,
+                                   insts.end());
+      insts.erase(it + 1, insts.end());
+      return newBB;
+    }
+    return nullptr;
+  }
+
   std::vector<std::shared_ptr<Argument>> &params() { return args_; }
 
   const std::vector<std::shared_ptr<Argument>> &params() const { return args_; }

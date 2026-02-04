@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
       rc::opt::FunctionInline funcInline;
       sccp.run(emitter.module());
       
-      funcInline.run(emitter.module());
+      // funcInline.run(emitter.module());
       // dce.run(emitter.module());
       rc::ir::emitLLVM(emitter.module(), std::cout);
     }

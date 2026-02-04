@@ -63,7 +63,7 @@ private:
 
   ConstantContext *context_{nullptr};
 
-  void replaceAllUsesWith(ir::Value &from, ir::Value *to);
+  static void replaceAllUsesWith(ir::Value &from, ir::Value *to);
 
   void removeDeadInstructions(ir::Function &function);
   void removeDeadBlocks(ir::Function &function);

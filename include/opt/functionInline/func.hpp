@@ -28,6 +28,11 @@ private:
 
   static void fixOperands(const std::shared_ptr<ir::Instruction> &inst,
                           const ir::ValueRemapMap &valueMap);
+
+  static void replacePhiBlock(ir::Function &function,
+                              std::shared_ptr<ir::BasicBlock> oldBB,
+                              std::shared_ptr<ir::BasicBlock> newBB);
+  static void replaceAllUsesWith(ir::Value &from, ir::Value *to);
 };
 
 inline void FunctionInline::run(ir::Module &module) {
@@ -57,6 +62,14 @@ inline void FunctionInline::visit(ir::Function &function) {
         LOG_DEBUG("Inlining function " + callee->name() + " called from " +
                   function.name());
         visit(*callInst);
+        auto newBB = function.splitBlock(block, callInst);
+        if (newBB) {
+          replacePhiBlock(function, block, newBB);
+        } else {
+          throw std::runtime_error(
+              "Failed to split block when inlining function " + callee->name() +
+              " called from " + function.name());
+        }
       } else {
         LOG_DEBUG("Not inlining function " + callee->name() + " called from " +
                   function.name());
@@ -152,6 +165,27 @@ FunctionInline::fixOperands(const std::shared_ptr<ir::Instruction> &inst,
       }
     }
   }
+}
+
+inline void
+FunctionInline::replacePhiBlock(ir::Function &function,
+                                std::shared_ptr<ir::BasicBlock> oldBB,
+                                std::shared_ptr<ir::BasicBlock> newBB) {
+  for (const auto &block : function.blocks()) {
+    for (const auto &inst : block->instructions()) {
+      if (auto phi = std::dynamic_pointer_cast<ir::PhiInst>(inst)) {
+        phi->replaceIncomingBlock(oldBB, newBB);
+      }
+    }
+  }
+}
+
+inline void FunctionInline::replaceAllUsesWith(ir::Value &from, ir::Value *to) {
+  auto uses = from.getUses();
+  for (auto *use : uses) {
+    use->replaceOperand(&from, to);
+  }
+  from.getUses().clear();
 }
 
 inline bool FunctionInline::judgeInline(ir::Function &function) {

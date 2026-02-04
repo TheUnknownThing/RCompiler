@@ -70,7 +70,8 @@ public:
   std::shared_ptr<Instruction>
   cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
             const BlockRemapMap & /*blockMap*/) const override {
-    return std::make_shared<ICmpInst>(newParent, pred_, remapValue(lhs_, valueMap),
+    return std::make_shared<ICmpInst>(newParent, pred_,
+                                      remapValue(lhs_, valueMap),
                                       remapValue(rhs_, valueMap), name());
   }
 
@@ -104,7 +105,8 @@ public:
       return fn;
     }
 
-    if (auto fnty = std::dynamic_pointer_cast<const FunctionType>(callee_->type())) {
+    if (auto fnty =
+            std::dynamic_pointer_cast<const FunctionType>(callee_->type())) {
       return fnty->function();
     }
 
@@ -189,6 +191,15 @@ public:
         oldOp->removeUse(this);
         newOp->addUse(this);
         inc.first = std::static_pointer_cast<Value>(newOp->shared_from_this());
+      }
+    }
+  }
+
+  void replaceIncomingBlock(std::shared_ptr<BasicBlock> oldBB,
+                            std::shared_ptr<BasicBlock> newBB) {
+    for (auto &inc : incomings_) {
+      if (inc.second == oldBB) {
+        inc.second = std::move(newBB);
       }
     }
   }

@@ -33,7 +33,7 @@ public:
   void mem2reg(ir::Function &function);
   void placePhiNodes(ir::BasicBlock &bb, ir::AllocaInst *alloca);
   void rename(ir::BasicBlock &bb);
-  void replaceAllUsesWith(ir::Value &from, ir::Value *to);
+  static void replaceAllUsesWith(ir::Value &from, ir::Value *to);
 
   void removeDeadInstructions(ir::Function &function);
 
