@@ -51,6 +51,17 @@ public:
     }
   }
 
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap &blockMap) const override {
+    if (!isCond_) {
+      return std::make_shared<BranchInst>(newParent, remapBlock(dest_, blockMap));
+    }
+    return std::make_shared<BranchInst>(
+        newParent, remapValue(cond_, valueMap), remapBlock(dest_, blockMap),
+        remapBlock(altDest_, blockMap));
+  }
+
 private:
   bool isCond_;
   std::shared_ptr<Value> cond_;
@@ -83,6 +94,15 @@ public:
     }
   }
 
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    if (isVoid()) {
+      return std::make_shared<ReturnInst>(newParent);
+    }
+    return std::make_shared<ReturnInst>(newParent, remapValue(val_, valueMap));
+  }
+
 private:
   std::shared_ptr<Value> val_;
 };
@@ -93,6 +113,12 @@ public:
 
   void replaceOperand(Value * /*oldOp*/, Value * /*newOp*/) override {
     // No operands to replace
+  }
+
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap & /*valueMap*/,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<UnreachableInst>(newParent);
   }
 };
 

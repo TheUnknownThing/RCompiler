@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -142,6 +143,10 @@ public:
   const std::vector<std::shared_ptr<BasicBlock>> &blocks() const {
     return blocks_;
   }
+
+  std::vector<std::shared_ptr<Argument>> &params() { return args_; }
+
+  const std::vector<std::shared_ptr<Argument>> &params() const { return args_; }
 
 private:
   std::string name_;

@@ -67,6 +67,14 @@ public:
     }
   }
 
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<BinaryOpInst>(
+        newParent, op_, remapValue(lhs_, valueMap), remapValue(rhs_, valueMap),
+        type(), name());
+  }
+
 private:
   BinaryOpKind op_;
   std::shared_ptr<Value> lhs_;

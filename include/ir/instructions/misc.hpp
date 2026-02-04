@@ -67,6 +67,13 @@ public:
     }
   }
 
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<ICmpInst>(newParent, pred_, remapValue(lhs_, valueMap),
+                                      remapValue(rhs_, valueMap), name());
+  }
+
 private:
   ICmpPred pred_;
   std::shared_ptr<Value> lhs_;
@@ -88,6 +95,9 @@ public:
     addOperands(args_);
   }
 
+  std::shared_ptr<Function> calleeFunction() const {
+    return std::dynamic_pointer_cast<Function>(callee_);
+  }
   const std::shared_ptr<Value> &callee() const { return callee_; }
   const std::vector<std::shared_ptr<Value>> &args() const { return args_; }
 
@@ -108,6 +118,18 @@ public:
         arg = std::static_pointer_cast<Value>(newOp->shared_from_this());
       }
     }
+  }
+
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    std::vector<std::shared_ptr<Value>> newArgs;
+    newArgs.reserve(args_.size());
+    for (const auto &a : args_) {
+      newArgs.push_back(remapValue(a, valueMap));
+    }
+    return std::make_shared<CallInst>(newParent, remapValue(callee_, valueMap),
+                                      std::move(newArgs), type(), name());
   }
 
 private:
@@ -175,6 +197,19 @@ public:
     incomings_.clear();
   }
 
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap &blockMap) const override {
+    std::vector<Incoming> incomings;
+    incomings.reserve(incomings_.size());
+    for (const auto &inc : incomings_) {
+      incomings.emplace_back(remapValue(inc.first, valueMap),
+                             remapBlock(inc.second, blockMap));
+    }
+    return std::make_shared<PhiInst>(newParent, type(), std::move(incomings),
+                                     name());
+  }
+
 private:
   std::vector<Incoming> incomings_;
 };
@@ -224,6 +259,14 @@ public:
     }
   }
 
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<SelectInst>(
+        newParent, remapValue(cond_, valueMap), remapValue(ifTrue_, valueMap),
+        remapValue(ifFalse_, valueMap), type(), name());
+  }
+
 private:
   std::shared_ptr<Value> cond_;
   std::shared_ptr<Value> ifTrue_;
@@ -260,6 +303,13 @@ public:
 
   TypePtr destType() const { return type(); }
 
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<ZExtInst>(newParent, remapValue(src_, valueMap),
+                                      destType(), name());
+  }
+
 private:
   std::shared_ptr<Value> src_;
 };
@@ -293,6 +343,13 @@ public:
   }
 
   TypePtr destType() const { return type(); }
+
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<SExtInst>(newParent, remapValue(src_, valueMap),
+                                      destType(), name());
+  }
 
 private:
   std::shared_ptr<Value> src_;
@@ -334,6 +391,13 @@ public:
     if (src_.get() == oldOp) {
       src_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
     }
+  }
+
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<TruncInst>(newParent, remapValue(src_, valueMap),
+                                       destType(), name());
   }
 
 private:

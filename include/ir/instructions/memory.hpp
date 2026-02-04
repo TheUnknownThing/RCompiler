@@ -42,6 +42,14 @@ public:
     }
   }
 
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<AllocaInst>(
+        newParent, allocTy_, remapValue(arraySize_, valueMap), alignment_,
+        name());
+  }
+
 private:
   TypePtr allocTy_;
   std::shared_ptr<Value> arraySize_;
@@ -79,6 +87,13 @@ public:
     if (ptr_.get() == oldOp) {
       ptr_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
     }
+  }
+
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<LoadInst>(newParent, remapValue(ptr_, valueMap),
+                                      type(), alignment_, isVolatile_, name());
   }
 
 private:
@@ -126,6 +141,14 @@ public:
     if (ptr_.get() == oldOp) {
       ptr_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
     }
+  }
+
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<StoreInst>(
+        newParent, remapValue(val_, valueMap), remapValue(ptr_, valueMap),
+        alignment_, isVolatile_);
   }
 
 private:
@@ -176,6 +199,26 @@ public:
         indices_[i] = std::static_pointer_cast<Value>(newOp->shared_from_this());
       }
     }
+  }
+
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    auto pty = std::dynamic_pointer_cast<const PointerType>(type());
+    if (!pty) {
+      throw std::invalid_argument(
+          "GetElementPtrInst clone requires pointer result type");
+    }
+
+    std::vector<std::shared_ptr<Value>> newIdx;
+    newIdx.reserve(indices_.size());
+    for (const auto &idx : indices_) {
+      newIdx.push_back(remapValue(idx, valueMap));
+    }
+
+    return std::make_shared<GetElementPtrInst>(
+        newParent, pty->pointee(), remapValue(basePtr_, valueMap),
+        std::move(newIdx), name());
   }
 
 private:
