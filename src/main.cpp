@@ -1,4 +1,4 @@
-#define LOGGING_LEVEL_NONE
+#define LOGGING_LEVEL_DEBUG
 
 #include <sstream>
 #include <string>
@@ -14,6 +14,7 @@
 #include "opt/mem2reg/mem2reg.hpp"
 #include "opt/sccp/context.hpp"
 #include "opt/sccp/sccp.hpp"
+#include "opt/functionInline/func.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/semantic.hpp"
 #include "utils/logger.hpp"
@@ -72,10 +73,11 @@ int main(int argc, char *argv[]) {
 
       rc::opt::ConstantContext constCtx;
       rc::opt::SCCPVisitor sccp(&constCtx);
+      rc::opt::FunctionInline funcInline;
       sccp.run(emitter.module());
-
-      dce.run(emitter.module());
-
+      
+      funcInline.run(emitter.module());
+      // dce.run(emitter.module());
       rc::ir::emitLLVM(emitter.module(), std::cout);
     }
 

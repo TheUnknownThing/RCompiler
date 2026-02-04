@@ -86,6 +86,8 @@ public:
 
   Function *parent() const { return parent_; }
 
+  void setParent(Function *p) { parent_ = p; }
+
   void addPredecessor(BasicBlock *bb) { predecessors_.push_back(bb); }
 
   void removePredecessor(BasicBlock *bb) {
@@ -136,6 +138,10 @@ public:
     auto bb = std::make_shared<BasicBlock>(std::move(label), this);
     blocks_.push_back(bb);
     return bb;
+  }
+
+  void appendBlock(std::shared_ptr<BasicBlock> bb) {
+    blocks_.push_back(std::move(bb));
   }
 
   std::vector<std::shared_ptr<BasicBlock>> &blocks() { return blocks_; }

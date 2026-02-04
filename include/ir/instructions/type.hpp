@@ -4,10 +4,9 @@
 #include <list>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
-
-#include "semantic/scope.hpp"
 
 namespace rc::ir {
 
@@ -165,6 +164,35 @@ public:
   virtual bool equals(const Constant &other) const = 0;
 };
 
+using ValueRemapMap = std::unordered_map<Value *, std::shared_ptr<Value>>;
+using BlockRemapMap =
+    std::unordered_map<BasicBlock *, std::shared_ptr<BasicBlock>>;
+
+inline std::shared_ptr<Value> remapValue(const std::shared_ptr<Value> &v,
+                                         const ValueRemapMap &valueMap) {
+  if (!v) {
+    return nullptr;
+  }
+  auto it = valueMap.find(v.get());
+  if (it != valueMap.end()) {
+    return it->second;
+  }
+  return v;
+}
+
+inline std::shared_ptr<BasicBlock>
+remapBlock(const std::shared_ptr<BasicBlock> &bb,
+           const BlockRemapMap &blockMap) {
+  if (!bb) {
+    return nullptr;
+  }
+  auto it = blockMap.find(bb.get());
+  if (it != blockMap.end()) {
+    return it->second;
+  }
+  return bb;
+}
+
 class Instruction : public Value {
 public:
   explicit Instruction(BasicBlock *parent, TypePtr ty, std::string name = {})
@@ -190,9 +218,15 @@ public:
     operands.push_back(op.get());
     op->addUse(this);
   }
+
+  std::vector<Value *> &getOperands() { return operands; }
   const std::vector<Value *> &getOperands() const { return operands; }
 
   virtual void replaceOperand(Value *oldOp, Value *newOp) = 0;
+
+  virtual std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap &blockMap) const = 0;
 
   virtual void dropAllReferences() {
     for (auto *op : operands) {
@@ -204,6 +238,7 @@ public:
   }
 
   BasicBlock *parent() const { return parent_; }
+  void setParent(BasicBlock *p) { parent_ = p; }
 
   Instruction *next() const { return next_; }
   void setNext(Instruction *next) { next_ = next; }
@@ -319,8 +354,8 @@ class ConstantArray final : public Constant {
 public:
   ConstantArray(TypePtr elemTy, std::vector<std::shared_ptr<Constant>> elems)
       : Constant(nullptr), elements_(std::move(elems)),
-        arrayType_(std::make_shared<ArrayType>(std::move(elemTy),
-                                               elements_.size())) {
+        arrayType_(
+            std::make_shared<ArrayType>(std::move(elemTy), elements_.size())) {
     setType(std::make_shared<PointerType>(arrayType_));
   }
 

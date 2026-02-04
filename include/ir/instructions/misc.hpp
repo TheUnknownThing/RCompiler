@@ -96,7 +96,19 @@ public:
   }
 
   std::shared_ptr<Function> calleeFunction() const {
-    return std::dynamic_pointer_cast<Function>(callee_);
+    if (!callee_) {
+      return nullptr;
+    }
+
+    if (auto fn = std::dynamic_pointer_cast<Function>(callee_)) {
+      return fn;
+    }
+
+    if (auto fnty = std::dynamic_pointer_cast<const FunctionType>(callee_->type())) {
+      return fnty->function();
+    }
+
+    return nullptr;
   }
   const std::shared_ptr<Value> &callee() const { return callee_; }
   const std::vector<std::shared_ptr<Value>> &args() const { return args_; }
