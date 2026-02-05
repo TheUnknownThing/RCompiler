@@ -11,9 +11,9 @@
 
 namespace rc::opt {
 
-class IRVisitor : public IRBaseVisitor {
+class CFGVisitor : public IRBaseVisitor {
 public:
-  virtual ~IRVisitor() = default;
+  virtual ~CFGVisitor() = default;
 
   void run(ir::Module &module) { visit(module); }
 
@@ -26,7 +26,7 @@ public:
   void visit(ir::ReturnInst &returnInst) override;
 };
 
-inline void IRVisitor::visit(ir::Value &value) {
+inline void CFGVisitor::visit(ir::Value &value) {
   if (auto module = dynamic_cast<ir::Module *>(&value)) {
     visit(*module);
   } else if (auto function = dynamic_cast<ir::Function *>(&value)) {
@@ -40,13 +40,13 @@ inline void IRVisitor::visit(ir::Value &value) {
   }
 }
 
-inline void IRVisitor::visit(ir::Module &module) {
+inline void CFGVisitor::visit(ir::Module &module) {
   for (const auto &function : module.functions()) {
     visit(*function);
   }
 }
 
-inline void IRVisitor::visit(ir::Function &function) {
+inline void CFGVisitor::visit(ir::Function &function) {
   for (const auto &basicBlock : function.blocks()) {
     basicBlock->clearPredecessors();
   }
@@ -59,7 +59,7 @@ inline void IRVisitor::visit(ir::Function &function) {
   //   LOG_DEBUG("\n" + rc::opt::utils::cfgToDot(function));
 }
 
-inline void IRVisitor::visit(ir::BasicBlock &basicBlock) {
+inline void CFGVisitor::visit(ir::BasicBlock &basicBlock) {
   for (const auto &instruction : basicBlock.instructions()) {
     if (!instruction ||
         dynamic_cast<ir::UnreachableInst *>(instruction.get())) {
@@ -69,7 +69,7 @@ inline void IRVisitor::visit(ir::BasicBlock &basicBlock) {
   }
 }
 
-inline void IRVisitor::visit(ir::BranchInst &branchInst) {
+inline void CFGVisitor::visit(ir::BranchInst &branchInst) {
   auto parent = branchInst.parent();
   if (branchInst.isConditional()) {
     branchInst.dest()->addPredecessor(parent);
@@ -79,7 +79,7 @@ inline void IRVisitor::visit(ir::BranchInst &branchInst) {
   }
 }
 
-inline void IRVisitor::visit(ir::ReturnInst &) {
+inline void CFGVisitor::visit(ir::ReturnInst &) {
   // exit block, no-op
 }
 

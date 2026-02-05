@@ -82,6 +82,25 @@ public:
     return instructions_;
   }
 
+  void eraseInstruction(const std::shared_ptr<Instruction> &inst) {
+    auto it = std::find(instructions_.begin(), instructions_.end(), inst);
+    if (it != instructions_.end()) {
+      (*it)->dropAllReferences();
+      if (it != instructions_.begin()) {
+        (*(it - 1))->setNext((it + 1) != instructions_.end() ? (*(it + 1)).get()
+                                                             : nullptr);
+      }
+      if ((it + 1) != instructions_.end()) {
+        (*(it + 1))->setPrev(it != instructions_.begin() ? (*(it - 1)).get()
+                                                         : nullptr);
+      }
+      instructions_.erase(it);
+      if (prologue_insert_pos_ > 0) {
+        --prologue_insert_pos_;
+      }
+    }
+  }
+
   bool isTerminated() const;
 
   Function *parent() const { return parent_; }
@@ -159,7 +178,7 @@ public:
                            [inst](const std::shared_ptr<Instruction> &i) {
                              return i.get() == inst;
                            });
-    if (it + 1 != insts.end()) {
+    if (it != insts.end() && it + 1 != insts.end()) {
       newBB->instructions().insert(newBB->instructions().end(), it + 1,
                                    insts.end());
       insts.erase(it + 1, insts.end());
@@ -171,6 +190,13 @@ public:
   std::vector<std::shared_ptr<Argument>> &params() { return args_; }
 
   const std::vector<std::shared_ptr<Argument>> &params() const { return args_; }
+
+  TypePtr returnType() const {
+    if (type_) {
+      return type_->returnType();
+    }
+    return nullptr;
+  }
 
 private:
   std::string name_;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ir/instructions/controlFlow.hpp"
+#include "ir/instructions/misc.hpp"
 #include "ir/instructions/topLevel.hpp"
 
 #include "opt/utils/cfgPrettyPrint.hpp"
@@ -105,6 +106,7 @@ DeadCodeElimVisitor::foldConstantConditionalBranches(ir::Function &function) {
 
       const bool takeTrue = (ci->value() != 0);
       auto chosen = takeTrue ? br->dest() : br->altDest();
+      auto other = takeTrue ? br->altDest() : br->dest();
       if (!chosen) {
         break;
       }
@@ -135,6 +137,19 @@ DeadCodeElimVisitor::foldConstantConditionalBranches(ir::Function &function) {
       }
 
       instrs.insert(it, std::move(newBr));
+
+      if (other) {
+        for (const auto &inst2 : other->instructions()) {
+          if (!inst2) {
+            break;
+          }
+          auto *phi = dynamic_cast<ir::PhiInst *>(inst2.get());
+          if (!phi) {
+            break; // PHIs are always at the beginning
+          }
+          phi->removeIncomingBlock(&bb);
+        }
+      }
       break;
     }
   }
@@ -173,6 +188,22 @@ inline void DeadCodeElimVisitor::squashUnreachableBlocks(
   for (const auto &bb : function.blocks()) {
     if (reachable.count(bb.get())) {
       continue;
+    }
+
+    // This block will no longer branch anywhere; remove it from successor PHIs.
+    auto succs = utils::detail::successors(*bb);
+    for (auto *succConst : succs) {
+      auto *succ = const_cast<ir::BasicBlock *>(succConst);
+      for (const auto &inst2 : succ->instructions()) {
+        if (!inst2) {
+          break;
+        }
+        auto *phi = dynamic_cast<ir::PhiInst *>(inst2.get());
+        if (!phi) {
+          break;
+        }
+        phi->removeIncomingBlock(bb.get());
+      }
     }
 
     auto &instrs = bb->instructions();

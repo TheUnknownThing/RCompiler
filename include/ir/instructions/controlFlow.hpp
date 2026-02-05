@@ -9,11 +9,12 @@ namespace rc::ir {
 
 class BranchInst : public Instruction {
 public:
-  explicit BranchInst(BasicBlock* parent, std::shared_ptr<BasicBlock> dest)
+  explicit BranchInst(BasicBlock *parent, std::shared_ptr<BasicBlock> dest)
       : Instruction(parent, std::make_shared<VoidType>()), isCond_(false),
         dest_(std::move(dest)) {}
 
-  BranchInst(BasicBlock* parent, std::shared_ptr<Value> cond, std::shared_ptr<BasicBlock> ifTrue,
+  BranchInst(BasicBlock *parent, std::shared_ptr<Value> cond,
+             std::shared_ptr<BasicBlock> ifTrue,
              std::shared_ptr<BasicBlock> ifFalse)
       : Instruction(parent, std::make_shared<VoidType>()), isCond_(true),
         cond_(std::move(cond)), dest_(std::move(ifTrue)),
@@ -55,11 +56,12 @@ public:
   cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
             const BlockRemapMap &blockMap) const override {
     if (!isCond_) {
-      return std::make_shared<BranchInst>(newParent, remapBlock(dest_, blockMap));
+      return std::make_shared<BranchInst>(newParent,
+                                          remapBlock(dest_, blockMap));
     }
-    return std::make_shared<BranchInst>(
-        newParent, remapValue(cond_, valueMap), remapBlock(dest_, blockMap),
-        remapBlock(altDest_, blockMap));
+    return std::make_shared<BranchInst>(newParent, remapValue(cond_, valueMap),
+                                        remapBlock(dest_, blockMap),
+                                        remapBlock(altDest_, blockMap));
   }
 
 private:
@@ -71,9 +73,11 @@ private:
 
 class ReturnInst : public Instruction {
 public:
-  ReturnInst(BasicBlock* parent) : Instruction(parent, std::make_shared<VoidType>()) {}
-  explicit ReturnInst(BasicBlock* parent, std::shared_ptr<Value> val)
-      : Instruction(parent, std::make_shared<VoidType>()), val_(std::move(val)) {
+  ReturnInst(BasicBlock *parent)
+      : Instruction(parent, std::make_shared<VoidType>()) {}
+  explicit ReturnInst(BasicBlock *parent, std::shared_ptr<Value> val)
+      : Instruction(parent, std::make_shared<VoidType>()),
+        val_(std::move(val)) {
     addOperand(val_);
   }
 
@@ -103,13 +107,16 @@ public:
     return std::make_shared<ReturnInst>(newParent, remapValue(val_, valueMap));
   }
 
+  std::shared_ptr<Value> &value() { return val_; }
+
 private:
   std::shared_ptr<Value> val_;
 };
 
 class UnreachableInst : public Instruction {
 public:
-  UnreachableInst(BasicBlock* parent) : Instruction(parent, std::make_shared<VoidType>()) {}
+  UnreachableInst(BasicBlock *parent)
+      : Instruction(parent, std::make_shared<VoidType>()) {}
 
   void replaceOperand(Value * /*oldOp*/, Value * /*newOp*/) override {
     // No operands to replace

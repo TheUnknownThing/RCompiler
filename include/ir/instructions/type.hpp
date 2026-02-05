@@ -41,6 +41,9 @@ using TypePtr = std::shared_ptr<const Type>;
 class VoidType final : public Type {
 public:
   VoidType() : Type(TypeKind::Void) {}
+  static std::shared_ptr<VoidType> get() {
+    return std::make_shared<VoidType>();
+  }
 };
 
 class IntegerType final : public Type {

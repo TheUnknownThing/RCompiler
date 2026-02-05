@@ -204,6 +204,22 @@ public:
     }
   }
 
+  void removeIncomingBlock(const BasicBlock *bb) {
+    if (!bb) {
+      return;
+    }
+    for (auto it = incomings_.begin(); it != incomings_.end();) {
+      if (it->second.get() == bb) {
+        if (it->first) {
+          it->first->removeUse(this);
+        }
+        it = incomings_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
   void dropAllReferences() override {
     for (auto *op : operands) {
       if (op) {
