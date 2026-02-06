@@ -24,6 +24,8 @@ public:
   void run(ir::Module *module);
 
   void simplifyCFG(ir::Function *func);
+
+private:
   void removePhiIncoming(ir::Function *func,
                          std::shared_ptr<ir::BasicBlock> oldBB);
   void replacePhiIncoming(ir::Function *func,
@@ -31,6 +33,11 @@ public:
                           std::shared_ptr<ir::BasicBlock> newBB);
   void mergeBlocks(ir::Function *func, std::shared_ptr<ir::BasicBlock> from,
                    std::shared_ptr<ir::BasicBlock> to);
+  void replaceAllUsesWith(ir::Value *from, ir::Value *to);
+  bool tryFoldTrivialPhi(ir::BasicBlock &bb,
+                         const std::shared_ptr<ir::PhiInst> &phi);
+  bool foldTrivialPhisInBlock(ir::BasicBlock &bb);
+  void rebuildPredecessors(ir::Function &function);
 };
 
 inline void SimplifyCFG::run(ir::Module *module) {
@@ -61,17 +68,29 @@ inline void SimplifyCFG::simplifyCFG(ir::Function *func) {
     func->eraseBlock(bb->shared_from_this());
   }
 
+  rebuildPredecessors(*func);
+
   bool changed = true;
   while (changed) {
     changed = false;
+
+    for (auto &bb : func->blocks()) {
+      changed |= foldTrivialPhisInBlock(*bb);
+    }
+    if (changed) {
+      continue;
+    }
+
+    rebuildPredecessors(*func);
     for (auto &bb : func->blocks()) {
       auto succs = utils::detail::successors(*bb);
       if (succs.size() == 1) {
         auto succ = succs.front();
         if (succ->predecessors().size() == 1 &&
             succ->predecessors().front() == bb.get()) {
-          auto succBB = const_cast<ir::BasicBlock *>(succ)->shared_from_this();
+          auto succBB = succ->shared_from_this();
           mergeBlocks(func, succBB, bb);
+          rebuildPredecessors(*func);
           changed = true;
           break;
         }
@@ -84,10 +103,20 @@ inline void
 SimplifyCFG::removePhiIncoming(ir::Function *func,
                                std::shared_ptr<ir::BasicBlock> oldBB) {
   for (const auto &bb : func->blocks()) {
-    for (const auto &inst : bb->instructions()) {
-      if (auto phi = std::dynamic_pointer_cast<ir::PhiInst>(inst)) {
-        phi->removeIncomingBlock(oldBB.get());
+    auto &insts = bb->instructions();
+    for (std::size_t i = 0; i < insts.size();) {
+      auto phi = std::dynamic_pointer_cast<ir::PhiInst>(insts[i]);
+      if (!phi) {
+        ++i;
+        continue;
       }
+
+      phi->removeIncomingBlock(oldBB.get());
+      if (tryFoldTrivialPhi(*bb, phi)) {
+        continue;
+      }
+
+      ++i;
     }
   }
 }
@@ -97,10 +126,20 @@ SimplifyCFG::replacePhiIncoming(ir::Function *func,
                                 std::shared_ptr<ir::BasicBlock> oldBB,
                                 std::shared_ptr<ir::BasicBlock> newBB) {
   for (const auto &bb : func->blocks()) {
-    for (const auto &inst : bb->instructions()) {
-      if (auto phi = std::dynamic_pointer_cast<ir::PhiInst>(inst)) {
-        phi->replaceIncomingBlock(oldBB, newBB);
+    auto &insts = bb->instructions();
+    for (std::size_t i = 0; i < insts.size();) {
+      auto phi = std::dynamic_pointer_cast<ir::PhiInst>(insts[i]);
+      if (!phi) {
+        ++i;
+        continue;
       }
+
+      phi->replaceIncomingBlock(oldBB, newBB);
+      if (tryFoldTrivialPhi(*bb, phi)) {
+        continue;
+      }
+
+      ++i;
     }
   }
 }
@@ -108,6 +147,8 @@ SimplifyCFG::replacePhiIncoming(ir::Function *func,
 inline void SimplifyCFG::mergeBlocks(ir::Function *func,
                                      std::shared_ptr<ir::BasicBlock> from,
                                      std::shared_ptr<ir::BasicBlock> to) {
+  foldTrivialPhisInBlock(*from);
+
   // Move instructions from 'from' to 'to'
   auto &fromInsts = from->instructions();
   auto &toInsts = to->instructions();
@@ -118,16 +159,99 @@ inline void SimplifyCFG::mergeBlocks(ir::Function *func,
     to->eraseInstruction(inst);
   }
 
-  if (!fromInsts.empty() && !toInsts.empty()) {
-    fromInsts.back()->setNext(toInsts.front().get());
-    toInsts.front()->setPrev(fromInsts.back().get());
-  }
-
   toInsts.insert(toInsts.end(), fromInsts.begin(), fromInsts.end());
   fromInsts.clear();
 
+  for (auto &moved : toInsts) {
+    moved->setParent(to.get());
+  }
+  for (std::size_t i = 0; i < toInsts.size(); ++i) {
+    auto &cur = toInsts[i];
+    if (!cur) {
+      continue;
+    }
+    cur->setPrev(i == 0 ? nullptr : toInsts[i - 1].get());
+    cur->setNext((i + 1) < toInsts.size() ? toInsts[i + 1].get() : nullptr);
+  }
+
   replacePhiIncoming(func, from, to);
   func->eraseBlock(from);
+}
+
+inline void SimplifyCFG::replaceAllUsesWith(ir::Value *from, ir::Value *to) {
+  if (!from || !to || from == to) {
+    return;
+  }
+
+  std::vector<ir::Instruction *> users;
+  users.reserve(from->getUses().size());
+  for (auto *u : from->getUses()) {
+    users.push_back(u);
+  }
+
+  for (auto *user : users) {
+    if (!user) {
+      continue;
+    }
+    user->replaceOperand(from, to);
+  }
+}
+
+inline bool
+SimplifyCFG::tryFoldTrivialPhi(ir::BasicBlock &bb,
+                               const std::shared_ptr<ir::PhiInst> &phi) {
+  if (!phi) {
+    return false;
+  }
+
+  const auto &incs = phi->incomings();
+  if (incs.size() == 1 && incs.front().first) {
+    replaceAllUsesWith(phi.get(), incs.front().first.get());
+    bb.eraseInstruction(phi);
+    return true;
+  }
+
+  if (incs.empty()) {
+    auto undef = std::make_shared<ir::UndefValue>(phi->type());
+    replaceAllUsesWith(phi.get(), undef.get());
+    bb.eraseInstruction(phi);
+    return true;
+  }
+
+  return false;
+}
+
+inline bool SimplifyCFG::foldTrivialPhisInBlock(ir::BasicBlock &bb) {
+  bool changed = false;
+  auto &insts = bb.instructions();
+  for (std::size_t i = 0; i < insts.size();) {
+    auto phi = std::dynamic_pointer_cast<ir::PhiInst>(insts[i]);
+    if (!phi) {
+      ++i;
+      continue;
+    }
+
+    if (tryFoldTrivialPhi(bb, phi)) {
+      changed = true;
+      continue;
+    }
+    ++i;
+  }
+  return changed;
+}
+
+inline void SimplifyCFG::rebuildPredecessors(ir::Function &function) {
+  for (auto &bb : function.blocks()) {
+    bb->clearPredecessors();
+  }
+
+  for (auto &bb : function.blocks()) {
+    for (auto *succ : utils::detail::successors(*bb)) {
+      if (succ) {
+        succ->addPredecessor(bb.get());
+      }
+    }
+  }
 }
 
 } // namespace rc::opt

@@ -236,6 +236,8 @@ public:
     incomings_.clear();
   }
 
+  std::vector<Incoming> &incomings() { return incomings_; }
+
   std::shared_ptr<Instruction>
   cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
             const BlockRemapMap &blockMap) const override {
