@@ -66,6 +66,35 @@ inline std::vector<const ir::BasicBlock *> successors(const ir::BasicBlock &bb) 
   return outs;
 }
 
+inline std::vector<ir::BasicBlock *> successors(ir::BasicBlock &bb) {
+  std::vector<ir::BasicBlock *> outs;
+  auto &ins = bb.instructions();
+  if (ins.empty()) {
+    return outs;
+  }
+
+  for (const auto &inst : ins) {
+    if (!inst) {
+      continue;
+    }
+    if (auto *br = dynamic_cast<const ir::BranchInst *>(inst.get())) {
+      if (br->dest()) {
+        outs.push_back(br->dest().get());
+      }
+      if (br->isConditional() && br->altDest()) {
+        outs.push_back(br->altDest().get());
+      }
+      break;
+    }
+    if (dynamic_cast<const ir::ReturnInst *>(inst.get()) ||
+        dynamic_cast<const ir::UnreachableInst *>(inst.get())) {
+      break;
+    }
+  }
+
+  return outs;
+}
+
 inline std::vector<const ir::BasicBlock *>
 dedupAndSortByIndex(std::vector<const ir::BasicBlock *> v,
                     const std::unordered_map<const ir::BasicBlock *, std::size_t>

@@ -11,10 +11,11 @@
 #include "lexer/lexer.hpp"
 #include "opt/cfg/cfg.hpp"
 #include "opt/dce/dce.hpp"
-#include "opt/functionInline/func.hpp"
+#include "opt/functionInline/functionInline.hpp"
 #include "opt/mem2reg/mem2reg.hpp"
 #include "opt/sccp/context.hpp"
 #include "opt/sccp/sccp.hpp"
+#include "opt/simplifyCFG/simplifyCFG.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/semantic.hpp"
 #include "utils/logger.hpp"
@@ -70,6 +71,10 @@ int main(int argc, char *argv[]) {
     sccp.run(emitter.module());
 
     dce.run(emitter.module());
+
+    rc::opt::SimplifyCFG simplifyCFG;
+    simplifyCFG.run(&emitter.module());
+
     rc::ir::emitLLVM(emitter.module(), std::cout);
   } catch (const std::exception &e) {
     std::cerr << "Error: " << e.what() << std::endl;

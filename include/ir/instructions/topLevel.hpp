@@ -187,6 +187,14 @@ public:
     return nullptr;
   }
 
+  void eraseBlock(std::shared_ptr<BasicBlock> bb) {
+    auto it = std::find(blocks_.begin(), blocks_.end(), bb);
+    if (it != blocks_.end()) {
+      (*it)->instructions().clear();
+      blocks_.erase(it);
+    }
+  }
+
   std::vector<std::shared_ptr<Argument>> &params() { return args_; }
 
   const std::vector<std::shared_ptr<Argument>> &params() const { return args_; }
