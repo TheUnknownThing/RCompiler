@@ -109,7 +109,13 @@ FAILED=()
 
 # Remove '@plt' suffix not supported by reimu
 remove_plt() {
-    sed 's/@plt//g' "$1" > "$2"
+    # reimu doesn't understand some GNU/LLVM assembler pseudo-ops.
+    # - Strip '@plt'
+    # - Rewrite 'zext.b rd, rs' => 'andi rd, rs, 255'
+    sed -E \
+        -e 's/@plt//g' \
+        -e 's/^([[:space:]]*)zext\.b[[:space:]]+([^,[:space:]]+),[[:space:]]*([^[:space:]#]+)(.*)$/\1andi\t\2, \3, 255\4/' \
+        "$1" > "$2"
 }
 
 run_test() {
@@ -128,7 +134,15 @@ run_test() {
 
     # Create and prepare tmp directory
     mkdir -p tmp
-    cp ci/files/IR/builtin.ll tmp/builtin.ll
+    BUILTIN_C="$ROOT_DIR/ci/files/IR/builtin.c"
+    if [ ! -f "$BUILTIN_C" ]; then
+        echo "Error: builtin runtime not found: $BUILTIN_C"
+        FAILED+=( "$NAME (missing builtin.c)" )
+        return 1
+    fi
+    # Generate builtin.ll from the C source. This stays in sync with the repo and
+    # avoids depending on a potentially stale checked-in builtin.ll.
+    "$CLANG" -S -emit-llvm --target=riscv32-unknown-unknown-elf -march=rv32im -mabi=ilp32 -O0 -fno-builtin "$BUILTIN_C" -o tmp/builtin.ll
 
     # Run rcompiler and capture output to tmp/output.ll
     echo "Running: $RCOMPILER $RX_FILE > tmp/output.ll"
@@ -152,7 +166,7 @@ run_test() {
         return 1
     fi
     if [ ! -f "builtin.ll" ]; then
-        echo "Error: builtin.ll not found in tmp/"
+        echo "Error: builtin.ll not found in tmp/ (builtin compilation failed)"
         ls -la
         cd "$ROOT_DIR"
         FAILED+=( "$NAME (missing builtin.ll)" )
@@ -169,22 +183,26 @@ run_test() {
         } > output.ll.tmp && mv output.ll.tmp output.ll
     fi
 
-    # Compile LLVM IR to RISC-V assembly
-    echo "Compiling output.ll to RISC-V assembly with $CLANG..."
-    set +e
-    $CLANG -S --target=riscv32-unknown-elf "output.ll" -o "output.s.source" 2>&1
-    CLANG_RC=$?
-    set -e
-    if [ "$CLANG_RC" -ne 0 ]; then
-        echo "clang failed compiling output.ll (exit $CLANG_RC)"
-        cd "$ROOT_DIR"
-        FAILED+=( "$NAME (clang output.ll failed)" )
-        return 1
-    fi
+    # Compile LLVM IR to RISC-V assembly. Prefer -O0 for semantic stability,
+    # but retry with -O1 if reimu fails to link due to out-of-range branches.
+    local OUTPUT_OPT="-O0"
+    local RETRIED_WITH_O1=0
+    while true; do
+        echo "Compiling output.ll to RISC-V assembly with $CLANG ($OUTPUT_OPT)..."
+        set +e
+        $CLANG -S --target=riscv32-unknown-elf -march=rv32im -mabi=ilp32 "$OUTPUT_OPT" "output.ll" -o "output.s.source" 2>&1
+        CLANG_RC=$?
+        set -e
+        if [ "$CLANG_RC" -ne 0 ]; then
+            echo "clang failed compiling output.ll (exit $CLANG_RC)"
+            cd "$ROOT_DIR"
+            FAILED+=( "$NAME (clang output.ll failed)" )
+            return 1
+        fi
 
     echo "Compiling builtin.ll to RISC-V assembly with $CLANG..."
     set +e
-    $CLANG -S --target=riscv32-unknown-elf -O0 -fno-builtin "builtin.ll" -o "builtin.s.source" 2>&1
+    $CLANG -S --target=riscv32-unknown-elf -march=rv32im -mabi=ilp32 -O0 -fno-builtin "builtin.ll" -o "builtin.s.source" 2>&1
     CLANG_RC=$?
     set -e
     if [ "$CLANG_RC" -ne 0 ]; then
@@ -194,32 +212,43 @@ run_test() {
         return 1
     fi
 
-    # Remove @plt suffix
-    remove_plt "output.s.source" "test.s"
-    remove_plt "builtin.s.source" "builtin.s"
+        # Remove @plt suffix + rewrite unsupported pseudo-ops for reimu
+        remove_plt "output.s.source" "test.s"
+        remove_plt "builtin.s.source" "builtin.s"
 
     # Prepare input/output files
     INPUT_FILE="../testcases/IR-1/src/$NAME/$NAME.in"
     EXPECTED_FILE="../testcases/IR-1/src/$NAME/$NAME.out"
 
-    # Run with reimu
-    echo "Running with reimu..."
-    set +e
-    if [ -f "$INPUT_FILE" ]; then
-        "$REIMU" -i="$INPUT_FILE" -s=8M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
-    else
-        "$REIMU" -s=8M -o="tmp.out" > "reimu_output.txt" 2> "reimu_err.txt"
-    fi
-    REIMU_RC=$?
-    set -e
+        # Run with reimu
+        echo "Running with reimu..."
+        set +e
+        if [ -f "$INPUT_FILE" ]; then
+            "$REIMU" -i="$INPUT_FILE" -s=8M -o="tmp.out" -f=builtin.s,test.s > "reimu_output.txt" 2> "reimu_err.txt"
+        else
+            "$REIMU" -s=8M -o="tmp.out" -f=builtin.s,test.s > "reimu_output.txt" 2> "reimu_err.txt"
+        fi
+        REIMU_RC=$?
+        set -e
 
-    if [ "$REIMU_RC" -ne 0 ]; then
-        echo "reimu exited with non-zero status ($REIMU_RC). See reimu_err.txt:"
-        sed -n '1,200p' reimu_err.txt || true
-        cd "$ROOT_DIR"
-        FAILED+=( "$NAME (reimu exit $REIMU_RC)" )
-        return 1
-    fi
+        if [ "$REIMU_RC" -ne 0 ]; then
+            # If this is a branch-range issue, retry once at -O1 to shrink code.
+            if [ "$RETRIED_WITH_O1" -eq 0 ] && grep -q "immediate out of range" reimu_err.txt; then
+                echo "reimu link failed due to out-of-range branch immediate; retrying with -O1..."
+                OUTPUT_OPT="-O1"
+                RETRIED_WITH_O1=1
+                continue
+            fi
+
+            echo "reimu exited with non-zero status ($REIMU_RC). See reimu_err.txt:"
+            sed -n '1,200p' reimu_err.txt || true
+            cd "$ROOT_DIR"
+            FAILED+=( "$NAME (reimu exit $REIMU_RC)" )
+            return 1
+        fi
+
+        break
+    done
 
     # Compare output
     if [ -f "$EXPECTED_FILE" ]; then
