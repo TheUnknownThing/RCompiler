@@ -334,24 +334,24 @@ inline void SCCPVisitor::visit(ir::BranchInst &branchInst) {
       auto condConst = constantValues_[branchInst.cond().get()];
       auto constBool = std::dynamic_pointer_cast<ir::ConstantInt>(condConst);
       if (constBool && constBool->value() != 0) {
-        auto *targetBB = branchInst.dest().get();
+        auto *targetBB = branchInst.dest();
         edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
       } else {
-        auto *targetBB = branchInst.altDest().get();
+        auto *targetBB = branchInst.altDest();
         edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
       }
     } else if (condKind == LatticeValueKind::OVERDEF) {
-      auto *targetBB = branchInst.dest().get();
+      auto *targetBB = branchInst.dest();
       edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
 
-      auto *altBB = branchInst.altDest().get();
+      auto *altBB = branchInst.altDest();
       edges_.push_back(std::make_pair(branchInst.parent(), altBB));
     } else {
       // undef cond, do nothing
       return;
     }
   } else {
-    auto *targetBB = branchInst.dest().get();
+    auto *targetBB = branchInst.dest();
     edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
   }
 }
@@ -712,7 +712,7 @@ inline void SCCPVisitor::visit(ir::PhiInst &phiInst) {
 
   auto incoming = phiInst.incomings();
   for (const auto &[value, bb] : incoming) {
-    if (executableBlocks_.count(bb.get()) == 0) {
+    if (executableBlocks_.count(bb) == 0) {
       continue;
     }
     auto kind = getLatticeValue(value.get());

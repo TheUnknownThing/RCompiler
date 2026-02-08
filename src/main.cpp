@@ -9,14 +9,7 @@
 #include "ir/gen.hpp"
 #include "ir/visit.hpp"
 #include "lexer/lexer.hpp"
-#include "opt/cfg/cfg.hpp"
-#include "opt/dce/dce.hpp"
-#include "opt/functionInline/functionInline.hpp"
-#include "opt/instCombine/instCombine.hpp"
-#include "opt/mem2reg/mem2reg.hpp"
-#include "opt/sccp/context.hpp"
-#include "opt/sccp/sccp.hpp"
-#include "opt/simplifyCFG/simplifyCFG.hpp"
+#include "opt/passManager.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/semantic.hpp"
 #include "utils/logger.hpp"
@@ -32,19 +25,13 @@ int main(int argc, char *argv[]) {
 
     rc::Lexer lexer(preprocessed_code);
     auto tks = lexer.tokenize();
-
-    LOG_INFO("[Tokens] Processed complete. Total tokens: " +
-             std::to_string(tks.size()));
-
     rc::Parser parser(tks);
     auto ast = parser.parse();
 
     if (!ast) {
       throw std::runtime_error("Parsing failed: AST is null");
     }
-
-    LOG_DEBUG("[AST Pretty Print] \n" + rc::pretty_print(*ast));
-
+    
     rc::SemanticAnalyzer analyzer;
     analyzer.analyze(ast);
 
@@ -53,32 +40,10 @@ int main(int argc, char *argv[]) {
     rc::ir::Context irCtx(analyzer.expr_cache());
     rc::ir::IREmitter emitter;
     emitter.run(ast, root_scope, irCtx);
-    // rc::ir::emitLLVM(emitter.module(), std::cerr);
-
-    // opt pass
-    rc::opt::CFGVisitor cfgVisitor;
-    cfgVisitor.run(emitter.module());
-
-    rc::opt::DeadCodeElimVisitor dce;
-    dce.run(emitter.module());
-
-    rc::opt::Mem2RegVisitor mem2reg;
-    mem2reg.run(emitter.module());
-    rc::opt::FunctionInline funcInline;
-    funcInline.run(emitter.module());
 
     rc::opt::ConstantContext constCtx;
-    rc::opt::InstCombinePass instCombine(&constCtx);
-    instCombine.run(emitter.module());
-
-    rc::opt::SCCPVisitor sccp(&constCtx);
-    sccp.run(emitter.module());
-    instCombine.run(emitter.module());
-
-    dce.run(emitter.module());
-
-    rc::opt::SimplifyCFG simplifyCFG;
-    simplifyCFG.run(&emitter.module());
+    rc::opt::PassManager pm(constCtx);
+    pm.run(emitter.module());
 
     rc::ir::emitLLVM(emitter.module(), std::cout);
   } catch (const std::exception &e) {

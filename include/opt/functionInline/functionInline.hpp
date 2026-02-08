@@ -5,7 +5,6 @@
 #include "ir/instructions/type.hpp"
 
 #include "opt/base/baseVisitor.hpp"
-#include "opt/cfg/cfg.hpp"
 
 #include "utils/logger.hpp"
 
@@ -55,9 +54,6 @@ inline void FunctionInline::run(ir::Module &module) {
   for (auto &function : module.functions()) {
     checkInline(*function);
   }
-
-  CFGVisitor cfg;
-  cfg.run(module);
 }
 
 inline void FunctionInline::mergeMultipleReturns(ir::Function &function) {
@@ -84,7 +80,7 @@ inline void FunctionInline::mergeMultipleReturns(ir::Function &function) {
     auto parentBlock = oldRet->parent();
     parentBlock->eraseInstruction(oldRet); // remove old return
     auto branchToNewRet =
-        std::make_shared<ir::BranchInst>(parentBlock, newRetBlock);
+        std::make_shared<ir::BranchInst>(parentBlock, newRetBlock.get());
     if (!parentBlock->instructions().empty()) {
       parentBlock->instructions().back()->setNext(branchToNewRet.get());
       branchToNewRet->setPrev(parentBlock->instructions().back().get());
@@ -105,8 +101,7 @@ inline void FunctionInline::mergeMultipleReturns(ir::Function &function) {
     // Create a phi node to select the correct return value
     std::vector<ir::PhiInst::Incoming> incomings;
     for (const auto &oldRet : retInsts) {
-      incomings.emplace_back(oldRet->value(),
-                             oldRet->parent()->shared_from_this());
+      incomings.emplace_back(oldRet->value(), oldRet->parent());
     }
     auto phiNode =
         std::make_shared<ir::PhiInst>(newRetBlock.get(), retType, incomings);
@@ -140,7 +135,7 @@ inline void FunctionInline::checkInline(ir::Function &function) {
           continue;
         }
 
-        auto callee = callInst->calleeFunction();
+        auto *callee = callInst->calleeFunction();
         if (!callee) {
           throw std::runtime_error("Callee function not found when visiting " +
                                    callInst->name() + " in function " +
@@ -187,7 +182,7 @@ inline std::shared_ptr<ir::Value>
 FunctionInline::processInline(ir::CallInst &callInst,
                               std::shared_ptr<ir::BasicBlock> returnBB) {
   // return the cloned PHI inst that holds the return value
-  auto calleeFunc = callInst.calleeFunction();
+  auto *calleeFunc = callInst.calleeFunction();
   if (!calleeFunc) {
     return nullptr;
   }
@@ -206,7 +201,7 @@ FunctionInline::processInline(ir::CallInst &callInst,
 
   for (const auto &block : calleeFunc->blocks()) {
     auto newBlock = curFunc->createBlock(block->name() + "_inlined");
-    blockMap[block.get()] = newBlock;
+    blockMap[block.get()] = newBlock.get();
   }
 
   auto branchToCallee = std::make_shared<ir::BranchInst>(
@@ -221,9 +216,9 @@ FunctionInline::processInline(ir::CallInst &callInst,
   curBlock->instructions().push_back(branchToCallee);
 
   for (const auto &block : calleeFunc->blocks()) {
-    auto newBlock = blockMap[block.get()];
+    auto *newBlock = blockMap[block.get()];
     for (const auto &inst : block->instructions()) {
-      auto cloned = inst->cloneInst(newBlock.get(), valueMap, blockMap);
+      auto cloned = inst->cloneInst(newBlock, valueMap, blockMap);
       if (!cloned) {
         continue;
       }
@@ -233,7 +228,7 @@ FunctionInline::processInline(ir::CallInst &callInst,
   }
 
   for (const auto &block : calleeFunc->blocks()) {
-    auto newBlock = blockMap[block.get()];
+    auto *newBlock = blockMap[block.get()];
     for (const auto &inst : newBlock->instructions()) {
       fixOperands(inst, valueMap);
     }
@@ -242,7 +237,7 @@ FunctionInline::processInline(ir::CallInst &callInst,
   std::shared_ptr<ir::Value> retVal = nullptr;
 
   for (const auto &block : calleeFunc->blocks()) {
-    auto newBlock = blockMap[block.get()];
+    auto *newBlock = blockMap[block.get()];
     for (const auto &inst : newBlock->instructions()) {
       if (auto retInst = std::dynamic_pointer_cast<ir::ReturnInst>(inst)) {
         if (!retInst->isVoid()) {
@@ -254,7 +249,7 @@ FunctionInline::processInline(ir::CallInst &callInst,
 
         newBlock->eraseInstruction(retInst);
         auto branchToReturnBB =
-            std::make_shared<ir::BranchInst>(newBlock.get(), returnBB);
+            std::make_shared<ir::BranchInst>(newBlock, returnBB.get());
         if (!newBlock->instructions().empty()) {
           newBlock->instructions().back()->setNext(branchToReturnBB.get());
           branchToReturnBB->setPrev(newBlock->instructions().back().get());
@@ -323,7 +318,7 @@ FunctionInline::replacePhiBlock(ir::Function &function,
   for (const auto &block : function.blocks()) {
     for (const auto &inst : block->instructions()) {
       if (auto phi = std::dynamic_pointer_cast<ir::PhiInst>(inst)) {
-        phi->replaceIncomingBlock(oldBB, newBB);
+        phi->replaceIncomingBlock(oldBB.get(), newBB.get());
       }
     }
   }
@@ -357,13 +352,13 @@ inline bool FunctionInline::judgeInline(ir::Function &function) {
     instructionCount += block->instructions().size();
     for (auto &inst : block->instructions()) {
       if (auto callInst = dynamic_cast<ir::CallInst *>(inst.get())) {
-        auto callee = callInst->calleeFunction();
-        if (callee.get() == &function) {
+        auto *callee = callInst->calleeFunction();
+        if (callee == &function) {
           return false;
         }
 
         if (callee && !callee->isExternal() && !callee->blocks().empty()) {
-          directCallees.insert(callee.get());
+          directCallees.insert(callee);
         }
       }
     }
@@ -405,7 +400,7 @@ FunctionInline::canReachFunction(ir::Function *start, ir::Function *target,
       if (!callee || callee->isExternal() || callee->blocks().empty()) {
         continue;
       }
-      if (canReachFunction(callee.get(), target, visited)) {
+      if (canReachFunction(callee, target, visited)) {
         return true;
       }
     }

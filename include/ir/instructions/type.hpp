@@ -116,21 +116,21 @@ class FunctionType final : public Type {
 public:
   FunctionType(TypePtr retTy, std::vector<TypePtr> paramTys,
                bool isVarArg = false,
-               std::shared_ptr<Function> function = nullptr)
+               Function *function = nullptr)
       : Type(TypeKind::Function), ret_(std::move(retTy)),
         params_(std::move(paramTys)), varArg_(isVarArg),
         function_(std::move(function)) {}
   const TypePtr &returnType() const { return ret_; }
   const std::vector<TypePtr> &paramTypes() const { return params_; }
   bool isVarArg() const { return varArg_; }
-  const std::shared_ptr<Function> &function() const { return function_; }
-  void setFunction(std::shared_ptr<Function> fn) { function_ = std::move(fn); }
+  Function *function() const { return function_; }
+  void setFunction(Function *fn) { function_ = fn; }
 
 private:
   TypePtr ret_;
   std::vector<TypePtr> params_;
   bool varArg_;
-  std::shared_ptr<Function> function_;
+  Function *function_;
 };
 
 class Instruction;
@@ -170,7 +170,7 @@ public:
 
 using ValueRemapMap = std::unordered_map<Value *, std::shared_ptr<Value>>;
 using BlockRemapMap =
-    std::unordered_map<BasicBlock *, std::shared_ptr<BasicBlock>>;
+  std::unordered_map<BasicBlock *, BasicBlock *>;
 
 inline std::shared_ptr<Value> remapValue(const std::shared_ptr<Value> &v,
                                          const ValueRemapMap &valueMap) {
@@ -184,13 +184,11 @@ inline std::shared_ptr<Value> remapValue(const std::shared_ptr<Value> &v,
   return v;
 }
 
-inline std::shared_ptr<BasicBlock>
-remapBlock(const std::shared_ptr<BasicBlock> &bb,
-           const BlockRemapMap &blockMap) {
+inline BasicBlock *remapBlock(BasicBlock *bb, const BlockRemapMap &blockMap) {
   if (!bb) {
     return nullptr;
   }
-  auto it = blockMap.find(bb.get());
+  auto it = blockMap.find(bb);
   if (it != blockMap.end()) {
     return it->second;
   }

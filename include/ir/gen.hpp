@@ -562,10 +562,10 @@ private:
       void visit(const BranchInst &br) override {
         if (br.isConditional()) {
           self.out_ << "br i1 " << self.valueRef(*br.cond()) << ", label %"
-                    << self.localLabel(br.dest().get()) << ", label %"
-                    << self.localLabel(br.altDest().get());
+                    << self.localLabel(br.dest()) << ", label %"
+                    << self.localLabel(br.altDest());
         } else {
-          self.out_ << "br label %" << self.localLabel(br.dest().get());
+          self.out_ << "br label %" << self.localLabel(br.dest());
         }
       }
 
@@ -656,7 +656,7 @@ private:
           }
           const auto &inc = phi.incomings()[i];
           self.out_ << "[ " << self.valueRef(*inc.first) << ", %"
-                    << self.localLabel(inc.second.get()) << " ]";
+                    << self.localLabel(inc.second) << " ]";
         }
       }
 
@@ -701,7 +701,7 @@ private:
     if (!callee_typ || !callee_typ->function()) {
       throw std::invalid_argument("Callee must reference a function");
     }
-    const auto *fnPtr = callee_typ->function().get();
+    const auto *fnPtr = callee_typ->function();
     auto it = functionNames_.find(fnPtr);
     if (it == functionNames_.end()) {
       auto name = functionName(*fnPtr);

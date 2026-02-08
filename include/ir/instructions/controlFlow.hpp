@@ -10,16 +10,14 @@ namespace rc::ir {
 
 class BranchInst : public Instruction {
 public:
-  explicit BranchInst(BasicBlock *parent, std::shared_ptr<BasicBlock> dest)
+  explicit BranchInst(BasicBlock *parent, BasicBlock *dest)
       : Instruction(parent, std::make_shared<VoidType>()), isCond_(false),
-        dest_(std::move(dest)) {}
+        dest_(dest) {}
 
   BranchInst(BasicBlock *parent, std::shared_ptr<Value> cond,
-             std::shared_ptr<BasicBlock> ifTrue,
-             std::shared_ptr<BasicBlock> ifFalse)
+             BasicBlock *ifTrue, BasicBlock *ifFalse)
       : Instruction(parent, std::make_shared<VoidType>()), isCond_(true),
-        cond_(std::move(cond)), dest_(std::move(ifTrue)),
-        altDest_(std::move(ifFalse)) {
+        cond_(std::move(cond)), dest_(ifTrue), altDest_(ifFalse) {
     if (!cond_) {
       throw std::invalid_argument(
           "BranchInst conditional requires a condition");
@@ -34,10 +32,10 @@ public:
 
   bool isConditional() const { return isCond_; }
   const std::shared_ptr<Value> &cond() const { return cond_; }
-  std::shared_ptr<BasicBlock> &dest() { return dest_; }
-  const std::shared_ptr<BasicBlock> &dest() const { return dest_; }
-  std::shared_ptr<BasicBlock> &altDest() { return altDest_; }
-  const std::shared_ptr<BasicBlock> &altDest() const { return altDest_; }
+  BasicBlock *dest() const { return dest_; }
+  void setDest(BasicBlock *bb) { dest_ = bb; }
+  BasicBlock *altDest() const { return altDest_; }
+  void setAltDest(BasicBlock *bb) { altDest_ = bb; }
 
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
   bool isTerminator() const override { return true; }
@@ -71,8 +69,8 @@ public:
 private:
   bool isCond_;
   std::shared_ptr<Value> cond_;
-  std::shared_ptr<BasicBlock> dest_;    // unconditional target
-  std::shared_ptr<BasicBlock> altDest_; // false target when conditional
+  BasicBlock *dest_{nullptr};    // unconditional/true target
+  BasicBlock *altDest_{nullptr}; // false target when conditional
 };
 
 class ReturnInst : public Instruction {

@@ -50,10 +50,10 @@ inline std::vector<const ir::BasicBlock *> successors(const ir::BasicBlock &bb) 
     }
     if (auto *br = dynamic_cast<const ir::BranchInst *>(inst.get())) {
       if (br->dest()) {
-        outs.push_back(br->dest().get());
+        outs.push_back(br->dest());
       }
       if (br->isConditional() && br->altDest()) {
-        outs.push_back(br->altDest().get());
+        outs.push_back(br->altDest());
       }
       break;
     }
@@ -79,10 +79,10 @@ inline std::vector<ir::BasicBlock *> successors(ir::BasicBlock &bb) {
     }
     if (auto *br = dynamic_cast<const ir::BranchInst *>(inst.get())) {
       if (br->dest()) {
-        outs.push_back(br->dest().get());
+        outs.push_back(br->dest());
       }
       if (br->isConditional() && br->altDest()) {
-        outs.push_back(br->altDest().get());
+        outs.push_back(br->altDest());
       }
       break;
     }
