@@ -90,6 +90,7 @@ inline void SecondPassResolver::run(const std::shared_ptr<RootNode> &root,
       ++idx;
     }
 
+    idx = 0;
     for (const auto &child : root->children) {
       if (child && !dynamic_cast<ConstantItem *>(child.get())) {
         LOG_DEBUG("[SecondPass] Visiting top-level child #" +
@@ -121,15 +122,40 @@ inline void SecondPassResolver::visit(FunctionDecl &node) {
   }
 
   if (node.params) {
-    // TODO: deduplicate parameter names
-    std::set<std::shared_ptr<BasePattern>> seen_param_names;
+    auto extract_param_name = [](const std::shared_ptr<BasePattern> &pattern)
+        -> std::optional<std::string> {
+      if (!pattern) {
+        return std::nullopt;
+      }
+      if (auto *id = dynamic_cast<const IdentifierPattern *>(pattern.get())) {
+        return id->name;
+      }
+      if (auto *ref =
+              dynamic_cast<const ReferencePattern *>(pattern.get())) {
+        if (!ref->inner_pattern) {
+          return std::nullopt;
+        }
+        if (auto *inner_id = dynamic_cast<const IdentifierPattern *>(
+                ref->inner_pattern.get())) {
+          return inner_id->name;
+        }
+      }
+      return std::nullopt;
+    };
+
+    std::set<std::string> seen_param_names;
     for (auto &p : *node.params) {
-      const auto &name = p.first;
-      if (!seen_param_names.insert(name).second) {
+      const auto &pattern = p.first;
+      auto maybe_name = extract_param_name(pattern);
+      if (!maybe_name) {
+        throw SemanticException(
+            "unsupported parameter pattern in function '" + node.name + "'");
+      }
+      if (!seen_param_names.insert(*maybe_name).second) {
         throw SemanticException("duplicate parameter in function '" +
                                 node.name + "'");
       }
-      sig.param_names.push_back(name);
+      sig.param_names.push_back(pattern);
       sig.param_types.push_back(resolve_type(p.second));
     }
   }
@@ -144,7 +170,7 @@ inline void SecondPassResolver::visit(FunctionDecl &node) {
     }
   }
 
-    ci->metadata = std::move(sig);
+  ci->metadata = std::move(sig);
 
   if (node.body && node.body.value()) {
     node.body.value()->accept(*this);

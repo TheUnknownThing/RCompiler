@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -128,9 +129,25 @@ public:
     }
   }
 
+  BaseItem *add_owned_item(std::unique_ptr<BaseItem> item) {
+    auto *raw = item.get();
+    owned_items_.push_back(std::move(item));
+    return raw;
+  }
+
+  template <class T, class... Args>
+  T *emplace_owned_item(Args &&...args) {
+    static_assert(std::is_base_of_v<BaseItem, T>);
+    auto ptr = std::make_unique<T>(std::forward<Args>(args)...);
+    auto *raw = ptr.get();
+    owned_items_.push_back(std::move(ptr));
+    return raw;
+  }
+
   ScopeNode *add_child_scope(std::string name, const BaseNode *owner_node) {
-    childNodes.push_back(new ScopeNode(std::move(name), this, owner_node));
-    return childNodes.back();
+    childNodes.push_back(
+        std::make_unique<ScopeNode>(std::move(name), this, owner_node));
+    return childNodes.back().get();
   }
 
   std::vector<CollectedItem> items() const {
@@ -169,14 +186,21 @@ public:
     return &it->second;
   }
 
-  const std::vector<ScopeNode *> &children() const { return childNodes; }
+  std::vector<ScopeNode *> children() const {
+    std::vector<ScopeNode *> out;
+    out.reserve(childNodes.size());
+    for (const auto &c : childNodes) {
+      out.push_back(c.get());
+    }
+    return out;
+  }
 
   const ScopeNode *find_child_scope_by_owner(const BaseNode *owner_node) const {
     if (!owner_node)
       return nullptr;
     for (const auto &c : childNodes) {
-      if (c->owner == owner_node)
-        return c;
+      if (c && c->owner == owner_node)
+        return c.get();
     }
     return nullptr;
   }
@@ -184,8 +208,8 @@ public:
     if (!owner_node)
       return nullptr;
     for (const auto &c : childNodes) {
-      if (c->owner == owner_node)
-        return c;
+      if (c && c->owner == owner_node)
+        return c.get();
     }
     return nullptr;
   }
@@ -240,7 +264,8 @@ public:
 private:
   std::map<std::string, CollectedItem> value_items_;
   std::map<std::string, CollectedItem> type_items_;
-  std::vector<ScopeNode *> childNodes;
+  std::vector<std::unique_ptr<ScopeNode>> childNodes;
+  std::vector<std::unique_ptr<BaseItem>> owned_items_;
 };
 
 inline ScopeNode *enterScope(ScopeNode *&current, const std::string &name,

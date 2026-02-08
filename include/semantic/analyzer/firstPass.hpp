@@ -19,7 +19,7 @@ public:
 
   FirstPassBuilder();
 
-  void build(const std::shared_ptr<RootNode> &root);
+  std::unique_ptr<ScopeNode> build(const std::shared_ptr<RootNode> &root);
 
   void visit(BaseNode &node) override;
 
@@ -50,22 +50,24 @@ public:
 
 private:
   ScopeNode *current_scope = nullptr;
+  std::unique_ptr<ScopeNode> prelude_scope_owner_;
 };
 
 // Implementation
 
 inline FirstPassBuilder::FirstPassBuilder() = default;
 
-inline void FirstPassBuilder::build(const std::shared_ptr<RootNode> &root) {
+inline std::unique_ptr<ScopeNode>
+FirstPassBuilder::build(const std::shared_ptr<RootNode> &root) {
   LOG_INFO("[FirstPass] Building initial scope tree");
 
-  prelude_scope = create_prelude_scope();
+  prelude_scope_owner_ = create_prelude_scope();
+  prelude_scope = prelude_scope_owner_.get();
   LOG_INFO("[FirstPass] Created prelude scope with " +
            std::to_string(prelude_scope->items().size()) +
            " builtin functions");
 
-  root_scope = new ScopeNode("root", prelude_scope, root.get());
-  prelude_scope->add_child_scope("root", root.get());
+  root_scope = prelude_scope->add_child_scope("root", root.get());
   current_scope = root_scope;
   if (root) {
     size_t idx = 0;
@@ -80,6 +82,8 @@ inline void FirstPassBuilder::build(const std::shared_ptr<RootNode> &root) {
   }
   LOG_INFO("[FirstPass] Completed. Root has " +
            std::to_string(root_scope->items().size()) + " items");
+
+  return std::move(prelude_scope_owner_);
 }
 
 inline void FirstPassBuilder::visit(BaseNode &node) {
