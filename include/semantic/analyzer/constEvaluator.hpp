@@ -341,37 +341,37 @@ ConstEvaluator::evaluate_literal(const LiteralExpression &node) {
   try {
     if (node.type.is_base()) {
       switch (node.type.as_base()) {
-      case PrimitiveLiteralType::ANY_INT: {
+      case PrimitiveAstType::ANY_INT: {
         std::int64_t val = std::stoll(node.value);
         return ConstValue::any_int(val);
       }
-      case PrimitiveLiteralType::I32: {
+      case PrimitiveAstType::I32: {
         std::int32_t val = std::stoi(node.value);
         return ConstValue::i32(val);
       }
-      case PrimitiveLiteralType::U32: {
+      case PrimitiveAstType::U32: {
         std::uint32_t val = std::stoul(node.value);
         return ConstValue::u32(val);
       }
-      case PrimitiveLiteralType::ISIZE: {
+      case PrimitiveAstType::ISIZE: {
         std::int64_t val = std::stoll(node.value);
         return ConstValue::isize(val);
       }
-      case PrimitiveLiteralType::USIZE: {
+      case PrimitiveAstType::USIZE: {
         std::uint64_t val = std::stoull(node.value);
         return ConstValue::usize(val);
       }
-      case PrimitiveLiteralType::STRING: {
+      case PrimitiveAstType::STRING: {
         return ConstValue::string(node.value);
       }
-      case PrimitiveLiteralType::CHAR: {
+      case PrimitiveAstType::CHAR: {
         if (node.value.length() >= 3) {
           char val = node.value[1]; // skip ''
           return ConstValue::char_val(val);
         }
         break;
       }
-      case PrimitiveLiteralType::BOOL: {
+      case PrimitiveAstType::BOOL: {
         bool val = (node.value == "true");
         return ConstValue::bool_val(val);
       }

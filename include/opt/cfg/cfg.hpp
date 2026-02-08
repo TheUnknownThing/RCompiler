@@ -72,10 +72,16 @@ inline void CFGVisitor::visit(ir::BasicBlock &basicBlock) {
 inline void CFGVisitor::visit(ir::BranchInst &branchInst) {
   auto parent = branchInst.parent();
   if (branchInst.isConditional()) {
-    branchInst.dest()->addPredecessor(parent);
-    branchInst.altDest()->addPredecessor(parent);
+    if (branchInst.dest()) {
+      branchInst.dest()->addPredecessor(parent);
+    }
+    if (branchInst.altDest()) {
+      branchInst.altDest()->addPredecessor(parent);
+    }
   } else {
-    branchInst.dest()->addPredecessor(parent);
+    if (branchInst.dest()) {
+      branchInst.dest()->addPredecessor(parent);
+    }
   }
 }
 

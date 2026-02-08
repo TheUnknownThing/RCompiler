@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <functional>
 
 #include "ast/nodes/expr.hpp"
 #include "ast/nodes/pattern.hpp"
@@ -42,9 +43,7 @@ inline bool BasicBlock::isTerminated() const {
   if (instructions_.empty())
     return false;
   const auto &last = instructions_.back();
-  return dynamic_cast<BranchInst *>(last.get()) != nullptr ||
-         dynamic_cast<ReturnInst *>(last.get()) != nullptr ||
-         dynamic_cast<UnreachableInst *>(last.get()) != nullptr;
+  return last->isTerminator();
 }
 
 class IREmitter : public BaseVisitor {
@@ -232,79 +231,7 @@ inline void IREmitter::run(const std::shared_ptr<RootNode> &root,
 }
 
 inline void IREmitter::visit(BaseNode &node) {
-  LOG_DEBUG(std::string("[IREmitter] visit(BaseNode) dispatch for ") +
-            typeid(node).name());
-  if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *cst = dynamic_cast<ConstantItem *>(&node)) {
-    visit(*cst);
-  } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<EmptyStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *expr = dynamic_cast<NameExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LiteralExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<GroupExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<MethodCallExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<FieldAccessExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<UnderscoreExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ArrayExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IndexExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<TupleExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BreakExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ContinueExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<PathExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<QualifiedPathExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BorrowExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<DerefExpression *>(&node)) {
-    visit(*expr);
-  }
+  node.accept(*this);
 }
 
 inline void IREmitter::visit(FunctionDecl &node) {
@@ -340,40 +267,40 @@ inline void IREmitter::visit(BinaryExpression &node) {
     if (node.op.type == TokenType::AND) {
       // if lhs is false, skip rhs and use false
       // if lhs is true, evaluate rhs
-      current_block_->append<BranchInst>(lhs, rhsBlock, mergeBlock);
+      current_block_->append<BranchInst>(lhs, rhsBlock.get(), mergeBlock.get());
 
       current_block_ = rhsBlock;
       node.right->accept(*this);
       auto rhs = popOperand();
       rhs = loadPtrValue(rhs, context->lookupType(node.right.get()));
-      current_block_->append<BranchInst>(mergeBlock);
+      current_block_->append<BranchInst>(mergeBlock.get());
       auto rhsExitBlock = current_block_;
 
       current_block_ = mergeBlock;
       auto i1_type = std::make_shared<IntegerType>(1, true);
       auto false_val = ConstantInt::getI1(false);
-      std::vector<PhiInst::Incoming> incomings = {{false_val, entryBlock},
-                                                  {rhs, rhsExitBlock}};
+        std::vector<PhiInst::Incoming> incomings = {{false_val, entryBlock.get()},
+                              {rhs, rhsExitBlock.get()}};
       auto result =
           current_block_->append<PhiInst>(i1_type, incomings, "and_result");
       pushOperand(result);
     } else {
       // if lhs is true, skip rhs and use true
       // if lhs is false, evaluate rhs
-      current_block_->append<BranchInst>(lhs, mergeBlock, rhsBlock);
+      current_block_->append<BranchInst>(lhs, mergeBlock.get(), rhsBlock.get());
 
       current_block_ = rhsBlock;
       node.right->accept(*this);
       auto rhs = popOperand();
       rhs = loadPtrValue(rhs, context->lookupType(node.right.get()));
-      current_block_->append<BranchInst>(mergeBlock);
+      current_block_->append<BranchInst>(mergeBlock.get());
       auto rhsExitBlock = current_block_;
 
       current_block_ = mergeBlock;
       auto i1_type = std::make_shared<IntegerType>(1, true);
       auto true_val = ConstantInt::getI1(true);
-      std::vector<PhiInst::Incoming> incomings = {{true_val, entryBlock},
-                                                  {rhs, rhsExitBlock}};
+        std::vector<PhiInst::Incoming> incomings = {{true_val, entryBlock.get()},
+                              {rhs, rhsExitBlock.get()}};
       auto result =
           current_block_->append<PhiInst>(i1_type, incomings, "or_result");
       pushOperand(result);
@@ -1123,7 +1050,7 @@ inline void IREmitter::visit(IfExpression &node) {
   if (node.else_block) {
     auto elseBlock = cur_func->createBlock("if_else");
     auto mergeBlock = cur_func->createBlock("if_merge");
-    current_block_->append<BranchInst>(condVal, thenBlock, elseBlock);
+    current_block_->append<BranchInst>(condVal, thenBlock.get(), elseBlock.get());
     // then block
     current_block_ = thenBlock;
     if (node.then_block)
@@ -1140,7 +1067,7 @@ inline void IREmitter::visit(IfExpression &node) {
       } else {
         thenVal = loadPtrValue(thenVal, resultSemTy);
       }
-      current_block_->append<BranchInst>(mergeBlock);
+      current_block_->append<BranchInst>(mergeBlock.get());
     }
     // else block
     current_block_ = elseBlock;
@@ -1159,7 +1086,7 @@ inline void IREmitter::visit(IfExpression &node) {
       } else {
         elseVal = loadPtrValue(elseVal, resultSemTy);
       }
-      current_block_->append<BranchInst>(mergeBlock);
+      current_block_->append<BranchInst>(mergeBlock.get());
     }
     // merge block
     current_block_ = mergeBlock;
@@ -1178,10 +1105,10 @@ inline void IREmitter::visit(IfExpression &node) {
     } else {
       std::vector<PhiInst::Incoming> incomings;
       if (!thenTerminated) {
-        incomings.push_back({thenVal, thenExitBlock});
+        incomings.push_back({thenVal, thenExitBlock.get()});
       }
       if (!elseTerminated) {
-        incomings.push_back({elseVal, elseExitBlock});
+        incomings.push_back({elseVal, elseExitBlock.get()});
       }
       if (incomings.empty()) {
         current_block_->append<UnreachableInst>();
@@ -1194,7 +1121,7 @@ inline void IREmitter::visit(IfExpression &node) {
     }
   } else {
     auto mergeBlock = cur_func->createBlock("if_merge");
-    current_block_->append<BranchInst>(condVal, thenBlock, mergeBlock);
+    current_block_->append<BranchInst>(condVal, thenBlock.get(), mergeBlock.get());
     // then block
     current_block_ = thenBlock;
     if (node.then_block)
@@ -1211,7 +1138,7 @@ inline void IREmitter::visit(IfExpression &node) {
       } else {
         thenVal = loadPtrValue(thenVal, resultSemTy);
       }
-      current_block_->append<BranchInst>(mergeBlock);
+      current_block_->append<BranchInst>(mergeBlock.get());
     }
     // merge block
     current_block_ = mergeBlock;
@@ -1226,9 +1153,9 @@ inline void IREmitter::visit(IfExpression &node) {
     } else {
       std::vector<PhiInst::Incoming> incomings;
       if (!thenTerminated) {
-        incomings.push_back({thenVal, thenExitBlock});
+        incomings.push_back({thenVal, thenExitBlock.get()});
       }
-      incomings.push_back({unit, entryBlock});
+      incomings.push_back({unit, entryBlock.get()});
       auto phi =
           current_block_->append<PhiInst>(resultIrTy, incomings, "ifval");
       pushOperand(phi);
@@ -1376,9 +1303,6 @@ inline void IREmitter::visit(FieldAccessExpression &node) {
   auto gep = current_block_->append<GetElementPtrInst>(
       fieldIrTy, structPtr, std::vector<ValuePtr>{zero, idxConst},
       node.field_name);
-
-  // auto loaded = current_block_->append<LoadInst>(gep, fieldIrTy, 0, false,
-  // node.field_name);
   pushOperand(gep);
   LOG_DEBUG("[IREmitter] Loaded field '" + node.field_name + "'");
 }
@@ -1440,14 +1364,14 @@ inline void IREmitter::visit(LoopExpression &node) {
   auto bodyBlock = cur_func->createBlock("loop_body");
   auto afterBlock = cur_func->createBlock("loop_after");
 
-  current_block_->append<BranchInst>(bodyBlock);
+  current_block_->append<BranchInst>(bodyBlock.get());
 
   current_block_ = bodyBlock;
   // break -> afterBlock, continue -> bodyBlock
   loop_stack_.push_back({afterBlock, bodyBlock});
   node.body->accept(*this);
   if (!current_block_->isTerminated()) {
-    current_block_->append<BranchInst>(bodyBlock);
+    current_block_->append<BranchInst>(bodyBlock.get());
   }
   loop_stack_.pop_back();
 
@@ -1463,20 +1387,20 @@ inline void IREmitter::visit(WhileExpression &node) {
   auto bodyBlock = cur_func->createBlock("while_body");
   auto afterBlock = cur_func->createBlock("while_after");
 
-  current_block_->append<BranchInst>(condBlock);
+  current_block_->append<BranchInst>(condBlock.get());
 
   current_block_ = condBlock;
   node.condition->accept(*this);
   auto condVal = popOperand();
   condVal = loadPtrValue(condVal, context->lookupType(node.condition.get()));
-  current_block_->append<BranchInst>(condVal, bodyBlock, afterBlock);
+  current_block_->append<BranchInst>(condVal, bodyBlock.get(), afterBlock.get());
 
   current_block_ = bodyBlock;
   // break -> afterBlock, continue -> condBlock
   loop_stack_.push_back({afterBlock, condBlock});
   node.body->accept(*this);
   if (!current_block_->isTerminated()) {
-    current_block_->append<BranchInst>(condBlock);
+    current_block_->append<BranchInst>(condBlock.get());
   }
   loop_stack_.pop_back();
 
@@ -1535,7 +1459,7 @@ inline void IREmitter::visit(ArrayExpression &node) {
         auto bodyBlock = cur_func->createBlock("arr_repeat_memcpy_body");
         auto afterBlock = cur_func->createBlock("arr_repeat_memcpy_after");
 
-        preheader->append<BranchInst>(condBlock);
+        preheader->append<BranchInst>(condBlock.get());
 
         // cond:
         //   i = phi [0, preheader], [i_next, body]
@@ -1544,12 +1468,12 @@ inline void IREmitter::visit(ArrayExpression &node) {
         auto i0 = ConstantInt::getI32(0, false);
         auto n =
             ConstantInt::getI32(static_cast<std::uint32_t>(repeatCount), false);
-        std::vector<PhiInst::Incoming> incomings = {{i0, preheader}};
+        std::vector<PhiInst::Incoming> incomings = {{i0, preheader.get()}};
         auto i = current_block_->append<PhiInst>(IntegerType::i32(false),
                                                  incomings, "i");
         auto cmp = current_block_->append<ICmpInst>(ICmpPred::ULT, i, n,
                                                     "arr_repeat_cmp");
-        current_block_->append<BranchInst>(cmp, bodyBlock, afterBlock);
+        current_block_->append<BranchInst>(cmp, bodyBlock.get(), afterBlock.get());
 
         // body:
         //   memcpy(&slot[i], val, elemByteSize)
@@ -1562,8 +1486,8 @@ inline void IREmitter::visit(ArrayExpression &node) {
         auto one = ConstantInt::getI32(1, false);
         auto i_next = current_block_->append<BinaryOpInst>(
             BinaryOpKind::ADD, i, one, IntegerType::i32(false), "i_next");
-        current_block_->append<BranchInst>(condBlock);
-        i->addIncoming(i_next, bodyBlock);
+        current_block_->append<BranchInst>(condBlock.get());
+        i->addIncoming(i_next, bodyBlock.get());
 
         current_block_ = afterBlock;
 
@@ -1576,18 +1500,18 @@ inline void IREmitter::visit(ArrayExpression &node) {
         auto bodyBlock = cur_func->createBlock("arr_repeat_store_body");
         auto afterBlock = cur_func->createBlock("arr_repeat_store_after");
 
-        preheader->append<BranchInst>(condBlock);
+        preheader->append<BranchInst>(condBlock.get());
 
         current_block_ = condBlock;
         auto i0 = ConstantInt::getI32(0, false);
         auto n =
             ConstantInt::getI32(static_cast<std::uint32_t>(repeatCount), false);
-        std::vector<PhiInst::Incoming> incomings = {{i0, preheader}};
+        std::vector<PhiInst::Incoming> incomings = {{i0, preheader.get()}};
         auto i = current_block_->append<PhiInst>(IntegerType::i32(false),
                                                  incomings, "i");
         auto cmp = current_block_->append<ICmpInst>(ICmpPred::ULT, i, n,
                                                     "arr_repeat_cmp");
-        current_block_->append<BranchInst>(cmp, bodyBlock, afterBlock);
+        current_block_->append<BranchInst>(cmp, bodyBlock.get(), afterBlock.get());
 
         current_block_ = bodyBlock;
         auto gep = current_block_->append<GetElementPtrInst>(
@@ -1596,8 +1520,8 @@ inline void IREmitter::visit(ArrayExpression &node) {
         auto one = ConstantInt::getI32(1, false);
         auto i_next = current_block_->append<BinaryOpInst>(
             BinaryOpKind::ADD, i, one, IntegerType::i32(false), "i_next");
-        current_block_->append<BranchInst>(condBlock);
-        i->addIncoming(i_next, bodyBlock);
+        current_block_->append<BranchInst>(condBlock.get());
+        i->addIncoming(i_next, bodyBlock.get());
 
         current_block_ = afterBlock;
       }
@@ -1693,7 +1617,7 @@ inline void IREmitter::visit(BreakExpression &) {
   // break target is the first element of the pair
   auto targetBlock = loop_stack_.back().first;
   pushOperand(std::make_shared<ConstantUnit>());
-  current_block_->append<BranchInst>(targetBlock);
+  current_block_->append<BranchInst>(targetBlock.get());
   // should never have dead code, but just in case
   auto cur_func = functions_.back();
   auto unreachableBlock = cur_func->createBlock("unreachable_after_break");
@@ -1708,7 +1632,7 @@ inline void IREmitter::visit(ContinueExpression &) {
   }
   auto targetBlock = loop_stack_.back().second;
   pushOperand(std::make_shared<ConstantUnit>());
-  current_block_->append<BranchInst>(targetBlock);
+  current_block_->append<BranchInst>(targetBlock.get());
   // should never have dead code, but just in case
   auto cur_func = functions_.back();
   auto unreachableBlock = cur_func->createBlock("unreachable_after_continue");

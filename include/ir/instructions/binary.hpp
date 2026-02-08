@@ -5,6 +5,7 @@
 #include <string>
 
 #include "type.hpp"
+#include "visitor.hpp"
 
 namespace rc::ir {
 
@@ -49,6 +50,8 @@ public:
   BinaryOpKind op() const { return op_; }
   const std::shared_ptr<Value> &lhs() const { return lhs_; }
   const std::shared_ptr<Value> &rhs() const { return rhs_; }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {

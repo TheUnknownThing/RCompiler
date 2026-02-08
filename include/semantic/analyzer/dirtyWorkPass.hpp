@@ -61,27 +61,7 @@ inline void DirtyWorkPass::run(const std::shared_ptr<RootNode> &root,
 }
 
 inline void DirtyWorkPass::visit(BaseNode &node) {
-  if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
-    visit(*decl);
-  }
+  node.accept(*this);
 }
 
 inline void DirtyWorkPass::visit(FunctionDecl &node) {

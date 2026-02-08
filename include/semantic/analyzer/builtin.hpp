@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -26,13 +27,15 @@ public:
   void accept(BaseVisitor &visitor) override { (void)visitor; }
 };
 
-inline auto add_builtin_function(const std::string &name,
+inline void add_builtin_function(const std::string &name,
                                  const std::vector<SemType> &param_types,
                                  const std::vector<std::string> &param_names,
                                  const SemType &return_type, ScopeNode *prelude,
                                  bool is_special = false) {
-  auto *builtin_fn = new BuiltinFunction(name, param_types, param_names,
-                                         return_type, is_special);
+  auto *builtin_fn =
+      prelude->emplace_owned_item<BuiltinFunction>(name, param_types,
+                                                   param_names, return_type,
+                                                   is_special);
 
   prelude->add_item(name, ItemKind::Function, builtin_fn);
 
@@ -49,45 +52,47 @@ inline auto add_builtin_function(const std::string &name,
     meta.decl = nullptr;
     item->metadata = meta;
   }
-};
+}
 
-inline ScopeNode *create_prelude_scope() {
-  auto *prelude = new ScopeNode("prelude", nullptr, nullptr);
+inline std::unique_ptr<ScopeNode> create_prelude_scope() {
+  auto prelude = std::make_unique<ScopeNode>("prelude", nullptr, nullptr);
 
   // print(s: &str) -> ()
   add_builtin_function(
       "print",
       {SemType::reference(SemType::primitive(SemPrimitiveKind::STR), false)},
-      {"s"}, SemType::primitive(SemPrimitiveKind::UNIT), prelude);
+      {"s"}, SemType::primitive(SemPrimitiveKind::UNIT), prelude.get());
 
   // println(s: &str) -> ()
   add_builtin_function(
       "println",
       {SemType::reference(SemType::primitive(SemPrimitiveKind::STR), false)},
-      {"s"}, SemType::primitive(SemPrimitiveKind::UNIT), prelude);
+      {"s"}, SemType::primitive(SemPrimitiveKind::UNIT), prelude.get());
 
   // printInt(n: i32) -> ()
   add_builtin_function("printInt", {SemType::primitive(SemPrimitiveKind::I32)},
                        {"n"}, SemType::primitive(SemPrimitiveKind::UNIT),
-                       prelude);
+                       prelude.get());
 
   // printlnInt(n: i32) -> ()
   add_builtin_function("printlnInt",
                        {SemType::primitive(SemPrimitiveKind::I32)}, {"n"},
-                       SemType::primitive(SemPrimitiveKind::UNIT), prelude);
+                       SemType::primitive(SemPrimitiveKind::UNIT),
+                       prelude.get());
 
   // getString() -> String
   add_builtin_function("getString", {}, {},
-                       SemType::primitive(SemPrimitiveKind::STRING), prelude);
+                       SemType::primitive(SemPrimitiveKind::STRING),
+                       prelude.get());
 
   // getInt() -> i32
   add_builtin_function("getInt", {}, {},
-                       SemType::primitive(SemPrimitiveKind::I32), prelude);
+                       SemType::primitive(SemPrimitiveKind::I32), prelude.get());
 
   // exit(code: i32) -> ()
   add_builtin_function("exit", {SemType::primitive(SemPrimitiveKind::I32)},
                        {"code"}, SemType::primitive(SemPrimitiveKind::UNIT),
-                       prelude, true);
+                       prelude.get(), true);
 
   return prelude;
 }

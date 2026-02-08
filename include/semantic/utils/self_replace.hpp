@@ -8,11 +8,11 @@
 namespace rc {
 
 // Replace `Self` Type with given target name
-inline LiteralType replace_self(LiteralType t, const std::string &target_name) {
+inline AstType replace_self(AstType t, const std::string &target_name) {
   if (t.is_path()) {
     auto &segs = t.as_path().segments;
     if (segs.size() == 1 && segs[0] == "Self") {
-      return LiteralType::path(std::vector<std::string>{target_name});
+      return AstType::path(std::vector<std::string>{target_name});
     }
     return t;
   }

@@ -19,7 +19,7 @@ public:
 
   FirstPassBuilder();
 
-  void build(const std::shared_ptr<RootNode> &root);
+  std::unique_ptr<ScopeNode> build(const std::shared_ptr<RootNode> &root);
 
   void visit(BaseNode &node) override;
 
@@ -50,22 +50,24 @@ public:
 
 private:
   ScopeNode *current_scope = nullptr;
+  std::unique_ptr<ScopeNode> prelude_scope_owner_;
 };
 
 // Implementation
 
 inline FirstPassBuilder::FirstPassBuilder() = default;
 
-inline void FirstPassBuilder::build(const std::shared_ptr<RootNode> &root) {
+inline std::unique_ptr<ScopeNode>
+FirstPassBuilder::build(const std::shared_ptr<RootNode> &root) {
   LOG_INFO("[FirstPass] Building initial scope tree");
 
-  prelude_scope = create_prelude_scope();
+  prelude_scope_owner_ = create_prelude_scope();
+  prelude_scope = prelude_scope_owner_.get();
   LOG_INFO("[FirstPass] Created prelude scope with " +
            std::to_string(prelude_scope->items().size()) +
            " builtin functions");
 
-  root_scope = new ScopeNode("root", prelude_scope, root.get());
-  prelude_scope->add_child_scope("root", root.get());
+  root_scope = prelude_scope->add_child_scope("root", root.get());
   current_scope = root_scope;
   if (root) {
     size_t idx = 0;
@@ -80,51 +82,12 @@ inline void FirstPassBuilder::build(const std::shared_ptr<RootNode> &root) {
   }
   LOG_INFO("[FirstPass] Completed. Root has " +
            std::to_string(root_scope->items().size()) + " items");
+
+  return std::move(prelude_scope_owner_);
 }
 
 inline void FirstPassBuilder::visit(BaseNode &node) {
-  // Items
-  if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *cst = dynamic_cast<ConstantItem *>(&node)) {
-    visit(*cst);
-  } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
-    visit(*decl);
-  }
-  // Statements
-  else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<EmptyStatement *>(&node)) {
-    visit(*stmt);
-  }
-  // Expressions
-  else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
-    visit(*expr);
-  }
+  node.accept(*this);
 }
 
 inline void FirstPassBuilder::visit(FunctionDecl &node) {
@@ -258,12 +221,19 @@ inline void FirstPassBuilder::visit(StructExpression &node) {
 }
 
 inline void FirstPassBuilder::visit(CallExpression &node) {
+  if (node.function_name)
+    node.function_name->accept(*this);
   for (const auto &arg : node.arguments) {
     if (arg)
       arg->accept(*this);
   }
 }
 
-inline void FirstPassBuilder::visit(RootNode &) {}
+inline void FirstPassBuilder::visit(RootNode &node) {
+  for (const auto &child : node.children) {
+    if (child)
+      child->accept(*this);
+  }
+}
 
 } // namespace rc

@@ -1,22 +1,17 @@
 #pragma once
 
-#include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <fstream>
 #include <iostream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace rc {
 class Preprocessor {
 public:
   Preprocessor(const std::string &filename);
-  ~Preprocessor();
+  ~Preprocessor() = default;
 
   std::string preprocess();
 
@@ -25,8 +20,6 @@ private:
 };
 
 inline Preprocessor::Preprocessor(const std::string &filename) {
-  file_lines.clear();
-
   if (filename.empty()) {
     // Read from stdin
     std::string line;
@@ -45,8 +38,6 @@ inline Preprocessor::Preprocessor(const std::string &filename) {
     }
   }
 }
-
-inline Preprocessor::~Preprocessor() { file_lines.clear(); }
 
 inline std::string Preprocessor::preprocess() {
   std::string result;

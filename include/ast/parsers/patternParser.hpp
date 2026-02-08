@@ -7,79 +7,33 @@
 
 namespace rc {
 
-using namespace parsec;
-
 class PatternParser {
 public:
   PatternParser() {
-    auto lazy_any_pattern = [this](const auto &t, auto &p) {
-      return any_pattern().parse(t, p);
-    };
     auto lazy_pattern_no_top_alt = [this](const auto &t, auto &p) {
       return pattern_no_top_alt().parse(t, p);
     };
 
-    p_literal_ = int_literal.map(
+    p_literal_ = parsec::int_literal.map(
         [](const std::string &s) -> std::shared_ptr<BasePattern> {
           return std::make_shared<LiteralPattern>(s, false);
         });
 
     p_identifier_ =
-        optional(tok(rc::TokenType::REF))
-            .combine(optional(tok(rc::TokenType::MUT)),
+        parsec::optional(parsec::tok(rc::TokenType::REF))
+            .combine(parsec::optional(parsec::tok(rc::TokenType::MUT)),
                      [](auto r, auto m) {
                        return std::make_pair(r.has_value(), m.has_value());
                      })
-            .combine(identifier,
+            .combine(parsec::identifier,
                      [](auto flags, auto id) -> std::shared_ptr<BasePattern> {
                        return std::make_shared<IdentifierPattern>(
                            id, flags.first, flags.second);
                      });
 
-    auto comma_separated_patterns =
-        parsec::Parser<std::vector<std::shared_ptr<BasePattern>>>(
-            [lazy_any_pattern](auto &t, auto &p) {
-              std::vector<std::shared_ptr<BasePattern>> patterns;
-              auto first =
-                  parsec::Parser<std::shared_ptr<BasePattern>>(lazy_any_pattern)
-                      .parse(t, p);
-              if (!first)
-                return patterns; // empty list
-              patterns.push_back(*first);
-
-              while (true) {
-                size_t saved = p;
-                if (!tok(rc::TokenType::COMMA).parse(t, p)) {
-                  p = saved;
-                  break;
-                }
-
-                if (tok(rc::TokenType::R_PAREN).parse(t, p) ||
-                    tok(rc::TokenType::R_BRACKET).parse(t, p)) {
-                  p = saved;
-                  break;
-                }
-                p = saved;
-
-                auto next =
-                    tok(rc::TokenType::COMMA)
-                        .thenR(parsec::Parser<std::shared_ptr<BasePattern>>(
-                            lazy_any_pattern))
-                        .parse(t, p);
-                if (!next)
-                  throw std::runtime_error(
-                      "Expected pattern after ',' in pattern list");
-
-                patterns.push_back(*next);
-              }
-              return patterns;
-            });
-
-    // WE DO NOT NEED TO IMPLEMENT STRUCT PATTERN!
-
     p_reference_ =
-        (tok(rc::TokenType::AMPERSAND) | tok(rc::TokenType::AND))
-            .combine(optional(tok(rc::TokenType::MUT)),
+        (parsec::tok(rc::TokenType::AMPERSAND) | parsec::tok(rc::TokenType::AND))
+            .combine(parsec::optional(parsec::tok(rc::TokenType::MUT)),
                      [](auto, auto m) { return m.has_value(); })
             .combine(parsec::Parser<std::shared_ptr<BasePattern>>(
                          lazy_pattern_no_top_alt),
@@ -103,8 +57,7 @@ public:
             -> parsec::ParseResult<std::shared_ptr<BasePattern>> {
           size_t saved = pos;
 
-          auto parsers = {p_literal_, p_identifier_,
-                          /*p_struct_,*/ p_reference_};
+          auto parsers = {p_literal_, p_identifier_, p_reference_};
 
           for (const auto &parser : parsers) {
             auto result = parser.parse(toks, pos);
@@ -124,7 +77,7 @@ public:
 
   parsec::Parser<std::shared_ptr<BasePattern>> or_pattern() {
     return pattern_no_top_alt().combine(
-        many(tok(rc::TokenType::PIPE).thenR(pattern_no_top_alt())),
+        parsec::many(parsec::tok(rc::TokenType::PIPE).thenR(pattern_no_top_alt())),
         [](auto first, auto rest) -> std::shared_ptr<BasePattern> {
           if (rest.empty()) {
             return first;

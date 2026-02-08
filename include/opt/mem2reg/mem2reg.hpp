@@ -390,10 +390,10 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
         // No reaching definition - use undef value
         auto undef = std::make_shared<ir::UndefValue>(alloca->allocatedType());
         undefValues_.push_back(undef); // Keep alive
-        phi->addIncoming(undef, bb.shared_from_this());
+        phi->addIncoming(undef, &bb);
       } else {
         phi->addIncoming(stack.back()->shared_from_this(),
-                         bb.shared_from_this());
+                         &bb);
       }
     }
   }

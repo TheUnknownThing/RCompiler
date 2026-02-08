@@ -6,7 +6,9 @@
 #include <utility>
 #include <vector>
 
+#include "topLevel.hpp"
 #include "type.hpp"
+#include "visitor.hpp"
 
 namespace rc::ir {
 
@@ -49,6 +51,8 @@ public:
   ICmpPred pred() const { return pred_; }
   const std::shared_ptr<Value> &lhs() const { return lhs_; }
   const std::shared_ptr<Value> &rhs() const { return rhs_; }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {
@@ -96,12 +100,12 @@ public:
     addOperands(args_);
   }
 
-  std::shared_ptr<Function> calleeFunction() const {
+  Function *calleeFunction() const {
     if (!callee_) {
       return nullptr;
     }
 
-    if (auto fn = std::dynamic_pointer_cast<Function>(callee_)) {
+    if (auto fn = dynamic_cast<Function *>(callee_.get())) {
       return fn;
     }
 
@@ -114,6 +118,8 @@ public:
   }
   const std::shared_ptr<Value> &callee() const { return callee_; }
   const std::vector<std::shared_ptr<Value>> &args() const { return args_; }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {
@@ -153,8 +159,7 @@ private:
 
 class PhiInst : public Instruction {
 public:
-  using Incoming =
-      std::pair<std::shared_ptr<Value>, std::shared_ptr<BasicBlock>>;
+  using Incoming = std::pair<std::shared_ptr<Value>, BasicBlock *>;
 
   PhiInst(BasicBlock *parent, TypePtr ty,
           std::vector<Incoming> incomings = std::vector<Incoming>{},
@@ -170,7 +175,10 @@ public:
   }
 
   const std::vector<Incoming> &incomings() const { return incomings_; }
-  void addIncoming(std::shared_ptr<Value> v, std::shared_ptr<BasicBlock> bb) {
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
+
+  void addIncoming(std::shared_ptr<Value> v, BasicBlock *bb) {
     if (v) {
       v->addUse(this);
     }
@@ -195,11 +203,10 @@ public:
     }
   }
 
-  void replaceIncomingBlock(std::shared_ptr<BasicBlock> oldBB,
-                            std::shared_ptr<BasicBlock> newBB) {
+  void replaceIncomingBlock(const BasicBlock *oldBB, BasicBlock *newBB) {
     for (auto &inc : incomings_) {
       if (inc.second == oldBB) {
-        inc.second = std::move(newBB);
+        inc.second = newBB;
       }
     }
   }
@@ -209,7 +216,7 @@ public:
       return;
     }
     for (auto it = incomings_.begin(); it != incomings_.end();) {
-      if (it->second.get() == bb) {
+      if (it->second == bb) {
         if (it->first) {
           it->first->removeUse(this);
         }
@@ -280,6 +287,8 @@ public:
   const std::shared_ptr<Value> &ifTrue() const { return ifTrue_; }
   const std::shared_ptr<Value> &ifFalse() const { return ifFalse_; }
 
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
+
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {
       if (op == oldOp) {
@@ -329,6 +338,8 @@ public:
 
   const std::shared_ptr<Value> &source() const { return src_; }
 
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
+
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {
       if (op == oldOp) {
@@ -370,6 +381,8 @@ public:
 
   const std::shared_ptr<Value> &source() const { return src_; }
 
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
+
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {
       if (op == oldOp) {
@@ -410,6 +423,8 @@ public:
   }
 
   const std::shared_ptr<Value> &source() const { return src_; }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
   TypePtr destType() const { return type(); }
 

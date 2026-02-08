@@ -45,8 +45,8 @@ void test_fold_true_branch() {
   auto thenBB = fn->createBlock("then");
   auto elseBB = fn->createBlock("else");
 
-  entry->append<rc::ir::BranchInst>(rc::ir::ConstantInt::getI1(true), thenBB,
-                                   elseBB);
+  entry->append<rc::ir::BranchInst>(rc::ir::ConstantInt::getI1(true), thenBB.get(),
+                                   elseBB.get());
   thenBB->append<rc::ir::ReturnInst>();
   elseBB->append<rc::ir::ReturnInst>();
 
@@ -62,7 +62,7 @@ void test_fold_true_branch() {
     record_failure("[dce] expected entry branch to be unconditional (true case)");
     return;
   }
-  if (br->dest().get() != thenBB.get()) {
+  if (br->dest() != thenBB.get()) {
     record_failure("[dce] expected entry branch to target 'then' (true case)");
     return;
   }
@@ -84,8 +84,8 @@ void test_fold_false_branch() {
   auto thenBB = fn->createBlock("then");
   auto elseBB = fn->createBlock("else");
 
-  entry->append<rc::ir::BranchInst>(rc::ir::ConstantInt::getI1(false), thenBB,
-                                   elseBB);
+  entry->append<rc::ir::BranchInst>(rc::ir::ConstantInt::getI1(false), thenBB.get(),
+                                   elseBB.get());
   thenBB->append<rc::ir::ReturnInst>();
   elseBB->append<rc::ir::ReturnInst>();
 
@@ -101,7 +101,7 @@ void test_fold_false_branch() {
     record_failure("[dce] expected entry branch to be unconditional (false case)");
     return;
   }
-  if (br->dest().get() != elseBB.get()) {
+  if (br->dest() != elseBB.get()) {
     record_failure("[dce] expected entry branch to target 'else' (false case)");
     return;
   }

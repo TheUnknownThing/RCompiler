@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -15,6 +14,7 @@
 #include "semantic/error/exceptions.hpp"
 #include "semantic/scope.hpp"
 #include "semantic/types.hpp"
+#include "semantic/utils/self_replace.hpp"
 #include "utils/logger.hpp"
 
 namespace rc {
@@ -54,13 +54,12 @@ private:
   ScopeNode *current_scope() const;
   void enterScope(ScopeNode *s);
   void exitScope();
-  SemType resolve_type(LiteralType &t);
+  SemType resolve_type(AstType &t);
   const CollectedItem *resolve_named_item(const std::string &name) const;
   CollectedItem *lookup_current_value_item(const std::string &name,
                                            ItemKind kind);
   CollectedItem *lookup_current_type_item(const std::string &name,
                                           ItemKind kind);
-  LiteralType replace_self(LiteralType t, const std::string &target_name);
 };
 
 // Implementation
@@ -91,6 +90,7 @@ inline void SecondPassResolver::run(const std::shared_ptr<RootNode> &root,
       ++idx;
     }
 
+    idx = 0;
     for (const auto &child : root->children) {
       if (child && !dynamic_cast<ConstantItem *>(child.get())) {
         LOG_DEBUG("[SecondPass] Visiting top-level child #" +
@@ -105,45 +105,7 @@ inline void SecondPassResolver::run(const std::shared_ptr<RootNode> &root,
 }
 
 inline void SecondPassResolver::visit(BaseNode &node) {
-  if (auto *cst = dynamic_cast<ConstantItem *>(&node)) {
-    visit(*cst);
-  } else if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BorrowExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<DerefExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ExpressionStatement *>(&node)) {
-    visit(*expr);
-  }
-  // we only care about arr type resolution below
-  else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *expr = dynamic_cast<ArrayExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
-    visit(*expr);
-  }
+  node.accept(*this);
 }
 
 inline void SecondPassResolver::visit(FunctionDecl &node) {
@@ -160,15 +122,40 @@ inline void SecondPassResolver::visit(FunctionDecl &node) {
   }
 
   if (node.params) {
-    // TODO: deduplicate parameter names
-    std::set<std::shared_ptr<BasePattern>> seen_param_names;
+    auto extract_param_name = [](const std::shared_ptr<BasePattern> &pattern)
+        -> std::optional<std::string> {
+      if (!pattern) {
+        return std::nullopt;
+      }
+      if (auto *id = dynamic_cast<const IdentifierPattern *>(pattern.get())) {
+        return id->name;
+      }
+      if (auto *ref =
+              dynamic_cast<const ReferencePattern *>(pattern.get())) {
+        if (!ref->inner_pattern) {
+          return std::nullopt;
+        }
+        if (auto *inner_id = dynamic_cast<const IdentifierPattern *>(
+                ref->inner_pattern.get())) {
+          return inner_id->name;
+        }
+      }
+      return std::nullopt;
+    };
+
+    std::set<std::string> seen_param_names;
     for (auto &p : *node.params) {
-      const auto &name = p.first;
-      if (!seen_param_names.insert(name).second) {
+      const auto &pattern = p.first;
+      auto maybe_name = extract_param_name(pattern);
+      if (!maybe_name) {
+        throw SemanticException(
+            "unsupported parameter pattern in function '" + node.name + "'");
+      }
+      if (!seen_param_names.insert(*maybe_name).second) {
         throw SemanticException("duplicate parameter in function '" +
                                 node.name + "'");
       }
-      sig.param_names.push_back(name);
+      sig.param_names.push_back(pattern);
       sig.param_types.push_back(resolve_type(p.second));
     }
   }
@@ -183,7 +170,7 @@ inline void SecondPassResolver::visit(FunctionDecl &node) {
     }
   }
 
-    ci->metadata = std::move(sig);
+  ci->metadata = std::move(sig);
 
   if (node.body && node.body.value()) {
     node.body.value()->accept(*this);
@@ -463,7 +450,7 @@ inline void SecondPassResolver::exitScope() {
   }
 }
 
-inline SemType SecondPassResolver::resolve_type(LiteralType &t) {
+inline SemType SecondPassResolver::resolve_type(AstType &t) {
   if (t.is_base()) {
     return SemType::map_primitive(t.as_base());
   }
@@ -557,39 +544,6 @@ SecondPassResolver::lookup_current_type_item(const std::string &name,
   if (found && found->kind == kind)
     return found;
   throw SemanticException("item " + name + " not found in type namespace");
-}
-
-inline LiteralType SecondPassResolver::replace_self(LiteralType t,
-                                                    const std::string &target_name) {
-  if (t.is_path()) {
-    auto &segs = t.as_path().segments;
-    if (segs.size() == 1 && segs[0] == "Self") {
-      return LiteralType::path(std::vector<std::string>{target_name});
-    }
-    return t;
-  }
-  if (t.is_tuple()) {
-    for (auto &el : t.as_tuple()) {
-      el = replace_self(el, target_name);
-    }
-    return t;
-  }
-  if (t.is_array()) {
-    *t.as_array().element =
-        replace_self(*t.as_array().element, target_name);
-    return t;
-  }
-  if (t.is_slice()) {
-    *t.as_slice().element =
-        replace_self(*t.as_slice().element, target_name);
-    return t;
-  }
-  if (t.is_reference()) {
-    *t.as_reference().target =
-        replace_self(*t.as_reference().target, target_name);
-    return t;
-  }
-  return t;
 }
 
 } // namespace rc

@@ -182,6 +182,30 @@ public:
       newBB->instructions().insert(newBB->instructions().end(), it + 1,
                                    insts.end());
       insts.erase(it + 1, insts.end());
+
+      for (auto &moved : newBB->instructions()) {
+        if (moved) {
+          moved->setParent(newBB.get());
+        }
+      }
+      for (std::size_t i = 0; i < insts.size(); ++i) {
+        auto &cur = insts[i];
+        if (!cur) {
+          continue;
+        }
+        cur->setPrev(i == 0 ? nullptr : insts[i - 1].get());
+        cur->setNext((i + 1) < insts.size() ? insts[i + 1].get() : nullptr);
+      }
+      for (std::size_t i = 0; i < newBB->instructions().size(); ++i) {
+        auto &cur = newBB->instructions()[i];
+        if (!cur) {
+          continue;
+        }
+        cur->setPrev(i == 0 ? nullptr : newBB->instructions()[i - 1].get());
+        cur->setNext((i + 1) < newBB->instructions().size()
+                         ? newBB->instructions()[i + 1].get()
+                         : nullptr);
+      }
       return newBB;
     }
     return nullptr;
@@ -190,6 +214,11 @@ public:
   void eraseBlock(std::shared_ptr<BasicBlock> bb) {
     auto it = std::find(blocks_.begin(), blocks_.end(), bb);
     if (it != blocks_.end()) {
+      for (auto &inst : (*it)->instructions()) {
+        if (inst) {
+          inst->dropAllReferences();
+        }
+      }
       (*it)->instructions().clear();
       blocks_.erase(it);
     }
@@ -234,7 +263,7 @@ public:
                                            bool isExternal = false) {
     auto fn = std::make_shared<Function>(name, std::move(fnTy), isExternal);
     if (fn->type()) {
-      fn->type()->setFunction(fn);
+      fn->type()->setFunction(fn.get());
     }
     functions_.push_back(fn);
     return fn;

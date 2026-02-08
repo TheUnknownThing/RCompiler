@@ -23,7 +23,6 @@ class ArrayExpression;
 class IndexExpression;
 class TupleExpression;
 class StructExpression;
-class BlockStatement;
 class LetStatement;
 class ExpressionStatement;
 class EmptyStatement;
@@ -36,14 +35,7 @@ class ImplDecl;
 class BasePattern;
 class IdentifierPattern;
 class LiteralPattern;
-class WildcardPattern;
-class RestPattern;
 class ReferencePattern;
-class StructPattern;
-class TuplePattern;
-class GroupedPattern;
-class PathPattern;
-class SlicePattern;
 class OrPattern;
 class RootNode;
 class PathExpression;
@@ -92,7 +84,6 @@ public:
   virtual void visit(DerefExpression &) {}
 
   // Statement visitors
-  virtual void visit(BlockStatement &) {}
   virtual void visit(LetStatement &) {}
   virtual void visit(ExpressionStatement &) {}
   virtual void visit(EmptyStatement &) {}

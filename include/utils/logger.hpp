@@ -6,6 +6,8 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <type_traits>
 
 namespace Logger {
 
@@ -80,7 +82,7 @@ inline std::string getTimestamp() {
   return ss.str();
 }
 
-inline void log(Level level, const std::string &message) {
+inline void log(Level level, std::string_view message) {
   if (static_cast<int>(level) <= static_cast<int>(getCurrentLevel())) {
     std::cerr << Color::GRAY << "[" << getTimestamp() << "] "
               << getLevelColor(level) << "[" << getLevelString(level) << "] "
@@ -88,44 +90,35 @@ inline void log(Level level, const std::string &message) {
   }
 }
 
-inline void error(const std::string &message) { log(Level::ERROR, message); }
+inline void error(std::string_view message) { log(Level::ERROR, message); }
 
-inline void warn(const std::string &message) { log(Level::WARN, message); }
+inline void warn(std::string_view message) { log(Level::WARN, message); }
 
-inline void info(const std::string &message) { log(Level::INFO, message); }
+inline void info(std::string_view message) { log(Level::INFO, message); }
 
-inline void debug(const std::string &message) { log(Level::DEBUG, message); }
+inline void debug(std::string_view message) { log(Level::DEBUG, message); }
 
-// Template specialization for string literals
-template <size_t N> inline void error(const char (&message)[N]) {
-  log(Level::ERROR, std::string(message));
-}
-
-template <size_t N> inline void warn(const char (&message)[N]) {
-  log(Level::WARN, std::string(message));
-}
-
-template <size_t N> inline void info(const char (&message)[N]) {
-  log(Level::INFO, std::string(message));
-}
-
-template <size_t N> inline void debug(const char (&message)[N]) {
-  log(Level::DEBUG, std::string(message));
-}
-
-template <typename T> inline void error(const T &message) {
+template <typename T>
+  requires std::is_arithmetic_v<std::remove_reference_t<T>>
+inline void error(T message) {
   log(Level::ERROR, std::to_string(message));
 }
 
-template <typename T> inline void warn(const T &message) {
+template <typename T>
+  requires std::is_arithmetic_v<std::remove_reference_t<T>>
+inline void warn(T message) {
   log(Level::WARN, std::to_string(message));
 }
 
-template <typename T> inline void info(const T &message) {
+template <typename T>
+  requires std::is_arithmetic_v<std::remove_reference_t<T>>
+inline void info(T message) {
   log(Level::INFO, std::to_string(message));
 }
 
-template <typename T> inline void debug(const T &message) {
+template <typename T>
+  requires std::is_arithmetic_v<std::remove_reference_t<T>>
+inline void debug(T message) {
   log(Level::DEBUG, std::to_string(message));
 }
 

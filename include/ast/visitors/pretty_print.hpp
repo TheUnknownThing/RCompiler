@@ -29,23 +29,22 @@ namespace rc {
 
 // Color constants for pretty printing
 namespace Colors {
-const std::string RESET = "\033[0m";
-const std::string BOLD = "\033[1m";
-const std::string DIM = "\033[2m";
+inline constexpr const char *RESET = "\033[0m";
+inline constexpr const char *DIM = "\033[2m";
 
 // Node type colors
-const std::string NODE_NAME = "\033[1;34m";  // Bold Blue
-const std::string FIELD_NAME = "\033[1;32m"; // Bold Green
-const std::string TYPE_NAME = "\033[1;33m";  // Bold Yellow
-const std::string LITERAL = "\033[1;35m";    // Bold Magenta
-const std::string OPERATOR = "\033[1;31m";   // Bold Red
-const std::string IDENTIFIER = "\033[36m";   // Cyan
-const std::string KEYWORD = "\033[1;37m";    // Bold White
+inline constexpr const char *NODE_NAME = "\033[1;34m";  // Bold Blue
+inline constexpr const char *FIELD_NAME = "\033[1;32m"; // Bold Green
+inline constexpr const char *TYPE_NAME = "\033[1;33m";  // Bold Yellow
+inline constexpr const char *LITERAL = "\033[1;35m";    // Bold Magenta
+inline constexpr const char *OPERATOR = "\033[1;31m";   // Bold Red
+inline constexpr const char *IDENTIFIER = "\033[36m";   // Cyan
+inline constexpr const char *KEYWORD = "\033[1;37m";    // Bold White
 
 // Structural colors
-const std::string BRACE = "\033[37m";     // White
-const std::string BRACKET = "\033[37m";   // White
-const std::string SEPARATOR = "\033[90m"; // Dark Gray
+inline constexpr const char *BRACE = "\033[37m";     // White
+inline constexpr const char *BRACKET = "\033[37m";   // White
+inline constexpr const char *SEPARATOR = "\033[90m"; // Dark Gray
 } // namespace Colors
 
 class PrettyPrintVisitor : public BaseVisitor {
@@ -64,85 +63,9 @@ public:
     in_list_context_ = false;
   }
 
-  // Enable/disable color output
-  void set_colors(bool enabled) { use_colors_ = enabled; }
-
   // Base visitor method
   inline void visit(BaseNode &node) override {
-    // Try to cast to specific node types
-    if (auto *expr = dynamic_cast<NameExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<LiteralExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<GroupExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<MethodCallExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<FieldAccessExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<UnderscoreExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<ArrayExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<IndexExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<TupleExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<DerefExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<BorrowExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<BreakExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<ContinueExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<PathExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<QualifiedPathExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *stmt = dynamic_cast<BlockStatement *>(&node)) {
-      visit(*stmt);
-    } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
-      visit(*stmt);
-    } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
-      visit(*stmt);
-    } else if (auto *stmt = dynamic_cast<EmptyStatement *>(&node)) {
-      visit(*stmt);
-    } else if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *decl = dynamic_cast<ConstantItem *>(&node)) {
-      visit(*decl);
-    } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *root = dynamic_cast<RootNode *>(&node)) {
-      visit(*root);
-    } else {
-      print_line("UnknownNode");
-    }
+    node.accept(*this);
   }
 
   // Expression visitors
@@ -426,28 +349,6 @@ public:
     print_inline("DerefExpr(");
     RC_SAFE_ACCEPT(node.right);
     print_inline(")");
-  }
-
-  // Statement visitors
-  inline void visit(BlockStatement &node) override {
-    print_line("BlockStmt {");
-    increase_indent();
-    print_line("statements: [");
-    increase_indent();
-    for (const auto &stmt : node.statements) {
-      print_indent();
-      if (stmt) {
-        stmt->accept(*this);
-      } else {
-        print_inline("<null>");
-      }
-      output_ << std::endl;
-    }
-    decrease_indent();
-    print_line("]");
-    decrease_indent();
-    print_indent();
-    print_inline("}");
   }
 
   inline void visit(LetStatement &node) override {
@@ -762,22 +663,11 @@ private:
     increase_indent();
   }
 
-  inline void print_node_start_inline(const std::string &node_name) {
-    output_ << node_color(node_name) << colorize(" {", Colors::BRACE)
-            << std::endl;
-    increase_indent();
-  }
-
   inline void print_node_end() {
     decrease_indent();
     if (!in_list_context_) {
       print_indent();
     }
-    output_ << colorize("}", Colors::BRACE);
-  }
-
-  inline void print_node_end_inline() {
-    decrease_indent();
     output_ << colorize("}", Colors::BRACE);
   }
 
@@ -808,20 +698,12 @@ private:
     output_ << colorize("]", Colors::BRACKET) << std::endl;
   }
 
-  inline void print_list_item_start() {
-    // Do nothing - let the item handle its own indentation
-  }
-
-  inline void print_list_item_end() {
-    // Do nothing - let the item handle its own newlines
-  }
-
   // Color helper methods
   inline std::string colorize(const std::string &text,
-                              const std::string &color) const {
+                              const char *color) const {
     if (!use_colors_)
       return text;
-    return color + text + Colors::RESET;
+    return std::string(color) + text + Colors::RESET;
   }
 
   inline std::string node_color(const std::string &text) const {
@@ -849,7 +731,7 @@ private:
   }
 
   // Helper methods
-  inline std::string format_type(const LiteralType &type) {
+  inline std::string format_type(const AstType &type) {
     return type_color(to_string(type));
   }
 

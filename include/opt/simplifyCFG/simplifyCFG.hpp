@@ -134,7 +134,7 @@ SimplifyCFG::replacePhiIncoming(ir::Function *func,
         continue;
       }
 
-      phi->replaceIncomingBlock(oldBB, newBB);
+      phi->replaceIncomingBlock(oldBB.get(), newBB.get());
       if (tryFoldTrivialPhi(*bb, phi)) {
         continue;
       }

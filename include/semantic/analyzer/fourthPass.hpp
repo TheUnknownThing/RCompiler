@@ -175,77 +175,7 @@ inline SemType FourthPass::evaluate(Expression *expr) {
 }
 
 inline void FourthPass::visit(BaseNode &node) {
-  if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *cst = dynamic_cast<ConstantItem *>(&node)) {
-    visit(*cst);
-  } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<EmptyStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *expr = dynamic_cast<NameExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LiteralExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<GroupExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<MethodCallExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<FieldAccessExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<UnderscoreExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ArrayExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IndexExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<TupleExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BreakExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ContinueExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<PathExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<QualifiedPathExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BorrowExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<DerefExpression *>(&node)) {
-    visit(*expr);
-  }
+  node.accept(*this);
 }
 
 inline void FourthPass::visit(RootNode &node) {

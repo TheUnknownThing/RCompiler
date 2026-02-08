@@ -43,7 +43,6 @@ public:
   void visit(PathExpression &node) override;
 
   // Statement visitors
-  void visit(BlockStatement &node) override;
   void visit(LetStatement &node) override;
   void visit(ExpressionStatement &node) override;
 
@@ -59,7 +58,7 @@ public:
   void visit(RootNode &node) override;
 
 private:
-  std::vector<LiteralType> function_return_stack;
+  std::vector<AstType> function_return_stack;
   std::size_t loop_depth;
 };
 
@@ -81,72 +80,7 @@ inline bool ControlAnalyzer::analyze(const std::shared_ptr<BaseNode> &node) {
 }
 
 inline void ControlAnalyzer::visit(BaseNode &node) {
-  // Expressions
-  if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<GroupExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<MethodCallExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<FieldAccessExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ArrayExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IndexExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<TupleExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BreakExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ContinueExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<PathExpression *>(&node)) {
-    visit(*expr);
-  }
-  // Statements
-  else if (auto *stmt = dynamic_cast<BlockStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
-    visit(*stmt);
-  }
-  // Top-level
-  else if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<ConstantItem *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *root = dynamic_cast<RootNode *>(&node)) {
-    visit(*root);
-  }
-  // Patterns
-  else if (auto *p = dynamic_cast<ReferencePattern *>(&node)) {
-    visit(*p);
-  } else if (auto *p = dynamic_cast<OrPattern *>(&node)) {
-    visit(*p);
-  } else {
-    // No-op, unknown node type for this analyzer
-  }
+  node.accept(*this);
 }
 
 // Expression visitors
@@ -291,14 +225,6 @@ inline void ControlAnalyzer::visit(PathExpression &node) {
           arg->accept(*this);
       }
     }
-  }
-}
-
-// Statement visitors
-inline void ControlAnalyzer::visit(BlockStatement &node) {
-  for (auto &s : node.statements) {
-    if (s)
-      s->accept(*this);
   }
 }
 
