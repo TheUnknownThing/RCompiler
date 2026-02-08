@@ -9,6 +9,7 @@
 
 #include "opt/base/baseVisitor.hpp"
 #include "opt/utils/cfgPrettyPrint.hpp"
+#include "opt/utils/ir_utils.hpp"
 
 #include "utils/logger.hpp"
 
@@ -33,8 +34,6 @@ public:
   void mem2reg(ir::Function &function);
   void placePhiNodes(ir::BasicBlock &bb, ir::AllocaInst *alloca);
   void rename(ir::BasicBlock &bb);
-  static void replaceAllUsesWith(ir::Value &from, ir::Value *to);
-
   void removeDeadInstructions(ir::Function &function);
 
 private:
@@ -132,7 +131,7 @@ inline void Mem2RegVisitor::replaceUseWithValue(ir::Function &function) {
 
       ir::Value *storedValue = allocaStoreValues[alloca];
       for (auto *loadInst : allocaLoadInsts[alloca]) {
-        replaceAllUsesWith(*loadInst, storedValue);
+        utils::replaceAllUsesWith(*loadInst, storedValue);
         toRemove_.insert(loadInst);
       }
       // Also remove the store instruction
@@ -371,9 +370,9 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
           auto undef =
               std::make_shared<ir::UndefValue>(alloca->allocatedType());
           undefValues_.push_back(undef); // Keep alive
-          replaceAllUsesWith(*load, undef.get());
+          utils::replaceAllUsesWith(*load, undef.get());
         } else {
-          replaceAllUsesWith(*load, stack.back());
+          utils::replaceAllUsesWith(*load, stack.back());
         }
 
         toRemove_.insert(inst.get());
@@ -413,14 +412,6 @@ inline void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
       stack.pop_back();
     }
   }
-}
-
-inline void Mem2RegVisitor::replaceAllUsesWith(ir::Value &from, ir::Value *to) {
-  auto uses = from.getUses();
-  for (auto *use : uses) {
-    use->replaceOperand(&from, to);
-  }
-  from.getUses().clear();
 }
 
 inline void Mem2RegVisitor::removeDeadInstructions(ir::Function &function) {

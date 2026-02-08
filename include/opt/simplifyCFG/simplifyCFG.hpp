@@ -9,6 +9,7 @@
 
 #include "opt/base/baseVisitor.hpp"
 #include "opt/utils/cfgPrettyPrint.hpp"
+#include "opt/utils/ir_utils.hpp"
 
 #include "utils/logger.hpp"
 
@@ -33,7 +34,6 @@ private:
                           std::shared_ptr<ir::BasicBlock> newBB);
   void mergeBlocks(ir::Function *func, std::shared_ptr<ir::BasicBlock> from,
                    std::shared_ptr<ir::BasicBlock> to);
-  void replaceAllUsesWith(ir::Value *from, ir::Value *to);
   bool tryFoldTrivialPhi(ir::BasicBlock &bb,
                          const std::shared_ptr<ir::PhiInst> &phi);
   bool foldTrivialPhisInBlock(ir::BasicBlock &bb);
@@ -178,25 +178,6 @@ inline void SimplifyCFG::mergeBlocks(ir::Function *func,
   func->eraseBlock(from);
 }
 
-inline void SimplifyCFG::replaceAllUsesWith(ir::Value *from, ir::Value *to) {
-  if (!from || !to || from == to) {
-    return;
-  }
-
-  std::vector<ir::Instruction *> users;
-  users.reserve(from->getUses().size());
-  for (auto *u : from->getUses()) {
-    users.push_back(u);
-  }
-
-  for (auto *user : users) {
-    if (!user) {
-      continue;
-    }
-    user->replaceOperand(from, to);
-  }
-}
-
 inline bool
 SimplifyCFG::tryFoldTrivialPhi(ir::BasicBlock &bb,
                                const std::shared_ptr<ir::PhiInst> &phi) {
@@ -206,14 +187,14 @@ SimplifyCFG::tryFoldTrivialPhi(ir::BasicBlock &bb,
 
   const auto &incs = phi->incomings();
   if (incs.size() == 1 && incs.front().first) {
-    replaceAllUsesWith(phi.get(), incs.front().first.get());
+    utils::replaceAllUsesWith(phi.get(), incs.front().first.get());
     bb.eraseInstruction(phi);
     return true;
   }
 
   if (incs.empty()) {
     auto undef = std::make_shared<ir::UndefValue>(phi->type());
-    replaceAllUsesWith(phi.get(), undef.get());
+    utils::replaceAllUsesWith(phi.get(), undef.get());
     bb.eraseInstruction(phi);
     return true;
   }

@@ -10,6 +10,7 @@
 #include "context.hpp"
 #include "opt/base/baseVisitor.hpp"
 #include "opt/utils/cfgPrettyPrint.hpp"
+#include "opt/utils/ir_utils.hpp"
 
 #include "utils/logger.hpp"
 #include <memory>
@@ -62,8 +63,6 @@ private:
   std::unordered_set<ir::Instruction *> instructionsToRemove_;
 
   ConstantContext *context_{nullptr};
-
-  static void replaceAllUsesWith(ir::Value &from, ir::Value *to);
 
   void removeDeadInstructions(ir::Function &function);
   void removeDeadBlocks(ir::Function &function);
@@ -245,7 +244,7 @@ inline void SCCPVisitor::visit(ir::Function &function) {
     for (const auto &inst : bb->instructions()) {
       if (getLatticeValue(inst.get()) == LatticeValueKind::CONSTANT) {
         auto constVal = constantValues_[inst.get()];
-        replaceAllUsesWith(*inst, constVal.get());
+        utils::replaceAllUsesWith(*inst, constVal.get());
         instructionsToRemove_.insert(inst.get());
       }
     }
@@ -793,14 +792,6 @@ inline void SCCPVisitor::visit(ir::SelectInst &selectInst) {
       }
     }
   }
-}
-
-inline void SCCPVisitor::replaceAllUsesWith(ir::Value &from, ir::Value *to) {
-  auto uses = from.getUses();
-  for (auto *use : uses) {
-    use->replaceOperand(&from, to);
-  }
-  from.getUses().clear();
 }
 
 inline void SCCPVisitor::removeDeadInstructions(ir::Function &function) {
