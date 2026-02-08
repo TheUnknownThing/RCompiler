@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <vector>
+#include <optional>
 
 namespace rc::opt::utils {
 
@@ -54,6 +55,29 @@ inline bool eraseInstruction(ir::BasicBlock &bb, ir::Instruction *inst) {
   }
   bb.eraseInstruction(sp);
   return true;
+}
+
+inline std::shared_ptr<ir::ConstantInt> asConstInt(ir::Value *v) {
+  if (!v) {
+    return nullptr;
+  }
+  if (auto *ci = dynamic_cast<ir::ConstantInt *>(v)) {
+    return std::dynamic_pointer_cast<ir::ConstantInt>(ci->shared_from_this());
+  }
+  return nullptr;
+}
+
+inline bool isConstInt(ir::Value *v, std::uint64_t val) {
+  auto ci = asConstInt(v);
+  return ci && ci->value() == val;
+}
+
+inline std::optional<unsigned> intBits(const ir::TypePtr &ty) {
+  auto it = std::dynamic_pointer_cast<const ir::IntegerType>(ty);
+  if (!it) {
+    return std::nullopt;
+  }
+  return it->bits();
 }
 
 } // namespace rc::opt::utils

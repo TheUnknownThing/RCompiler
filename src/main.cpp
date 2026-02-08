@@ -12,6 +12,7 @@
 #include "opt/cfg/cfg.hpp"
 #include "opt/dce/dce.hpp"
 #include "opt/functionInline/functionInline.hpp"
+#include "opt/instCombine/instCombine.hpp"
 #include "opt/mem2reg/mem2reg.hpp"
 #include "opt/sccp/context.hpp"
 #include "opt/sccp/sccp.hpp"
@@ -67,8 +68,12 @@ int main(int argc, char *argv[]) {
     funcInline.run(emitter.module());
 
     rc::opt::ConstantContext constCtx;
+    rc::opt::InstCombinePass instCombine(&constCtx);
+    instCombine.run(emitter.module());
+
     rc::opt::SCCPVisitor sccp(&constCtx);
     sccp.run(emitter.module());
+    instCombine.run(emitter.module());
 
     dce.run(emitter.module());
 
