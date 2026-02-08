@@ -3,8 +3,6 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <optional>
-#include <set>
 #include <string>
 #include <variant>
 #include <vector>
@@ -12,19 +10,9 @@
 namespace rc {
 
 enum class PrimitiveLiteralType {
-  I32,
-  U32,
-  ISIZE,
-  USIZE,
-  STRING,
-  STR,
-  CHAR,
-  BOOL,
-  NEVER,
-  UNIT,
-
-  // integer literal without suffix, can be any integer type
-  ANY_INT
+#define X(name, display, parse) name,
+#include "common/primitive_types.def"
+#undef X
 };
 
 class Expression;
@@ -121,6 +109,8 @@ struct LiteralType {
   Reference &as_reference() { return std::get<Reference>(storage); }
 };
 
+using AstType = LiteralType;
+
 inline bool operator==(const LiteralType &a, const LiteralType &b) {
   if (a.storage.index() != b.storage.index())
     return false;
@@ -147,30 +137,17 @@ inline bool operator==(const LiteralType &a, const LiteralType &b) {
 }
 
 inline const std::map<PrimitiveLiteralType, std::string>
-    literal_type_reverse_map = {{PrimitiveLiteralType::I32, "i32"},
-                                {PrimitiveLiteralType::U32, "u32"},
-                                {PrimitiveLiteralType::ISIZE, "isize"},
-                                {PrimitiveLiteralType::USIZE, "usize"},
-                                {PrimitiveLiteralType::STRING, "String"},
-                                {PrimitiveLiteralType::STR, "str"},
-                                {PrimitiveLiteralType::CHAR, "char"},
-                                {PrimitiveLiteralType::BOOL, "bool"},
-                                {PrimitiveLiteralType::NEVER, "!"},
-                                {PrimitiveLiteralType::UNIT, "unit"},
-                                {PrimitiveLiteralType::ANY_INT, "any_int"}};
+  literal_type_reverse_map = {
+#define X(name, display, parse) {PrimitiveLiteralType::name, display},
+#include "common/primitive_types.def"
+#undef X
+};
 
 inline const std::map<std::string, LiteralType> literal_type_map = {
-    {"i32", LiteralType::base(PrimitiveLiteralType::I32)},
-    {"u32", LiteralType::base(PrimitiveLiteralType::U32)},
-    {"isize", LiteralType::base(PrimitiveLiteralType::ISIZE)},
-    {"usize", LiteralType::base(PrimitiveLiteralType::USIZE)},
-    {"String", LiteralType::base(PrimitiveLiteralType::STRING)},
-    {"str", LiteralType::base(PrimitiveLiteralType::STR)},
-    {"char", LiteralType::base(PrimitiveLiteralType::CHAR)},
-    {"bool", LiteralType::base(PrimitiveLiteralType::BOOL)},
-    {"never", LiteralType::base(PrimitiveLiteralType::NEVER)},
-    {"unit", LiteralType::base(PrimitiveLiteralType::UNIT)},
-    {"any_int", LiteralType::base(PrimitiveLiteralType::ANY_INT)}};
+#define X(name, display, parse) {parse, LiteralType::base(PrimitiveLiteralType::name)},
+#include "common/primitive_types.def"
+#undef X
+};
 
 inline std::string to_string(const LiteralType &t) {
   if (t.is_base()) {

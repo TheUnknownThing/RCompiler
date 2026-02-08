@@ -17,6 +17,7 @@
 #include "instructions/memory.hpp"
 #include "instructions/misc.hpp"
 #include "instructions/topLevel.hpp"
+#include "instructions/visitor.hpp"
 
 namespace rc::ir {
 
@@ -418,44 +419,75 @@ private:
 
   // Iterate instruction operands in a generic way for type collection
   template <class F> void visitOperands(const Instruction &inst, F &&fn) {
-    if (auto bi = dynamic_cast<const BinaryOpInst *>(&inst)) {
-      fn(*bi->lhs());
-      fn(*bi->rhs());
-    } else if (auto br = dynamic_cast<const BranchInst *>(&inst)) {
-      if (br->isConditional() && br->cond())
-        fn(*br->cond());
-    } else if (auto r = dynamic_cast<const ReturnInst *>(&inst)) {
-      if (!r->isVoid() && r->value())
-        fn(*r->value());
-    } else if (auto a = dynamic_cast<const AllocaInst *>(&inst)) {
-      if (a->arraySize())
-        fn(*a->arraySize());
-    } else if (auto ld = dynamic_cast<const LoadInst *>(&inst)) {
-      fn(*ld->pointer());
-    } else if (auto st = dynamic_cast<const StoreInst *>(&inst)) {
-      fn(*st->value());
-      fn(*st->pointer());
-    } else if (auto gep = dynamic_cast<const GetElementPtrInst *>(&inst)) {
-      fn(*gep->basePointer());
-      for (const auto &idx : gep->indices())
-        fn(*idx);
-    } else if (auto ic = dynamic_cast<const ICmpInst *>(&inst)) {
-      fn(*ic->lhs());
-      fn(*ic->rhs());
-    } else if (auto call = dynamic_cast<const CallInst *>(&inst)) {
-      if (call->callee())
-        fn(*call->callee());
-      for (const auto &a2 : call->args())
-        fn(*a2);
-    } else if (auto phi = dynamic_cast<const PhiInst *>(&inst)) {
-      for (const auto &inc : phi->incomings())
-        if (inc.first)
-          fn(*inc.first);
-    } else if (auto sel = dynamic_cast<const SelectInst *>(&inst)) {
-      fn(*sel->cond());
-      fn(*sel->ifTrue());
-      fn(*sel->ifFalse());
-    }
+    struct OperandVisitor final : InstructionVisitor {
+      F &fn;
+
+      explicit OperandVisitor(F &f) : fn(f) {}
+
+      void visit(const BinaryOpInst &bi) override {
+        fn(*bi.lhs());
+        fn(*bi.rhs());
+      }
+
+      void visit(const AllocaInst &a) override {
+        if (a.arraySize()) {
+          fn(*a.arraySize());
+        }
+      }
+      void visit(const LoadInst &ld) override { fn(*ld.pointer()); }
+      void visit(const StoreInst &st) override {
+        fn(*st.value());
+        fn(*st.pointer());
+      }
+      void visit(const GetElementPtrInst &gep) override {
+        fn(*gep.basePointer());
+        for (const auto &idx : gep.indices()) {
+          fn(*idx);
+        }
+      }
+
+      void visit(const BranchInst &br) override {
+        if (br.isConditional() && br.cond()) {
+          fn(*br.cond());
+        }
+      }
+      void visit(const ReturnInst &r) override {
+        if (!r.isVoid() && r.value()) {
+          fn(*r.value());
+        }
+      }
+      void visit(const UnreachableInst & /*u*/) override {}
+
+      void visit(const ICmpInst &ic) override {
+        fn(*ic.lhs());
+        fn(*ic.rhs());
+      }
+      void visit(const CallInst &call) override {
+        if (call.callee()) {
+          fn(*call.callee());
+        }
+        for (const auto &arg : call.args()) {
+          fn(*arg);
+        }
+      }
+      void visit(const PhiInst &phi) override {
+        for (const auto &inc : phi.incomings()) {
+          if (inc.first) {
+            fn(*inc.first);
+          }
+        }
+      }
+      void visit(const SelectInst &sel) override {
+        fn(*sel.cond());
+        fn(*sel.ifTrue());
+        fn(*sel.ifFalse());
+      }
+      void visit(const ZExtInst &zext) override { fn(*zext.source()); }
+      void visit(const SExtInst &sext) override { fn(*sext.source()); }
+      void visit(const TruncInst &trunc) override { fn(*trunc.source()); }
+    } visitor{fn};
+
+    inst.accept(visitor);
   }
 
   // Block/function emission
@@ -466,183 +498,201 @@ private:
       emitInstruction(*inst);
       out_ << "\n";
 
-      if (dynamic_cast<const BranchInst *>(inst.get()) ||
-          dynamic_cast<const ReturnInst *>(inst.get()) ||
-          dynamic_cast<const UnreachableInst *>(inst.get())) {
+      if (inst->isTerminator()) {
         break;
       }
     }
   }
 
   void emitInstruction(const Instruction &inst) {
-    if (auto bi = dynamic_cast<const BinaryOpInst *>(&inst)) {
-      const char *op = nullptr;
-      switch (bi->op()) {
-      case BinaryOpKind::ADD:
-        op = "add";
-        break;
-      case BinaryOpKind::SUB:
-        op = "sub";
-        break;
-      case BinaryOpKind::MUL:
-        op = "mul";
-        break;
-      case BinaryOpKind::SDIV:
-        op = "sdiv";
-        break;
-      case BinaryOpKind::UDIV:
-        op = "udiv";
-        break;
-      case BinaryOpKind::SREM:
-        op = "srem";
-        break;
-      case BinaryOpKind::UREM:
-        op = "urem";
-        break;
-      case BinaryOpKind::SHL:
-        op = "shl";
-        break;
-      case BinaryOpKind::ASHR:
-        op = "ashr";
-        break;
-      case BinaryOpKind::LSHR:
-        op = "lshr";
-        break;
-      case BinaryOpKind::AND:
-        op = "and";
-        break;
-      case BinaryOpKind::OR:
-        op = "or";
-        break;
-      case BinaryOpKind::XOR:
-        op = "xor";
-        break;
-      }
-      out_ << localName(bi) << " = " << op << " " << typeToString(bi->type())
-           << " " << valueRef(*bi->lhs()) << ", " << valueRef(*bi->rhs());
-      return;
-    }
-    if (auto br = dynamic_cast<const BranchInst *>(&inst)) {
-      if (br->isConditional()) {
-        out_ << "br i1 " << valueRef(*br->cond()) << ", label %"
-             << localLabel(br->dest().get()) << ", label %"
-             << localLabel(br->altDest().get());
-      } else {
-        out_ << "br label %" << localLabel(br->dest().get());
-      }
-      return;
-    }
-    if (auto r = dynamic_cast<const ReturnInst *>(&inst)) {
-      if (r->isVoid()) {
-        out_ << "ret void";
-      } else {
-        // Type of return is implied by function signature; but we print typed
-        // value
-        out_ << "ret " << typedValueRef(*r->value());
-      }
-      return;
-    }
-    if (auto a = dynamic_cast<const AllocaInst *>(&inst)) {
-      out_ << localName(a) << " = alloca " << typeToString(a->allocatedType());
-      if (a->arraySize()) {
-        out_ << ", " << typedValueRef(*a->arraySize());
-      }
-      if (a->alignment()) {
-        out_ << ", align " << a->alignment();
-      }
-      return;
-    }
-    if (auto ld = dynamic_cast<const LoadInst *>(&inst)) {
-      out_ << localName(ld) << " = load ";
-      if (ld->isVolatile())
-        out_ << "volatile ";
-      out_ << typeToString(ld->type()) << ", ptr " << valueRef(*ld->pointer());
-      if (ld->alignment())
-        out_ << ", align " << ld->alignment();
-      return;
-    }
-    if (auto st = dynamic_cast<const StoreInst *>(&inst)) {
-      out_ << "store ";
-      if (st->isVolatile())
-        out_ << "volatile ";
-      out_ << typedValueRef(*st->value()) << ", ptr "
-           << valueRef(*st->pointer());
-      if (st->alignment())
-        out_ << ", align " << st->alignment();
-      return;
-    }
-    if (auto gep = dynamic_cast<const GetElementPtrInst *>(&inst)) {
-      out_ << localName(gep) << " = getelementptr ";
-      // Source element type and base pointer type
-      // Note: We constructed result type as PointerType(sourceElemTy)
-      auto basePtrTy = std::static_pointer_cast<const PointerType>(
-          gep->basePointer()->type());
-      out_ << typeToString(basePtrTy->pointee()) << ", ptr "
-           << valueRef(*gep->basePointer());
-      for (const auto &idx : gep->indices()) {
-        out_ << ", " << typedValueRef(*idx);
-      }
-      return;
-    }
-    if (auto ic = dynamic_cast<const ICmpInst *>(&inst)) {
-      out_ << localName(ic) << " = icmp " << icmpPredToString(ic->pred()) << " "
-           << typeToString(ic->lhs()->type()) << " " << valueRef(*ic->lhs())
-           << ", " << valueRef(*ic->rhs());
-      return;
-    }
-    if (auto call = dynamic_cast<const CallInst *>(&inst)) {
-      const bool hasResult = call->type()->kind() != TypeKind::Void;
-      if (hasResult)
-        out_ << localName(call) << " = ";
-      out_ << "call " << typeToString(call->type()) << " "
-           << calleeRef(*call->callee()) << "(";
-      for (size_t i = 0; i < call->args().size(); ++i) {
-        if (i)
-          out_ << ", ";
-        out_ << typedValueRef(*call->args()[i]);
-      }
-      out_ << ")";
-      return;
-    }
-    if (auto phi = dynamic_cast<const PhiInst *>(&inst)) {
-      out_ << localName(phi) << " = phi " << typeToString(phi->type()) << " ";
-      for (size_t i = 0; i < phi->incomings().size(); ++i) {
-        if (i)
-          out_ << ", ";
-        const auto &inc = phi->incomings()[i];
-        out_ << "[ " << valueRef(*inc.first) << ", %"
-             << localLabel(inc.second.get()) << " ]";
-      }
-      return;
-    }
-    if (auto sel = dynamic_cast<const SelectInst *>(&inst)) {
-      out_ << localName(sel) << " = select i1 " << valueRef(*sel->cond())
-           << ", " << typeToString(sel->type()) << " "
-           << valueRef(*sel->ifTrue()) << ", " << typeToString(sel->type())
-           << " " << valueRef(*sel->ifFalse());
-      return;
-    }
-    if (dynamic_cast<const UnreachableInst *>(&inst)) {
-      out_ << "unreachable";
-      return;
-    }
-    if (auto zext = dynamic_cast<const ZExtInst *>(&inst)) {
-      out_ << localName(zext) << " = zext " << typedValueRef(*zext->source())
-           << " to " << typeToString(zext->type());
-      return;
-    }
-    if (auto sext = dynamic_cast<const SExtInst *>(&inst)) {
-      out_ << localName(sext) << " = sext " << typedValueRef(*sext->source())
-           << " to " << typeToString(sext->type());
-      return;
-    }
-    if (auto trunc = dynamic_cast<const TruncInst *>(&inst)) {
-      out_ << localName(trunc) << " = trunc " << typedValueRef(*trunc->source())
-           << " to " << typeToString(trunc->type());
-      return;
-    }
+    struct EmitVisitor final : InstructionVisitor {
+      LLVMEmitter &self;
 
-    out_ << "; <unknown instruction>";
+      explicit EmitVisitor(LLVMEmitter &s) : self(s) {}
+
+      void visit(const BinaryOpInst &bi) override {
+        const char *op = nullptr;
+        switch (bi.op()) {
+        case BinaryOpKind::ADD:
+          op = "add";
+          break;
+        case BinaryOpKind::SUB:
+          op = "sub";
+          break;
+        case BinaryOpKind::MUL:
+          op = "mul";
+          break;
+        case BinaryOpKind::SDIV:
+          op = "sdiv";
+          break;
+        case BinaryOpKind::UDIV:
+          op = "udiv";
+          break;
+        case BinaryOpKind::SREM:
+          op = "srem";
+          break;
+        case BinaryOpKind::UREM:
+          op = "urem";
+          break;
+        case BinaryOpKind::SHL:
+          op = "shl";
+          break;
+        case BinaryOpKind::ASHR:
+          op = "ashr";
+          break;
+        case BinaryOpKind::LSHR:
+          op = "lshr";
+          break;
+        case BinaryOpKind::AND:
+          op = "and";
+          break;
+        case BinaryOpKind::OR:
+          op = "or";
+          break;
+        case BinaryOpKind::XOR:
+          op = "xor";
+          break;
+        }
+        self.out_ << self.localName(&bi) << " = " << op << " "
+                  << self.typeToString(bi.type()) << " "
+                  << self.valueRef(*bi.lhs()) << ", "
+                  << self.valueRef(*bi.rhs());
+      }
+
+      void visit(const BranchInst &br) override {
+        if (br.isConditional()) {
+          self.out_ << "br i1 " << self.valueRef(*br.cond()) << ", label %"
+                    << self.localLabel(br.dest().get()) << ", label %"
+                    << self.localLabel(br.altDest().get());
+        } else {
+          self.out_ << "br label %" << self.localLabel(br.dest().get());
+        }
+      }
+
+      void visit(const ReturnInst &r) override {
+        if (r.isVoid()) {
+          self.out_ << "ret void";
+        } else {
+          self.out_ << "ret " << self.typedValueRef(*r.value());
+        }
+      }
+
+      void visit(const AllocaInst &a) override {
+        self.out_ << self.localName(&a) << " = alloca "
+                  << self.typeToString(a.allocatedType());
+        if (a.arraySize()) {
+          self.out_ << ", " << self.typedValueRef(*a.arraySize());
+        }
+        if (a.alignment()) {
+          self.out_ << ", align " << a.alignment();
+        }
+      }
+
+      void visit(const LoadInst &ld) override {
+        self.out_ << self.localName(&ld) << " = load ";
+        if (ld.isVolatile()) {
+          self.out_ << "volatile ";
+        }
+        self.out_ << self.typeToString(ld.type()) << ", ptr "
+                  << self.valueRef(*ld.pointer());
+        if (ld.alignment()) {
+          self.out_ << ", align " << ld.alignment();
+        }
+      }
+
+      void visit(const StoreInst &st) override {
+        self.out_ << "store ";
+        if (st.isVolatile()) {
+          self.out_ << "volatile ";
+        }
+        self.out_ << self.typedValueRef(*st.value()) << ", ptr "
+                  << self.valueRef(*st.pointer());
+        if (st.alignment()) {
+          self.out_ << ", align " << st.alignment();
+        }
+      }
+
+      void visit(const GetElementPtrInst &gep) override {
+        self.out_ << self.localName(&gep) << " = getelementptr ";
+        auto basePtrTy = std::static_pointer_cast<const PointerType>(
+            gep.basePointer()->type());
+        self.out_ << self.typeToString(basePtrTy->pointee()) << ", ptr "
+                  << self.valueRef(*gep.basePointer());
+        for (const auto &idx : gep.indices()) {
+          self.out_ << ", " << self.typedValueRef(*idx);
+        }
+      }
+
+      void visit(const ICmpInst &ic) override {
+        self.out_ << self.localName(&ic) << " = icmp "
+                  << self.icmpPredToString(ic.pred()) << " "
+                  << self.typeToString(ic.lhs()->type()) << " "
+                  << self.valueRef(*ic.lhs()) << ", "
+                  << self.valueRef(*ic.rhs());
+      }
+
+      void visit(const CallInst &call) override {
+        const bool hasResult = call.type()->kind() != TypeKind::Void;
+        if (hasResult) {
+          self.out_ << self.localName(&call) << " = ";
+        }
+        self.out_ << "call " << self.typeToString(call.type()) << " "
+                  << self.calleeRef(*call.callee()) << "(";
+        for (size_t i = 0; i < call.args().size(); ++i) {
+          if (i) {
+            self.out_ << ", ";
+          }
+          self.out_ << self.typedValueRef(*call.args()[i]);
+        }
+        self.out_ << ")";
+      }
+
+      void visit(const PhiInst &phi) override {
+        self.out_ << self.localName(&phi) << " = phi "
+                  << self.typeToString(phi.type()) << " ";
+        for (size_t i = 0; i < phi.incomings().size(); ++i) {
+          if (i) {
+            self.out_ << ", ";
+          }
+          const auto &inc = phi.incomings()[i];
+          self.out_ << "[ " << self.valueRef(*inc.first) << ", %"
+                    << self.localLabel(inc.second.get()) << " ]";
+        }
+      }
+
+      void visit(const SelectInst &sel) override {
+        self.out_ << self.localName(&sel) << " = select i1 "
+                  << self.valueRef(*sel.cond()) << ", "
+                  << self.typeToString(sel.type()) << " "
+                  << self.valueRef(*sel.ifTrue()) << ", "
+                  << self.typeToString(sel.type()) << " "
+                  << self.valueRef(*sel.ifFalse());
+      }
+
+      void visit(const UnreachableInst & /*u*/) override {
+        self.out_ << "unreachable";
+      }
+
+      void visit(const ZExtInst &zext) override {
+        self.out_ << self.localName(&zext) << " = zext "
+                  << self.typedValueRef(*zext.source()) << " to "
+                  << self.typeToString(zext.type());
+      }
+
+      void visit(const SExtInst &sext) override {
+        self.out_ << self.localName(&sext) << " = sext "
+                  << self.typedValueRef(*sext.source()) << " to "
+                  << self.typeToString(sext.type());
+      }
+
+      void visit(const TruncInst &trunc) override {
+        self.out_ << self.localName(&trunc) << " = trunc "
+                  << self.typedValueRef(*trunc.source()) << " to "
+                  << self.typeToString(trunc.type());
+      }
+    } visitor{*this};
+
+    inst.accept(visitor);
   }
 
   std::string calleeRef(const Value &callee) {

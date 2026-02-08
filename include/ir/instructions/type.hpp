@@ -134,6 +134,7 @@ private:
 };
 
 class Instruction;
+struct InstructionVisitor;
 
 class Value : public std::enable_shared_from_this<Value> {
 public:
@@ -224,6 +225,9 @@ public:
 
   std::vector<Value *> &getOperands() { return operands; }
   const std::vector<Value *> &getOperands() const { return operands; }
+
+  virtual void accept(InstructionVisitor &v) const = 0;
+  virtual bool isTerminator() const { return false; }
 
   virtual void replaceOperand(Value *oldOp, Value *newOp) = 0;
 

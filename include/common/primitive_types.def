@@ -1,0 +1,13 @@
+// X-macro list of AST-level primitive types.
+// Fields: (EnumName, DisplayString, ParseString)
+X(I32, "i32", "i32")
+X(U32, "u32", "u32")
+X(ISIZE, "isize", "isize")
+X(USIZE, "usize", "usize")
+X(STRING, "String", "String")
+X(STR, "str", "str")
+X(CHAR, "char", "char")
+X(BOOL, "bool", "bool")
+X(NEVER, "!", "never")
+X(UNIT, "unit", "unit")
+X(ANY_INT, "any_int", "any_int")

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "type.hpp"
+#include "visitor.hpp"
 
 namespace rc::ir {
 
@@ -27,6 +28,8 @@ public:
   const TypePtr &allocatedType() const { return allocTy_; }
   const std::shared_ptr<Value> &arraySize() const { return arraySize_; }
   unsigned alignment() const { return alignment_; }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {
@@ -74,6 +77,8 @@ public:
   const std::shared_ptr<Value> &pointer() const { return ptr_; }
   unsigned alignment() const { return alignment_; }
   bool isVolatile() const { return isVolatile_; }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {
@@ -125,6 +130,8 @@ public:
   const std::shared_ptr<Value> &pointer() const { return ptr_; }
   unsigned alignment() const { return alignment_; }
   bool isVolatile() const { return isVolatile_; }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {
@@ -181,6 +188,8 @@ public:
   const std::vector<std::shared_ptr<Value>> &indices() const {
     return indices_;
   }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {

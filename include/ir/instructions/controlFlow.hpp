@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include "type.hpp"
+#include "visitor.hpp"
 
 namespace rc::ir {
 
@@ -37,6 +38,9 @@ public:
   const std::shared_ptr<BasicBlock> &dest() const { return dest_; }
   std::shared_ptr<BasicBlock> &altDest() { return altDest_; }
   const std::shared_ptr<BasicBlock> &altDest() const { return altDest_; }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
+  bool isTerminator() const override { return true; }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {
@@ -84,6 +88,9 @@ public:
   bool isVoid() const { return val_ == nullptr; }
   const std::shared_ptr<Value> &value() const { return val_; }
 
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
+  bool isTerminator() const override { return true; }
+
   void replaceOperand(Value *oldOp, Value *newOp) override {
     for (auto &op : operands) {
       if (op == oldOp) {
@@ -117,6 +124,9 @@ class UnreachableInst : public Instruction {
 public:
   UnreachableInst(BasicBlock *parent)
       : Instruction(parent, std::make_shared<VoidType>()) {}
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
+  bool isTerminator() const override { return true; }
 
   void replaceOperand(Value * /*oldOp*/, Value * /*newOp*/) override {
     // No operands to replace

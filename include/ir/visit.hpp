@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <functional>
 
 #include "ast/nodes/expr.hpp"
 #include "ast/nodes/pattern.hpp"
@@ -42,9 +43,7 @@ inline bool BasicBlock::isTerminated() const {
   if (instructions_.empty())
     return false;
   const auto &last = instructions_.back();
-  return dynamic_cast<BranchInst *>(last.get()) != nullptr ||
-         dynamic_cast<ReturnInst *>(last.get()) != nullptr ||
-         dynamic_cast<UnreachableInst *>(last.get()) != nullptr;
+  return last->isTerminator();
 }
 
 class IREmitter : public BaseVisitor {

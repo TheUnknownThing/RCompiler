@@ -3,8 +3,8 @@
 #include "ast/nodes/topLevel.hpp"
 #include "semantic/error/exceptions.hpp"
 #include "semantic/scope.hpp"
-#include "semantic/utils/self_replace.hpp"
 #include "semantic/types.hpp"
+#include "semantic/utils/self_replace.hpp"
 #include "utils/logger.hpp"
 
 #include <unordered_set>
@@ -125,28 +125,28 @@ inline void ThirdPassPromoter::visit(ImplDecl &node) {
   for (const auto &assoc : node.associated_items) {
     if (!assoc)
       continue;
-      if (auto *fn = dynamic_cast<FunctionDecl *>(assoc.get())) {
-        if (existing.contains(fn->name)) {
-          throw SemanticException("duplicate name " + fn->name + " in impl");
-        }
-        existing.insert(fn->name);
-        FunctionMetaData fmd;
+    if (auto *fn = dynamic_cast<FunctionDecl *>(assoc.get())) {
+      if (existing.contains(fn->name)) {
+        throw SemanticException("duplicate name " + fn->name + " in impl");
+      }
+      existing.insert(fn->name);
+      FunctionMetaData fmd;
       fmd.name = fn->name;
-        if (fn->params) {
-          for (const auto &p : *fn->params) {
-            fmd.param_names.push_back(p.first);
-            auto ty = replace_self(p.second, target_name);
-            fmd.param_types.push_back(
-                ScopeNode::resolve_type(ty, current_scope()));
-          }
+      if (fn->params) {
+        for (const auto &p : *fn->params) {
+          fmd.param_names.push_back(p.first);
+          auto ty = replace_self(p.second, target_name);
+          fmd.param_types.push_back(
+              ScopeNode::resolve_type(ty, current_scope()));
         }
-        auto ret_ty = replace_self(fn->return_type, target_name);
-        fmd.return_type = ScopeNode::resolve_type(ret_ty, current_scope());
-        fmd.decl = fn;
-        meta.methods.push_back(std::move(fmd));
-        LOG_DEBUG("[ThirdPass] Added method '" + fn->name + "' to struct '" +
-                  target_name + "'");
-      } else if (auto *cst = dynamic_cast<ConstantItem *>(assoc.get())) {
+      }
+      auto ret_ty = replace_self(fn->return_type, target_name);
+      fmd.return_type = ScopeNode::resolve_type(ret_ty, current_scope());
+      fmd.decl = fn;
+      meta.methods.push_back(std::move(fmd));
+      LOG_DEBUG("[ThirdPass] Added method '" + fn->name + "' to struct '" +
+                target_name + "'");
+    } else if (auto *cst = dynamic_cast<ConstantItem *>(assoc.get())) {
       if (existing.contains(cst->name)) {
         throw SemanticException("duplicate name " + cst->name + " in impl");
       }
