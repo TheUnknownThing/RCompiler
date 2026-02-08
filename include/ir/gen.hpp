@@ -51,6 +51,10 @@ public:
         out_ << "@" << constantName(*c) << " = constant "
              << typeToString(cs->arrayType()) << " " << encodeStringData(*cs)
              << "\n";
+      } else if (auto ca = dynamic_cast<const ConstantArray *>(c.get())) {
+        out_ << "@" << constantName(*c) << " = constant "
+             << typeToString(ca->arrayType()) << " " << encodeArrayData(*ca)
+             << "\n";
       } else {
         out_ << "@" << constantName(*c) << " = constant "
              << typeToString(c->type()) << " " << valueRef(*c) << "\n";
@@ -341,11 +345,20 @@ private:
     if (auto cs = dynamic_cast<const ConstantString *>(&v)) {
       return "@" + constantName(*cs);
     }
+    if (auto ca = dynamic_cast<const ConstantArray *>(&v)) {
+      if (ca->name().empty()) {
+        return encodeArrayData(*ca);
+      }
+      return "@" + constantName(*ca);
+    }
     if (dynamic_cast<const ConstantNull *>(&v)) {
       return "";
     }
     if (dynamic_cast<const ConstantUnit *>(&v)) {
       return "";
+    }
+    if (dynamic_cast<const UndefValue *>(&v)) {
+      return "undef";
     }
     return localName(&v);
   }
@@ -382,6 +395,25 @@ private:
       }
     }
     oss << "\"";
+    return oss.str();
+  }
+
+  std::string encodeArrayData(const ConstantArray &ca) {
+    auto at = std::static_pointer_cast<const ArrayType>(ca.arrayType());
+    const auto &elemTy = at->elem();
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < ca.elements().size(); ++i) {
+      if (i)
+        oss << ", ";
+      if (auto inner =
+              dynamic_cast<const ConstantArray *>(ca.elements()[i].get())) {
+        oss << typeToString(elemTy) << " " << encodeArrayData(*inner);
+      } else {
+        oss << typeToString(elemTy) << " " << valueRef(*ca.elements()[i]);
+      }
+    }
+    oss << "]";
     return oss.str();
   }
 
@@ -440,6 +472,12 @@ private:
       out_ << "  ";
       emitInstruction(*inst);
       out_ << "\n";
+
+      if (dynamic_cast<const BranchInst *>(inst.get()) ||
+          dynamic_cast<const ReturnInst *>(inst.get()) ||
+          dynamic_cast<const UnreachableInst *>(inst.get())) {
+        break;
+      }
     }
   }
 

@@ -571,8 +571,8 @@ ConstEvaluator::evaluate_array(const ArrayExpression &node) {
       elements.push_back(std::move(*elem_val));
     }
 
-    return ConstValue::array(std::move(elements), std::move(elem_type),
-                             elements.size());
+    const auto size = static_cast<std::uint64_t>(elements.size());
+    return ConstValue::array(std::move(elements), std::move(elem_type), size);
   }
 }
 

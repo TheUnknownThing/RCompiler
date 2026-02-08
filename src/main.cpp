@@ -9,6 +9,14 @@
 #include "ir/gen.hpp"
 #include "ir/visit.hpp"
 #include "lexer/lexer.hpp"
+#include "opt/cfg/cfg.hpp"
+#include "opt/dce/dce.hpp"
+#include "opt/functionInline/functionInline.hpp"
+#include "opt/instCombine/instCombine.hpp"
+#include "opt/mem2reg/mem2reg.hpp"
+#include "opt/sccp/context.hpp"
+#include "opt/sccp/sccp.hpp"
+#include "opt/simplifyCFG/simplifyCFG.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/semantic.hpp"
 #include "utils/logger.hpp"
@@ -28,40 +36,53 @@ int main(int argc, char *argv[]) {
     LOG_INFO("[Tokens] Processed complete. Total tokens: " +
              std::to_string(tks.size()));
 
-    size_t pos = 0;
-    for (const auto &token : tks) {
-      std::ostringstream oss;
-      oss << "Pos:" << pos++ << "\t Type: " << token.type
-          << "\t Lexeme: " << token.lexeme;
-      LOG_DEBUG(oss.str());
-    }
-
     rc::Parser parser(tks);
     auto ast = parser.parse();
 
-    if (ast) {
-      LOG_INFO(std::string("Parsed ") + std::to_string(ast->children.size()) +
-               " top-level items.");
-      LOG_DEBUG("[AST Pretty Print]");
-      LOG_DEBUG("\n" + rc::pretty_print(*ast));
-
-      rc::SemanticAnalyzer analyzer;
-      analyzer.analyze(ast);
-
-      auto *root_scope = analyzer.root_scope();
-
-      try {
-        rc::ir::Context irCtx(analyzer.expr_cache());
-        rc::ir::IREmitter emitter;
-        emitter.run(ast, root_scope, irCtx);
-        rc::ir::emitLLVM(emitter.module(), std::cout);
-      } catch (...) {
-        LOG_ERROR("Error during IR generation");
-        return 0;
-      }
+    if (!ast) {
+      throw std::runtime_error("Parsing failed: AST is null");
     }
 
+    LOG_DEBUG("[AST Pretty Print] \n" + rc::pretty_print(*ast));
+
+    rc::SemanticAnalyzer analyzer;
+    analyzer.analyze(ast);
+
+    auto *root_scope = analyzer.root_scope();
+
+    rc::ir::Context irCtx(analyzer.expr_cache());
+    rc::ir::IREmitter emitter;
+    emitter.run(ast, root_scope, irCtx);
+    // rc::ir::emitLLVM(emitter.module(), std::cerr);
+
+    // opt pass
+    rc::opt::CFGVisitor cfgVisitor;
+    cfgVisitor.run(emitter.module());
+
+    rc::opt::DeadCodeElimVisitor dce;
+    dce.run(emitter.module());
+
+    rc::opt::Mem2RegVisitor mem2reg;
+    mem2reg.run(emitter.module());
+    rc::opt::FunctionInline funcInline;
+    funcInline.run(emitter.module());
+
+    rc::opt::ConstantContext constCtx;
+    rc::opt::InstCombinePass instCombine(&constCtx);
+    instCombine.run(emitter.module());
+
+    rc::opt::SCCPVisitor sccp(&constCtx);
+    sccp.run(emitter.module());
+    instCombine.run(emitter.module());
+
+    dce.run(emitter.module());
+
+    rc::opt::SimplifyCFG simplifyCFG;
+    simplifyCFG.run(&emitter.module());
+
+    rc::ir::emitLLVM(emitter.module(), std::cout);
   } catch (const std::exception &e) {
+    std::cerr << "Error: " << e.what() << std::endl;
     LOG_ERROR(std::string("Error: ") + e.what());
     return 1;
   }

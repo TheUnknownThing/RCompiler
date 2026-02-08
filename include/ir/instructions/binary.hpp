@@ -26,10 +26,10 @@ enum class BinaryOpKind {
 
 class BinaryOpInst : public Instruction {
 public:
-  BinaryOpInst(BinaryOpKind op, std::shared_ptr<Value> lhs,
+  BinaryOpInst(BasicBlock* parent, BinaryOpKind op, std::shared_ptr<Value> lhs,
                std::shared_ptr<Value> rhs, TypePtr resultType,
                std::string name = {})
-      : Instruction(std::move(resultType), std::move(name)), op_(op),
+      : Instruction(parent, std::move(resultType), std::move(name)), op_(op),
         lhs_(std::move(lhs)), rhs_(std::move(rhs)) {
 
     if (!lhs_ || !rhs_) {
@@ -41,11 +41,39 @@ public:
     if (!li || !ri || !riTy) {
       throw std::invalid_argument("BinaryOpInst requires integer types");
     }
+
+    addOperand(lhs_);
+    addOperand(rhs_);
   }
 
   BinaryOpKind op() const { return op_; }
   const std::shared_ptr<Value> &lhs() const { return lhs_; }
   const std::shared_ptr<Value> &rhs() const { return rhs_; }
+
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+
+    if (lhs_.get() == oldOp) {
+      lhs_ = std::dynamic_pointer_cast<Value>(newOp->shared_from_this());
+    }
+    if (rhs_.get() == oldOp) {
+      rhs_ = std::dynamic_pointer_cast<Value>(newOp->shared_from_this());
+    }
+  }
+
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<BinaryOpInst>(
+        newParent, op_, remapValue(lhs_, valueMap), remapValue(rhs_, valueMap),
+        type(), name());
+  }
 
 private:
   BinaryOpKind op_;

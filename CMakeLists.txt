@@ -39,6 +39,9 @@ if (BUILD_TESTING)
   add_executable(ci_parser_tests tests/ci_parser_tests.cpp)
   target_compile_definitions(ci_parser_tests PRIVATE PROJECT_ROOT_DIR="${CMAKE_SOURCE_DIR}" LOGGING_LEVEL_WARN)
 
+  add_executable(ci_dce_tests tests/ci_dce_tests.cpp)
+  target_compile_definitions(ci_dce_tests PRIVATE LOGGING_LEVEL_WARN)
+
   add_test(NAME preprocessor_ci COMMAND ci_preprocessor_tests)
   set_tests_properties(preprocessor_ci PROPERTIES LABELS "ci;preprocessor")
 
@@ -47,4 +50,7 @@ if (BUILD_TESTING)
 
   add_test(NAME parser_ci COMMAND ci_parser_tests)
   set_tests_properties(parser_ci PROPERTIES LABELS "ci;parser")
+
+  add_test(NAME dce_ci COMMAND ci_dce_tests)
+  set_tests_properties(dce_ci PROPERTIES LABELS "ci;opt;dce")
 endif()
