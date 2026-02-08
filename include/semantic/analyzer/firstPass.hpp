@@ -83,48 +83,7 @@ inline void FirstPassBuilder::build(const std::shared_ptr<RootNode> &root) {
 }
 
 inline void FirstPassBuilder::visit(BaseNode &node) {
-  // Items
-  if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *cst = dynamic_cast<ConstantItem *>(&node)) {
-    visit(*cst);
-  } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
-    visit(*decl);
-  }
-  // Statements
-  else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<EmptyStatement *>(&node)) {
-    visit(*stmt);
-  }
-  // Expressions
-  else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
-    visit(*expr);
-  }
+  node.accept(*this);
 }
 
 inline void FirstPassBuilder::visit(FunctionDecl &node) {
@@ -258,12 +217,19 @@ inline void FirstPassBuilder::visit(StructExpression &node) {
 }
 
 inline void FirstPassBuilder::visit(CallExpression &node) {
+  if (node.function_name)
+    node.function_name->accept(*this);
   for (const auto &arg : node.arguments) {
     if (arg)
       arg->accept(*this);
   }
 }
 
-inline void FirstPassBuilder::visit(RootNode &) {}
+inline void FirstPassBuilder::visit(RootNode &node) {
+  for (const auto &child : node.children) {
+    if (child)
+      child->accept(*this);
+  }
+}
 
 } // namespace rc

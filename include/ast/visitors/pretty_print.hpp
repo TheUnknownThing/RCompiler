@@ -65,78 +65,7 @@ public:
 
   // Base visitor method
   inline void visit(BaseNode &node) override {
-    // Try to cast to specific node types
-    if (auto *expr = dynamic_cast<NameExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<LiteralExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<PrefixExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<BinaryExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<GroupExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<ReturnExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<CallExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<MethodCallExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<FieldAccessExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<UnderscoreExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<ArrayExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<IndexExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<TupleExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<StructExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<DerefExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<BorrowExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<BreakExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<ContinueExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<PathExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *expr = dynamic_cast<QualifiedPathExpression *>(&node)) {
-      visit(*expr);
-    } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
-      visit(*stmt);
-    } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
-      visit(*stmt);
-    } else if (auto *stmt = dynamic_cast<EmptyStatement *>(&node)) {
-      visit(*stmt);
-    } else if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *decl = dynamic_cast<ConstantItem *>(&node)) {
-      visit(*decl);
-    } else if (auto *decl = dynamic_cast<StructDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *decl = dynamic_cast<EnumDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
-      visit(*decl);
-    } else if (auto *root = dynamic_cast<RootNode *>(&node)) {
-      visit(*root);
-    } else {
-      print_line("UnknownNode");
-    }
+    node.accept(*this);
   }
 
   // Expression visitors

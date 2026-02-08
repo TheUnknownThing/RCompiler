@@ -43,8 +43,9 @@ inline void ThirdPassPromoter::run(const std::shared_ptr<RootNode> &root,
                                    ScopeNode *root_scope_) {
   LOG_INFO("[ThirdPass] Promoting impl blocks");
   root_scope = root_scope_;
-  if (!root_scope)
+  if (!root_scope) {
     throw SemanticException("third pass requires root scope");
+  }
   scope_stack.clear();
   scope_stack.push_back(root_scope);
   if (root) {
@@ -61,23 +62,7 @@ inline void ThirdPassPromoter::run(const std::shared_ptr<RootNode> &root,
   LOG_INFO("[ThirdPass] Completed");
 }
 
-inline void ThirdPassPromoter::visit(BaseNode &node) {
-  if (auto *decl = dynamic_cast<FunctionDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<TraitDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *decl = dynamic_cast<ImplDecl *>(&node)) {
-    visit(*decl);
-  } else if (auto *expr = dynamic_cast<BlockExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<IfExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<LoopExpression *>(&node)) {
-    visit(*expr);
-  } else if (auto *expr = dynamic_cast<WhileExpression *>(&node)) {
-    visit(*expr);
-  }
-}
+inline void ThirdPassPromoter::visit(BaseNode &node) { node.accept(*this); }
 
 inline void ThirdPassPromoter::visit(FunctionDecl &node) {
   if (node.body && node.body.value()) {
@@ -117,14 +102,17 @@ inline void ThirdPassPromoter::visit(ImplDecl &node) {
 
   std::unordered_set<std::string> existing;
 
-  for (const auto &m : meta.methods)
+  for (const auto &m : meta.methods) {
     existing.insert(m.name);
-  for (const auto &c : meta.constants)
+  }
+  for (const auto &c : meta.constants) {
     existing.insert(c.name);
+  }
 
   for (const auto &assoc : node.associated_items) {
-    if (!assoc)
+    if (!assoc) {
       continue;
+    }
     if (auto *fn = dynamic_cast<FunctionDecl *>(assoc.get())) {
       if (existing.contains(fn->name)) {
         throw SemanticException("duplicate name " + fn->name + " in impl");
@@ -207,16 +195,18 @@ inline void ThirdPassPromoter::enterScope(ScopeNode *s) {
 }
 
 inline void ThirdPassPromoter::exitScope() {
-  if (scope_stack.size() > 1)
+  if (scope_stack.size() > 1) {
     scope_stack.pop_back();
+  }
 }
 
 inline CollectedItem *
 ThirdPassPromoter::resolve_struct(const std::string &name) {
   for (auto *scope = current_scope(); scope; scope = scope->parent) {
     if (auto *ci = scope->find_type_item(name)) {
-      if (ci->kind == ItemKind::Struct)
+      if (ci->kind == ItemKind::Struct) {
         return ci;
+      }
     }
   }
   return nullptr;
