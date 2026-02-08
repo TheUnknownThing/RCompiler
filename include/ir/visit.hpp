@@ -1376,9 +1376,6 @@ inline void IREmitter::visit(FieldAccessExpression &node) {
   auto gep = current_block_->append<GetElementPtrInst>(
       fieldIrTy, structPtr, std::vector<ValuePtr>{zero, idxConst},
       node.field_name);
-
-  // auto loaded = current_block_->append<LoadInst>(gep, fieldIrTy, 0, false,
-  // node.field_name);
   pushOperand(gep);
   LOG_DEBUG("[IREmitter] Loaded field '" + node.field_name + "'");
 }

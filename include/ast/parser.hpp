@@ -19,9 +19,9 @@
 #include "nodes/stmt.hpp"
 #include "nodes/topLevel.hpp"
 
-using namespace parsec;
-
 namespace rc {
+
+using namespace parsec;
 
 class Parser {
 public:

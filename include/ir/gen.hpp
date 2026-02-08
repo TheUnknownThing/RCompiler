@@ -132,8 +132,6 @@ private:
   std::unordered_map<const StructType *, std::string> structNames_;
   std::unordered_map<const Constant *, std::string> globalConstNames_;
   std::unordered_map<std::string, int> functionNameCounters_;
-  std::unordered_map<std::string, int> structNameCounters_;
-  std::unordered_map<std::string, int> constantNameCounters_;
   int nextValueId_{0};
   int nextBlockId_{0};
 
@@ -145,8 +143,6 @@ private:
     structNames_.clear();
     globalConstNames_.clear();
     functionNameCounters_.clear();
-    structNameCounters_.clear();
-    constantNameCounters_.clear();
   }
 
   // Naming helpers
@@ -198,7 +194,6 @@ private:
       return it->second;
     }
     auto base = st.name().empty() ? "struct" : st.name();
-    // auto mangled = uniqueGlobal(base, structNameCounters_);
     structNames_[&st] = base;
     return base;
   }
@@ -209,7 +204,6 @@ private:
       return it->second;
     }
     auto base = c.name().empty() ? "cst" : c.name();
-    // auto mangled = uniqueGlobal(base, constantNameCounters_);
     globalConstNames_[&c] = base;
     return base;
   }
@@ -224,7 +218,6 @@ private:
       return "i" + std::to_string(it->bits());
     }
     case TypeKind::Pointer: {
-      auto pt = std::static_pointer_cast<const PointerType>(ty);
       return "ptr";
     }
     case TypeKind::Array: {

@@ -43,7 +43,6 @@ public:
   void visit(PathExpression &node) override;
 
   // Statement visitors
-  void visit(BlockStatement &node) override;
   void visit(LetStatement &node) override;
   void visit(ExpressionStatement &node) override;
 
@@ -120,9 +119,7 @@ inline void ControlAnalyzer::visit(BaseNode &node) {
     visit(*expr);
   }
   // Statements
-  else if (auto *stmt = dynamic_cast<BlockStatement *>(&node)) {
-    visit(*stmt);
-  } else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
+  else if (auto *stmt = dynamic_cast<LetStatement *>(&node)) {
     visit(*stmt);
   } else if (auto *stmt = dynamic_cast<ExpressionStatement *>(&node)) {
     visit(*stmt);
@@ -291,14 +288,6 @@ inline void ControlAnalyzer::visit(PathExpression &node) {
           arg->accept(*this);
       }
     }
-  }
-}
-
-// Statement visitors
-inline void ControlAnalyzer::visit(BlockStatement &node) {
-  for (auto &s : node.statements) {
-    if (s)
-      s->accept(*this);
   }
 }
 

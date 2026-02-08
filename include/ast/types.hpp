@@ -147,18 +147,17 @@ inline bool operator==(const LiteralType &a, const LiteralType &b) {
 }
 
 inline const std::map<PrimitiveLiteralType, std::string>
-    literal_type_reverse_map = {
-        {PrimitiveLiteralType::I32, "i32"},
-        {PrimitiveLiteralType::U32, "u32"},
-        {PrimitiveLiteralType::ISIZE, "isize"},
-        {PrimitiveLiteralType::USIZE, "usize"},
-        {PrimitiveLiteralType::STRING, "String"},
-        {PrimitiveLiteralType::STR, "str"},
-        {PrimitiveLiteralType::CHAR, "char"},
-        {PrimitiveLiteralType::BOOL, "bool"},
-        {PrimitiveLiteralType::NEVER, "!"},
-        {PrimitiveLiteralType::UNIT, "unit"},
-        {PrimitiveLiteralType::ANY_INT, "any_int"}};
+    literal_type_reverse_map = {{PrimitiveLiteralType::I32, "i32"},
+                                {PrimitiveLiteralType::U32, "u32"},
+                                {PrimitiveLiteralType::ISIZE, "isize"},
+                                {PrimitiveLiteralType::USIZE, "usize"},
+                                {PrimitiveLiteralType::STRING, "String"},
+                                {PrimitiveLiteralType::STR, "str"},
+                                {PrimitiveLiteralType::CHAR, "char"},
+                                {PrimitiveLiteralType::BOOL, "bool"},
+                                {PrimitiveLiteralType::NEVER, "!"},
+                                {PrimitiveLiteralType::UNIT, "unit"},
+                                {PrimitiveLiteralType::ANY_INT, "any_int"}};
 
 inline const std::map<std::string, LiteralType> literal_type_map = {
     {"i32", LiteralType::base(PrimitiveLiteralType::I32)},

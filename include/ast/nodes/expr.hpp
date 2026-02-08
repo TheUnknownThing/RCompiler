@@ -242,8 +242,8 @@ public:
 
   BlockExpression(
       std::vector<std::shared_ptr<BaseNode>> stmts,
-      std::optional<std::shared_ptr<Expression>> final = std::nullopt)
-      : statements(std::move(stmts)), final_expr(std::move(final)) {}
+      std::optional<std::shared_ptr<Expression>> tail_expr = std::nullopt)
+      : statements(std::move(stmts)), final_expr(std::move(tail_expr)) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
 };

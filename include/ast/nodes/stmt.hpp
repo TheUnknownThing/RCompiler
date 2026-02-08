@@ -1,16 +1,11 @@
 #pragma once
 
-#include "../../lexer/lexer.hpp"
 #include "../types.hpp"
 #include "ast/nodes/pattern.hpp"
 #include "base.hpp"
 #include "expr.hpp"
 
-#include <map>
 #include <memory>
-#include <optional>
-#include <string>
-#include <vector>
 
 namespace rc {
 
@@ -19,18 +14,8 @@ public:
   virtual void accept(BaseVisitor &visitor) = 0;
 };
 
-class BlockStatement : public Statement {
-public:
-  std::vector<std::shared_ptr<Statement>> statements;
-
-  BlockStatement(const std::vector<std::shared_ptr<Statement>> &stmts) : statements(stmts) {}
-
-  void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
-};
-
 class LetStatement : public Statement {
 public:
-  // std::string identifier;
   std::shared_ptr<BasePattern> pattern;
   LiteralType type;
   std::shared_ptr<Expression> expr;

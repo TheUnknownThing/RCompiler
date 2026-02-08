@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <stdexcept>
 
 namespace rc {
@@ -13,35 +14,5 @@ class TypeError : public SemanticException {
 public:
   explicit TypeError(const std::string &message)
       : SemanticException("Type Error: " + message) {}
-};
-
-class UndefinedVariableError : public SemanticException {
-public:
-  explicit UndefinedVariableError(const std::string &var_name)
-      : SemanticException("Undefined variable: " + var_name) {}
-};
-
-class UnresolvedPathError : public SemanticException {
-public:
-  explicit UnresolvedPathError(const std::string &path)
-      : SemanticException("Unresolved path: " + path) {}
-};
-
-class InvalidPatternError : public SemanticException {
-public:
-  explicit InvalidPatternError(const std::string &pattern)
-      : SemanticException("Invalid pattern: " + pattern) {}
-};
-
-class InvalidExpressionError : public SemanticException {
-public:
-  explicit InvalidExpressionError(const std::string &expr)
-      : SemanticException("Invalid expression: " + expr) {}
-};
-
-class UndefinedBehaviorError : public SemanticException {
-public:
-  explicit UndefinedBehaviorError(const std::string &message)
-      : SemanticException("Undefined behavior: " + message) {}
 };
 } // namespace rc
