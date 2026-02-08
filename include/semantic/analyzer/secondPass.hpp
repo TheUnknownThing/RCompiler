@@ -54,7 +54,7 @@ private:
   ScopeNode *current_scope() const;
   void enterScope(ScopeNode *s);
   void exitScope();
-  SemType resolve_type(LiteralType &t);
+  SemType resolve_type(AstType &t);
   const CollectedItem *resolve_named_item(const std::string &name) const;
   CollectedItem *lookup_current_value_item(const std::string &name,
                                            ItemKind kind);
@@ -462,7 +462,7 @@ inline void SecondPassResolver::exitScope() {
   }
 }
 
-inline SemType SecondPassResolver::resolve_type(LiteralType &t) {
+inline SemType SecondPassResolver::resolve_type(AstType &t) {
   if (t.is_base()) {
     return SemType::map_primitive(t.as_base());
   }

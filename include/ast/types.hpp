@@ -9,7 +9,7 @@
 
 namespace rc {
 
-enum class PrimitiveLiteralType {
+enum class PrimitiveAstType {
 #define X(name, display, parse) name,
 #include "common/primitive_types.def"
 #undef X
@@ -17,64 +17,64 @@ enum class PrimitiveLiteralType {
 
 class Expression;
 
-struct LiteralType {
+struct AstType {
   struct Tuple {
-    std::vector<LiteralType> elements;
+    std::vector<AstType> elements;
   };
   struct Array {
-    std::shared_ptr<LiteralType> element;
+    std::shared_ptr<AstType> element;
     std::shared_ptr<Expression> size;
 
     int64_t actual_size = -1; // this size can only be set in const eval
   };
   struct Slice {
-    std::shared_ptr<LiteralType> element;
+    std::shared_ptr<AstType> element;
   };
   struct Path {
     std::vector<std::string> segments;
   };
   struct Union {
-    std::vector<LiteralType> alternatives;
+    std::vector<AstType> alternatives;
   };
   struct Reference {
-    std::shared_ptr<LiteralType> target;
+    std::shared_ptr<AstType> target;
     bool is_mutable;
   };
 
-  using Storage = std::variant<PrimitiveLiteralType, Tuple, Array, Slice, Path,
+  using Storage = std::variant<PrimitiveAstType, Tuple, Array, Slice, Path,
                                Union, Reference>;
 
   Storage storage;
 
-  LiteralType() = default;
-  explicit LiteralType(Storage s) : storage(std::move(s)) {}
-  LiteralType(PrimitiveLiteralType b) : storage(b) {}
+  AstType() = default;
+  explicit AstType(Storage s) : storage(std::move(s)) {}
+  AstType(PrimitiveAstType b) : storage(b) {}
 
-  static LiteralType base(PrimitiveLiteralType b) { return LiteralType{b}; }
-  static LiteralType tuple(std::vector<LiteralType> elems) {
-    return LiteralType{Tuple{std::move(elems)}};
+  static AstType base(PrimitiveAstType b) { return AstType{b}; }
+  static AstType tuple(std::vector<AstType> elems) {
+    return AstType{Tuple{std::move(elems)}};
   }
-  static LiteralType array(LiteralType elem,
+  static AstType array(AstType elem,
                            std::shared_ptr<Expression> size_expr) {
-    return LiteralType{Array{std::make_shared<LiteralType>(std::move(elem)),
+    return AstType{Array{std::make_shared<AstType>(std::move(elem)),
                              std::move(size_expr)}};
   }
-  static LiteralType slice(LiteralType elem) {
-    return LiteralType{Slice{std::make_shared<LiteralType>(std::move(elem))}};
+  static AstType slice(AstType elem) {
+    return AstType{Slice{std::make_shared<AstType>(std::move(elem))}};
   }
-  static LiteralType path(std::vector<std::string> segments) {
-    return LiteralType{Path{std::move(segments)}};
+  static AstType path(std::vector<std::string> segments) {
+    return AstType{Path{std::move(segments)}};
   }
-  static LiteralType union_of(std::vector<LiteralType> alts) {
-    return LiteralType{Union{std::move(alts)}};
+  static AstType union_of(std::vector<AstType> alts) {
+    return AstType{Union{std::move(alts)}};
   }
-  static LiteralType reference(LiteralType target, bool is_mutable) {
-    return LiteralType{Reference{
-        std::make_shared<LiteralType>(std::move(target)), is_mutable}};
+  static AstType reference(AstType target, bool is_mutable) {
+    return AstType{Reference{
+        std::make_shared<AstType>(std::move(target)), is_mutable}};
   }
 
   bool is_base() const {
-    return std::holds_alternative<PrimitiveLiteralType>(storage);
+    return std::holds_alternative<PrimitiveAstType>(storage);
   }
   bool is_tuple() const { return std::holds_alternative<Tuple>(storage); }
   bool is_array() const { return std::holds_alternative<Array>(storage); }
@@ -84,13 +84,13 @@ struct LiteralType {
     return std::holds_alternative<Reference>(storage);
   }
 
-  PrimitiveLiteralType as_base() const {
-    return std::get<PrimitiveLiteralType>(storage);
+  PrimitiveAstType as_base() const {
+    return std::get<PrimitiveAstType>(storage);
   }
-  const std::vector<LiteralType> &as_tuple() const {
+  const std::vector<AstType> &as_tuple() const {
     return std::get<Tuple>(storage).elements;
   }
-  std::vector<LiteralType> &as_tuple() {
+  std::vector<AstType> &as_tuple() {
     return std::get<Tuple>(storage).elements;
   }
   const Array &as_array() const { return std::get<Array>(storage); }
@@ -99,19 +99,17 @@ struct LiteralType {
   Slice &as_slice() { return std::get<Slice>(storage); }
   const Path &as_path() const { return std::get<Path>(storage); }
   Path &as_path() { return std::get<Path>(storage); }
-  const std::vector<LiteralType> &as_union() const {
+  const std::vector<AstType> &as_union() const {
     return std::get<Union>(storage).alternatives;
   }
-  std::vector<LiteralType> &as_union() {
+  std::vector<AstType> &as_union() {
     return std::get<Union>(storage).alternatives;
   }
   const Reference &as_reference() const { return std::get<Reference>(storage); }
   Reference &as_reference() { return std::get<Reference>(storage); }
 };
 
-using AstType = LiteralType;
-
-inline bool operator==(const LiteralType &a, const LiteralType &b) {
+inline bool operator==(const AstType &a, const AstType &b) {
   if (a.storage.index() != b.storage.index())
     return false;
   if (a.is_base())
@@ -136,20 +134,20 @@ inline bool operator==(const LiteralType &a, const LiteralType &b) {
   return false;
 }
 
-inline const std::map<PrimitiveLiteralType, std::string>
+inline const std::map<PrimitiveAstType, std::string>
   literal_type_reverse_map = {
-#define X(name, display, parse) {PrimitiveLiteralType::name, display},
+#define X(name, display, parse) {PrimitiveAstType::name, display},
 #include "common/primitive_types.def"
 #undef X
 };
 
-inline const std::map<std::string, LiteralType> literal_type_map = {
-#define X(name, display, parse) {parse, LiteralType::base(PrimitiveLiteralType::name)},
+inline const std::map<std::string, AstType> literal_type_map = {
+#define X(name, display, parse) {parse, AstType::base(PrimitiveAstType::name)},
 #include "common/primitive_types.def"
 #undef X
 };
 
-inline std::string to_string(const LiteralType &t) {
+inline std::string to_string(const AstType &t) {
   if (t.is_base()) {
     auto it = literal_type_reverse_map.find(t.as_base());
     return it != literal_type_reverse_map.end() ? it->second : "<unknown>";

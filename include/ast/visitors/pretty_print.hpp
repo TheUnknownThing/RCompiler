@@ -802,7 +802,7 @@ private:
   }
 
   // Helper methods
-  inline std::string format_type(const LiteralType &type) {
+  inline std::string format_type(const AstType &type) {
     return type_color(to_string(type));
   }
 

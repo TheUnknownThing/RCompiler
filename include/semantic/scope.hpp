@@ -190,7 +190,7 @@ public:
     return nullptr;
   }
 
-  static SemType resolve_type(const LiteralType &type,
+  static SemType resolve_type(const AstType &type,
                               ScopeNode *current_scope_node) {
     if (type.is_base()) {
       return SemType::map_primitive(type.as_base());

@@ -272,7 +272,7 @@ inline Parser<std::string> int_literal =
 using ExprParseFn = std::function<ParseResult<std::shared_ptr<rc::Expression>>(
     const std::vector<rc::Token> &, size_t &)>;
 
-inline ParseResult<rc::LiteralType>
+inline ParseResult<rc::AstType>
 parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
                 const ExprParseFn &parse_expr) {
   size_t saved_pos = pos;
@@ -302,13 +302,13 @@ parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
         return std::nullopt;
       }
       pos++; // consume ']'
-      return rc::LiteralType::array(std::move(*elem_ty), *size_expr);
+      return rc::AstType::array(std::move(*elem_ty), *size_expr);
     }
 
     // Slice form: [ T ]
     if (pos < toks.size() && toks[pos].type == rc::TokenType::R_BRACKET) {
       pos++; // consume ']'
-      return rc::LiteralType::slice(std::move(*elem_ty));
+      return rc::AstType::slice(std::move(*elem_ty));
     }
 
     pos = saved_pos;
@@ -317,12 +317,12 @@ parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
   // Tuple type
   if (pos < toks.size() && toks[pos].type == rc::TokenType::L_PAREN) {
     pos++; // consume '('
-    std::vector<rc::LiteralType> elements;
+    std::vector<rc::AstType> elements;
 
     // () as unit type
     if (pos < toks.size() && toks[pos].type == rc::TokenType::R_PAREN) {
       pos++;
-      return rc::LiteralType(rc::PrimitiveLiteralType::UNIT);
+      return rc::AstType(rc::PrimitiveAstType::UNIT);
     }
 
     auto first = parse_type_impl(toks, pos, parse_expr);
@@ -341,7 +341,7 @@ parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
 
       if (pos < toks.size() && toks[pos].type == rc::TokenType::R_PAREN) {
         pos++; // consume ')'
-        return rc::LiteralType::tuple(std::move(elements));
+        return rc::AstType::tuple(std::move(elements));
       }
     }
     pos = saved_pos;
@@ -350,7 +350,7 @@ parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
   // Never type '!'
   if (pos < toks.size() && toks[pos].type == rc::TokenType::NOT) {
     pos++;
-    return rc::LiteralType::base(rc::PrimitiveLiteralType::NEVER);
+    return rc::AstType::base(rc::PrimitiveAstType::NEVER);
   }
 
   // Reference type: & [mut] T
@@ -366,7 +366,7 @@ parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
       pos = saved_pos;
       return std::nullopt;
     }
-    return rc::LiteralType::reference(std::move(*target), is_mutable);
+    return rc::AstType::reference(std::move(*target), is_mutable);
   }
 
   // Primitive type or path type
@@ -388,22 +388,22 @@ parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
         return it->second;
       }
     }
-    return rc::LiteralType::path(std::move(segments));
+    return rc::AstType::path(std::move(segments));
   }
 
   if (pos < toks.size() && toks[pos].type == rc::TokenType::SELF_TYPE) {
     pos++;
-    return rc::LiteralType::path(std::vector<std::string>{"Self"});
+    return rc::AstType::path(std::vector<std::string>{"Self"});
   }
 
   return std::nullopt;
 }
 
 // Build a type parser with an injected expression parser (for array sizes).
-inline Parser<rc::LiteralType> typ_with_expr(ExprParseFn parse_expr) {
-  return Parser<rc::LiteralType>(
+inline Parser<rc::AstType> typ_with_expr(ExprParseFn parse_expr) {
+  return Parser<rc::AstType>(
       [parse_expr](const std::vector<rc::Token> &toks,
-                   size_t &pos) -> ParseResult<rc::LiteralType> {
+                   size_t &pos) -> ParseResult<rc::AstType> {
         return parse_type_impl(toks, pos, parse_expr);
       });
 }

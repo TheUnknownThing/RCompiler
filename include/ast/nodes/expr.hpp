@@ -46,9 +46,9 @@ public:
 class LiteralExpression : public Expression {
 public:
   std::string value;
-  LiteralType type;
+  AstType type;
 
-  LiteralExpression(std::string v, LiteralType t)
+  LiteralExpression(std::string v, AstType t)
       : value(std::move(v)), type(t) {}
 
   void accept(BaseVisitor &visitor) override { visitor.visit(*this); }
@@ -290,12 +290,12 @@ public:
 
 class QualifiedPathExpression : public Expression {
 public:
-  rc::LiteralType base_type;
+  rc::AstType base_type;
   // TODO: This represents TypePath, need FIX here.
   std::optional<std::vector<std::string>> as_type_path;
   std::vector<PathExpression::Segment> segments;
 
-  QualifiedPathExpression(rc::LiteralType base,
+  QualifiedPathExpression(rc::AstType base,
                           std::optional<std::vector<std::string>> as_path,
                           std::vector<PathExpression::Segment> segs)
       : base_type(std::move(base)), as_type_path(std::move(as_path)),

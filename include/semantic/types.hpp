@@ -139,10 +139,10 @@ struct SemType {
     return std::get<SemUnknownType>(storage);
   }
 
-  static SemType map_primitive(PrimitiveLiteralType plt) {
+  static SemType map_primitive(PrimitiveAstType plt) {
     switch (plt) {
 #define X(name, display, parse)                                                \
-    case PrimitiveLiteralType::name:                                           \
+    case PrimitiveAstType::name:                                           \
       return SemType::primitive(SemPrimitiveKind::name);
 #include "common/primitive_types.def"
 #undef X

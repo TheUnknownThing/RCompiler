@@ -58,7 +58,7 @@ public:
   void visit(RootNode &node) override;
 
 private:
-  std::vector<LiteralType> function_return_stack;
+  std::vector<AstType> function_return_stack;
   std::size_t loop_depth;
 };
 

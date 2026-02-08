@@ -17,10 +17,10 @@ public:
 class LetStatement : public Statement {
 public:
   std::shared_ptr<BasePattern> pattern;
-  LiteralType type;
+  AstType type;
   std::shared_ptr<Expression> expr;
 
-  LetStatement(std::shared_ptr<BasePattern> pat, LiteralType ty,
+  LetStatement(std::shared_ptr<BasePattern> pat, AstType ty,
                std::shared_ptr<Expression> e)
       : pattern(std::move(pat)), type(std::move(ty)), expr(std::move(e)) {}
 

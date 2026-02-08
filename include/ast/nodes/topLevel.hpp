@@ -18,10 +18,10 @@ public:
 struct SelfParam {
   bool is_reference = false;
   bool is_mutable = false;
-  std::optional<LiteralType> explicit_type;
+  std::optional<AstType> explicit_type;
 
   SelfParam(bool ref = false, bool mut_val = false,
-            std::optional<LiteralType> ty = std::nullopt)
+            std::optional<AstType> ty = std::nullopt)
       : is_reference(ref), is_mutable(mut_val), explicit_type(ty) {}
 };
 
@@ -30,18 +30,18 @@ public:
   std::string name;
   std::optional<SelfParam> self_param;
   std::optional<
-      std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
+      std::vector<std::pair<std::shared_ptr<BasePattern>, AstType>>>
       params;
-  LiteralType return_type;
+  AstType return_type;
   std::optional<std::shared_ptr<Expression>>
       body; // BlockExpression or semicolon
 
   FunctionDecl(
       const std::string &nameTok, const std::optional<SelfParam> &self_param,
       const std::optional<
-          std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
+          std::vector<std::pair<std::shared_ptr<BasePattern>, AstType>>>
           &params,
-      LiteralType return_type,
+      AstType return_type,
       std::optional<std::shared_ptr<Expression>> body = std::nullopt)
       : name(nameTok), self_param(self_param), params(params),
         return_type(return_type), body(std::move(body)) {}
@@ -52,10 +52,10 @@ public:
 class ConstantItem : public BaseItem {
 public:
   std::string name;
-  LiteralType type;
+  AstType type;
   std::optional<std::shared_ptr<Expression>> value;
 
-  ConstantItem(const std::string &n, LiteralType t,
+  ConstantItem(const std::string &n, AstType t,
                std::optional<std::shared_ptr<Expression>> val = std::nullopt)
       : name(n), type(t), value(std::move(val)) {}
 
@@ -68,12 +68,12 @@ public:
 
   std::string name;
   StructType struct_type;
-  std::vector<std::pair<std::string, LiteralType>> fields; // For regular struct
-  std::vector<LiteralType> tuple_fields;                   // For tuple struct
+  std::vector<std::pair<std::string, AstType>> fields; // For regular struct
+  std::vector<AstType> tuple_fields;                   // For tuple struct
 
   StructDecl(const std::string &n, StructType t,
-             std::vector<std::pair<std::string, LiteralType>> f = {},
-             std::vector<LiteralType> tf = {})
+             std::vector<std::pair<std::string, AstType>> f = {},
+             std::vector<AstType> tf = {})
       : name(n), struct_type(t), fields(std::move(f)),
         tuple_fields(std::move(tf)) {}
 
@@ -111,11 +111,11 @@ public:
   enum class ImplType { Inherent, Trait };
 
   ImplType impl_type;
-  LiteralType target_type;
+  AstType target_type;
   std::optional<std::string> trait_name; // For trait impl
   std::vector<std::shared_ptr<BaseItem>> associated_items;
 
-  ImplDecl(ImplType t, LiteralType target,
+  ImplDecl(ImplType t, AstType target,
            std::vector<std::shared_ptr<BaseItem>> items,
            std::optional<std::string> trait = std::nullopt)
       : impl_type(t), target_type(target), trait_name(std::move(trait)),

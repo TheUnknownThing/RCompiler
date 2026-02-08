@@ -54,19 +54,19 @@ public:
 
   parsec::Parser<std::shared_ptr<BaseNode>> parse_let_statement();
 
-  parsec::Parser<std::pair<std::shared_ptr<BasePattern>, LiteralType>>
+  parsec::Parser<std::pair<std::shared_ptr<BasePattern>, AstType>>
   pattern_and_type_parser();
   parsec::Parser<
-      std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
+      std::vector<std::pair<std::shared_ptr<BasePattern>, AstType>>>
   argument_list_parser();
   parsec::Parser<std::pair<
       std::optional<SelfParam>,
-      std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>>
+      std::vector<std::pair<std::shared_ptr<BasePattern>, AstType>>>>
   parse_function_parameters();
   parsec::Parser<std::vector<std::shared_ptr<Expression>>>
   expression_list_parser();
 
-  parsec::Parser<LiteralType> type_parser();
+  parsec::Parser<AstType> type_parser();
 
 private:
   std::vector<Token> tokens;
@@ -212,11 +212,11 @@ inline parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
                    })
           .combine(optional(return_type), [](const auto &name_params,
                                              const auto &ty) {
-            auto ret_ty = ty.value_or(LiteralType(PrimitiveLiteralType::UNIT));
+            auto ret_ty = ty.value_or(AstType(PrimitiveAstType::UNIT));
 
             std::optional<SelfParam> self_param;
             std::optional<std::vector<
-                std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
+                std::pair<std::shared_ptr<BasePattern>, AstType>>>
                 regular_params;
 
             if (name_params.second.has_value()) {
@@ -226,8 +226,8 @@ inline parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
 
             return std::tuple<std::string, std::optional<SelfParam>,
                               std::optional<std::vector<std::pair<
-                                  std::shared_ptr<BasePattern>, LiteralType>>>,
-                              LiteralType>{name_params.first, self_param,
+                                  std::shared_ptr<BasePattern>, AstType>>>,
+                              AstType>{name_params.first, self_param,
                                            regular_params, ret_ty};
           });
 
@@ -275,7 +275,7 @@ inline parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
           .thenR(field)
           .combine(many(field_with_comma),
                    [](const auto &f, const auto &fs) {
-                     std::vector<std::pair<std::string, LiteralType>> all;
+                     std::vector<std::pair<std::string, AstType>> all;
                      all.push_back(f);
                      all.insert(all.end(), fs.begin(), fs.end());
                      return all;
@@ -294,13 +294,13 @@ inline parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
           .thenR(parsec::identifier)
           .combine(
               parsec::Parser<
-                  std::variant<std::vector<std::pair<std::string, LiteralType>>,
-                               std::vector<LiteralType>>>(
+                  std::variant<std::vector<std::pair<std::string, AstType>>,
+                               std::vector<AstType>>>(
                   [fields, tuple_fields](const std::vector<rc::Token> &toks,
                                          size_t &pos)
                       -> parsec::ParseResult<std::variant<
-                          std::vector<std::pair<std::string, LiteralType>>,
-                          std::vector<LiteralType>>> {
+                          std::vector<std::pair<std::string, AstType>>,
+                          std::vector<AstType>>> {
                     size_t saved = pos;
                     if (auto f = fields.parse(toks, pos)) {
                       LOG_DEBUG("Parsed named struct fields");
@@ -325,20 +325,20 @@ inline parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
                   using T = std::decay_t<decltype(val)>;
                   if constexpr (std::is_same_v<
                                     T, std::vector<std::pair<std::string,
-                                                             LiteralType>>>) {
+                                                             AstType>>>) {
                     LOG_DEBUG("Successfully parsed named struct: " + name +
                               " with " + std::to_string(val.size()) +
                               " fields");
                     return std::make_shared<StructDecl>(
                         name, SD::StructType::Struct, val,
-                        std::vector<LiteralType>{});
+                        std::vector<AstType>{});
                   } else {
                     LOG_DEBUG("Successfully parsed tuple struct: " + name +
                               " with " + std::to_string(val.size()) +
                               " fields");
                     return std::make_shared<StructDecl>(
                         name, SD::StructType::Tuple,
-                        std::vector<std::pair<std::string, LiteralType>>{},
+                        std::vector<std::pair<std::string, AstType>>{},
                         val);
                   }
                 },
@@ -456,7 +456,7 @@ Parser::parse_const_item() {
       .thenL(tok(TokenType::SEMICOLON))
       .map([](auto t) {
         const std::string &name = std::get<0>(t);
-        const LiteralType &ty = std::get<1>(t);
+        const AstType &ty = std::get<1>(t);
         const auto &init = std::get<2>(t);
         LOG_DEBUG("Parsed const item: " + name);
         return std::make_shared<ConstantItem>(name, ty, init);
@@ -1120,7 +1120,7 @@ inline parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
       });
 }
 
-inline parsec::Parser<std::pair<std::shared_ptr<BasePattern>, rc::LiteralType>>
+inline parsec::Parser<std::pair<std::shared_ptr<BasePattern>, rc::AstType>>
 Parser::pattern_and_type_parser() {
   using namespace parsec;
 
@@ -1134,7 +1134,7 @@ Parser::pattern_and_type_parser() {
 
 inline parsec::Parser<std::pair<
     std::optional<SelfParam>,
-    std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>>
+    std::vector<std::pair<std::shared_ptr<BasePattern>, AstType>>>>
 Parser::parse_function_parameters() {
 
   auto parse_shorthand_self = []() -> parsec::Parser<SelfParam> {
@@ -1198,7 +1198,7 @@ Parser::parse_function_parameters() {
 }
 
 inline parsec::Parser<
-    std::vector<std::pair<std::shared_ptr<BasePattern>, LiteralType>>>
+    std::vector<std::pair<std::shared_ptr<BasePattern>, AstType>>>
 Parser::argument_list_parser() {
   using namespace parsec;
   auto pattern_and_type = pattern_and_type_parser();
@@ -1234,7 +1234,7 @@ Parser::expression_list_parser() {
       });
 }
 
-inline parsec::Parser<LiteralType> Parser::type_parser() {
+inline parsec::Parser<AstType> Parser::type_parser() {
   return parsec::typ_with_expr(
       [this](const std::vector<rc::Token> &toks, size_t &pos)
           -> parsec::ParseResult<std::shared_ptr<rc::Expression>> {
@@ -1373,7 +1373,7 @@ inline PrattTable default_table(rc::Parser *p) {
              delegate_to_parsec(&rc::Parser::parse_continue_expression));
 
   // Literals
-  auto add_simple_literal = [&tbl](rc::TokenType tt, rc::LiteralType plt) {
+  auto add_simple_literal = [&tbl](rc::TokenType tt, rc::AstType plt) {
     tbl.prefix(
         tt,
         [tt, plt](const std::vector<rc::Token> &toks, size_t &pos) -> ExprPtr {
@@ -1386,13 +1386,13 @@ inline PrattTable default_table(rc::Parser *p) {
               auto t = plt;
               if (has_suffix) {
                 if (suffix == "i32") {
-                  t = rc::LiteralType(rc::PrimitiveLiteralType::I32);
+                  t = rc::AstType(rc::PrimitiveAstType::I32);
                 } else if (suffix == "u32") {
-                  t = rc::LiteralType(rc::PrimitiveLiteralType::U32);
+                  t = rc::AstType(rc::PrimitiveAstType::U32);
                 } else if (suffix == "isize") {
-                  t = rc::LiteralType(rc::PrimitiveLiteralType::ISIZE);
+                  t = rc::AstType(rc::PrimitiveAstType::ISIZE);
                 } else if (suffix == "usize") {
-                  t = rc::LiteralType(rc::PrimitiveLiteralType::USIZE);
+                  t = rc::AstType(rc::PrimitiveAstType::USIZE);
                 } else {
                   throw std::invalid_argument("Unknown integer suffix '" +
                                               suffix + "'");
@@ -1413,19 +1413,19 @@ inline PrattTable default_table(rc::Parser *p) {
   };
 
   add_simple_literal(rc::TokenType::INTEGER_LITERAL,
-                     rc::LiteralType(rc::PrimitiveLiteralType::ANY_INT));
+                     rc::AstType(rc::PrimitiveAstType::ANY_INT));
   add_simple_literal(
       rc::TokenType::STRING_LITERAL,
-      rc::LiteralType::reference(rc::PrimitiveLiteralType::STR, false));
+      rc::AstType::reference(rc::PrimitiveAstType::STR, false));
   add_simple_literal(
       rc::TokenType::C_STRING_LITERAL,
-      rc::LiteralType::reference(rc::PrimitiveLiteralType::STR, false));
+      rc::AstType::reference(rc::PrimitiveAstType::STR, false));
   add_simple_literal(rc::TokenType::CHAR_LITERAL,
-                     rc::LiteralType(rc::PrimitiveLiteralType::CHAR));
+                     rc::AstType(rc::PrimitiveAstType::CHAR));
   add_simple_literal(rc::TokenType::TRUE,
-                     rc::LiteralType(rc::PrimitiveLiteralType::BOOL));
+                     rc::AstType(rc::PrimitiveAstType::BOOL));
   add_simple_literal(rc::TokenType::FALSE,
-                     rc::LiteralType(rc::PrimitiveLiteralType::BOOL));
+                     rc::AstType(rc::PrimitiveAstType::BOOL));
 
   // Path or Name expressions
   tbl.prefix(rc::TokenType::NON_KEYWORD_IDENTIFIER, try_struct_or_path);
