@@ -460,4 +460,48 @@ private:
   std::shared_ptr<Value> src_;
 };
 
+class MoveInst : public Instruction {
+public:
+  MoveInst(BasicBlock *parent, std::shared_ptr<Value> src,
+           std::shared_ptr<Value> dest, std::string name = {})
+      : Instruction(parent, dest->type(), std::move(name)),
+        src_(std::move(src)), dest_(std::move(dest)) {
+    // NOTE: the dest of a MoveInst is a Phi instruction.
+    if (!src_ || !dest_) {
+      throw std::invalid_argument(
+          "MoveInst source and destination cannot be null");
+    }
+    addOperand(src_);
+  }
+
+  const std::shared_ptr<Value> &source() const { return src_; }
+  const std::shared_ptr<Value> &destination() const { return dest_; }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
+
+  void replaceOperand(Value *oldOp, Value *newOp) override {
+    for (auto &op : operands) {
+      if (op == oldOp) {
+        oldOp->removeUse(this);
+        op = newOp;
+        newOp->addUse(this);
+      }
+    }
+    if (src_.get() == oldOp) {
+      src_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    }
+  }
+
+  std::shared_ptr<Instruction>
+  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+            const BlockRemapMap & /*blockMap*/) const override {
+    return std::make_shared<MoveInst>(newParent, remapValue(src_, valueMap),
+                                      remapValue(dest_, valueMap), name());
+  }
+
+private:
+  std::shared_ptr<Value> src_;
+  std::shared_ptr<Value> dest_;
+};
+
 } // namespace rc::ir

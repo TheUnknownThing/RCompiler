@@ -1,15 +1,14 @@
 #define LOGGING_LEVEL_NONE
 
-#include <sstream>
 #include <string>
 #include <vector>
 
 #include "ast/parser.hpp"
-#include "ast/visitors/pretty_print.hpp"
 #include "ir/gen.hpp"
 #include "ir/visit.hpp"
 #include "lexer/lexer.hpp"
 #include "opt/passManager.hpp"
+#include "backend/passManager.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/semantic.hpp"
 #include "utils/logger.hpp"
@@ -31,7 +30,7 @@ int main(int argc, char *argv[]) {
     if (!ast) {
       throw std::runtime_error("Parsing failed: AST is null");
     }
-    
+
     rc::SemanticAnalyzer analyzer;
     analyzer.analyze(ast);
 
@@ -44,6 +43,9 @@ int main(int argc, char *argv[]) {
     rc::opt::ConstantContext constCtx;
     rc::opt::PassManager pm(constCtx);
     pm.run(emitter.module());
+
+    rc::backend::PassManager backendPM;
+    backendPM.run(emitter.module());
 
     rc::ir::emitLLVM(emitter.module(), std::cout);
   } catch (const std::exception &e) {

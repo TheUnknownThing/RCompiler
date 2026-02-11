@@ -485,6 +485,7 @@ private:
       void visit(const ZExtInst &zext) override { fn(*zext.source()); }
       void visit(const SExtInst &sext) override { fn(*sext.source()); }
       void visit(const TruncInst &trunc) override { fn(*trunc.source()); }
+      void visit(const MoveInst &move) override { fn(*move.source()); }
     } visitor{fn};
 
     inst.accept(visitor);
@@ -689,6 +690,11 @@ private:
         self.out_ << self.localName(&trunc) << " = trunc "
                   << self.typedValueRef(*trunc.source()) << " to "
                   << self.typeToString(trunc.type());
+      }
+
+      void visit(const MoveInst &move) override {
+        self.out_ << "move " << self.typedValueRef(*move.source()) << " "
+                  << self.localName(move.destination().get());
       }
     } visitor{*this};
 

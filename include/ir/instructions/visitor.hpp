@@ -20,6 +20,7 @@ class SelectInst;
 class ZExtInst;
 class SExtInst;
 class TruncInst;
+class MoveInst;
 
 struct InstructionVisitor {
   virtual ~InstructionVisitor() = default;
@@ -42,6 +43,7 @@ struct InstructionVisitor {
   virtual void visit(const ZExtInst &) = 0;
   virtual void visit(const SExtInst &) = 0;
   virtual void visit(const TruncInst &) = 0;
+  virtual void visit(const MoveInst &) = 0;
 };
 
 } // namespace rc::ir

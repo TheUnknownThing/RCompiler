@@ -115,6 +115,10 @@ public:
         predecessors_.end());
   }
 
+  void replacePredecessor(BasicBlock *oldBB, BasicBlock *newBB) {
+    std::replace(predecessors_.begin(), predecessors_.end(), oldBB, newBB);
+  }
+
   void clearPredecessors() { predecessors_.clear(); }
 
   const std::vector<BasicBlock *> &predecessors() const {

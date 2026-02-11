@@ -54,6 +54,15 @@ public:
     }
   }
 
+  void replaceBlock(BasicBlock *oldBB, BasicBlock *newBB) {
+    if (dest_ == oldBB) {
+      dest_ = newBB;
+    }
+    if (altDest_ == oldBB) {
+      altDest_ = newBB;
+    }
+  }
+
   std::shared_ptr<Instruction>
   cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
             const BlockRemapMap &blockMap) const override {
