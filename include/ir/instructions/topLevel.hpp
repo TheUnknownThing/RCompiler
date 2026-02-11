@@ -74,6 +74,26 @@ public:
     return inst;
   }
 
+  template <class T, class... Args>
+  std::shared_ptr<T> insertBefore(const std::shared_ptr<Instruction> &pos,
+                                  Args &&...args) {
+    auto it = std::find(instructions_.begin(), instructions_.end(), pos);
+    if (it == instructions_.end()) {
+      throw std::invalid_argument("Position instruction not found in block");
+    }
+    auto inst = std::make_shared<T>(this, std::forward<Args>(args)...);
+    if (it != instructions_.begin()) {
+      (*(it - 1))->setNext(inst.get());
+      std::static_pointer_cast<Instruction>(inst)->setPrev((*(it - 1)).get());
+    } else {
+      std::static_pointer_cast<Instruction>(inst)->setPrev(nullptr);
+    }
+    (*it)->setPrev(inst.get());
+    std::static_pointer_cast<Instruction>(inst)->setNext((*it).get());
+    instructions_.insert(it, inst);
+    return inst;
+  }
+
   std::vector<std::shared_ptr<Instruction>> &instructions() {
     return instructions_;
   }
