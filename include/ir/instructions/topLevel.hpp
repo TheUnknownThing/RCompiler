@@ -270,7 +270,7 @@ private:
 struct TargetInfo {
   std::string triple;        // e.g., x86_64-apple-darwin
   std::string dataLayout;    // LLVM datalayout string (optional)
-  unsigned pointerWidth{64}; // in bits; used for isize/usize mapping
+  unsigned pointerWidth{32}; // in bits; used for isize/usize mapping
 };
 
 class Module : public std::enable_shared_from_this<Module> {

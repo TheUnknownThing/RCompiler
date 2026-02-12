@@ -3,6 +3,7 @@
 #include "ir/instructions/controlFlow.hpp"
 #include "ir/instructions/topLevel.hpp"
 #include "ir/instructions/type.hpp"
+#include "ir/instructions/visitor.hpp"
 
 #include "opt/base/baseVisitor.hpp"
 #include "opt/utils/cfgPrettyPrint.hpp"

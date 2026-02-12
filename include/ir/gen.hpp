@@ -591,9 +591,6 @@ private:
 
       void visit(const LoadInst &ld) override {
         self.out_ << self.localName(&ld) << " = load ";
-        if (ld.isVolatile()) {
-          self.out_ << "volatile ";
-        }
         self.out_ << self.typeToString(ld.type()) << ", ptr "
                   << self.valueRef(*ld.pointer());
         if (ld.alignment()) {

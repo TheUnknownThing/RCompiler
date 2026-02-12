@@ -48,9 +48,9 @@ public:
   std::shared_ptr<Instruction>
   cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
             const BlockRemapMap & /*blockMap*/) const override {
-    return std::make_shared<AllocaInst>(
-        newParent, allocTy_, remapValue(arraySize_, valueMap), alignment_,
-        name());
+    return std::make_shared<AllocaInst>(newParent, allocTy_,
+                                        remapValue(arraySize_, valueMap),
+                                        alignment_, name());
   }
 
 private:
@@ -62,10 +62,9 @@ private:
 class LoadInst : public Instruction {
 public:
   LoadInst(BasicBlock *parent, std::shared_ptr<Value> ptr, TypePtr resultTy,
-           unsigned alignment = 0, bool isVolatile = false,
-           std::string name = {})
+           unsigned alignment = 0, std::string name = {})
       : Instruction(parent, std::move(resultTy), std::move(name)),
-        ptr_(std::move(ptr)), alignment_(alignment), isVolatile_(isVolatile) {
+        ptr_(std::move(ptr)), alignment_(alignment) {
     if (!ptr_)
       throw std::invalid_argument("LoadInst requires a pointer operand");
     auto pty = std::dynamic_pointer_cast<const PointerType>(ptr_->type());
@@ -76,7 +75,6 @@ public:
 
   const std::shared_ptr<Value> &pointer() const { return ptr_; }
   unsigned alignment() const { return alignment_; }
-  bool isVolatile() const { return isVolatile_; }
 
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
@@ -98,13 +96,12 @@ public:
   cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
             const BlockRemapMap & /*blockMap*/) const override {
     return std::make_shared<LoadInst>(newParent, remapValue(ptr_, valueMap),
-                                      type(), alignment_, isVolatile_, name());
+                                      type(), alignment_, name());
   }
 
 private:
   std::shared_ptr<Value> ptr_;
   unsigned alignment_;
-  bool isVolatile_;
 };
 
 class StoreInst : public Instruction {
@@ -153,9 +150,9 @@ public:
   std::shared_ptr<Instruction>
   cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
             const BlockRemapMap & /*blockMap*/) const override {
-    return std::make_shared<StoreInst>(
-        newParent, remapValue(val_, valueMap), remapValue(ptr_, valueMap),
-        alignment_, isVolatile_);
+    return std::make_shared<StoreInst>(newParent, remapValue(val_, valueMap),
+                                       remapValue(ptr_, valueMap), alignment_,
+                                       isVolatile_);
   }
 
 private:
@@ -205,7 +202,8 @@ public:
     }
     for (std::size_t i = 0; i < indices_.size(); ++i) {
       if (indices_[i].get() == oldOp) {
-        indices_[i] = std::static_pointer_cast<Value>(newOp->shared_from_this());
+        indices_[i] =
+            std::static_pointer_cast<Value>(newOp->shared_from_this());
       }
     }
   }
@@ -225,9 +223,9 @@ public:
       newIdx.push_back(remapValue(idx, valueMap));
     }
 
-    return std::make_shared<GetElementPtrInst>(
-        newParent, pty->pointee(), remapValue(basePtr_, valueMap),
-        std::move(newIdx), name());
+    return std::make_shared<GetElementPtrInst>(newParent, pty->pointee(),
+                                               remapValue(basePtr_, valueMap),
+                                               std::move(newIdx), name());
   }
 
 private:
