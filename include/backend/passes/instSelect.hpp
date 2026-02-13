@@ -267,9 +267,7 @@ inline void InstructionSelection::visit(const ir::BinaryOpInst &binOp) {
   }
 }
 
-inline void InstructionSelection::visit(const ir::AllocaInst &alloca) {
-  // TODO
-}
+inline void InstructionSelection::visit(const ir::AllocaInst &alloca) {}
 
 inline void InstructionSelection::visit(const ir::LoadInst &load) {
   // TODO
@@ -306,7 +304,182 @@ inline void InstructionSelection::visit(const ir::ReturnInst &ret) {
 
 inline void InstructionSelection::visit(const ir::UnreachableInst &) {}
 
+inline void InstructionSelection::visit(const ir::ICmpInst &icmp) {
+  auto dst = createVirtualRegister();
+  std::shared_ptr<AsmOperand> lhs = nullptr, rhs = nullptr;
+  if (valueOperandMap_.find(icmp.lhs().get()) != valueOperandMap_.end()) {
+    lhs = valueOperandMap_[icmp.lhs().get()];
+  } else {
+    if (auto constInt =
+            std::dynamic_pointer_cast<ir::ConstantInt>(icmp.lhs())) {
+      lhs = createImmediate(constInt->value());
+    } else {
+      throw std::runtime_error("Unsupported operand for ICmpInst");
+    }
+  }
+  if (valueOperandMap_.find(icmp.rhs().get()) != valueOperandMap_.end()) {
+    rhs = valueOperandMap_[icmp.rhs().get()];
+  } else {
+    if (auto constInt =
+            std::dynamic_pointer_cast<ir::ConstantInt>(icmp.rhs())) {
+      rhs = createImmediate(constInt->value());
+    } else {
+      throw std::runtime_error("Unsupported operand for ICmpInst");
+    }
+  }
 
+  valueOperandMap_[&icmp] = dst;
+  switch (icmp.pred()) {
+  case ir::ICmpPred::EQ:
+    // rd = (rs1 ^ rs2) == 0
+    currentBlock_->createInst(InstOpcode::XOR, dst, {getReg(lhs), getReg(rhs)});
+    currentBlock_->createInst(InstOpcode::SLTIU, dst,
+                              {getReg(dst), createImmediate(1)});
+    break;
+  case ir::ICmpPred::NE:
+    // rd = (rs1 ^ rs2) != 0
+    currentBlock_->createInst(InstOpcode::XOR, dst, {getReg(lhs), getReg(rhs)});
+    currentBlock_->createInst(InstOpcode::SLTU, dst,
+                              {createImmediate(0), getReg(dst)});
+    break;
+  case ir::ICmpPred::UGT:
+    currentBlock_->createInst(InstOpcode::SLTU, dst,
+                              {getReg(rhs), getReg(lhs)});
+    break;
+  case ir::ICmpPred::SGT:
+    currentBlock_->createInst(InstOpcode::SLT, dst, {getReg(rhs), getReg(lhs)});
+    break;
+  case ir::ICmpPred::ULT:
+    currentBlock_->createInst(InstOpcode::SLTU, dst,
+                              {getReg(lhs), getReg(rhs)});
+    break;
+  case ir::ICmpPred::SLT:
+    currentBlock_->createInst(InstOpcode::SLT, dst, {getReg(lhs), getReg(rhs)});
+    break;
+  case ir::ICmpPred::UGE:
+    currentBlock_->createInst(InstOpcode::SLTU, dst,
+                              {getReg(lhs), getReg(rhs)});
+    currentBlock_->createInst(InstOpcode::XORI, dst,
+                              {getReg(dst), createImmediate(1)});
+    break;
+  case ir::ICmpPred::SGE:
+    currentBlock_->createInst(InstOpcode::SLT, dst, {getReg(lhs), getReg(rhs)});
+    currentBlock_->createInst(InstOpcode::XORI, dst,
+                              {getReg(dst), createImmediate(1)});
+    break;
+  case ir::ICmpPred::ULE:
+    currentBlock_->createInst(InstOpcode::SLTU, dst,
+                              {getReg(rhs), getReg(lhs)});
+    currentBlock_->createInst(InstOpcode::XORI, dst,
+                              {getReg(dst), createImmediate(1)});
+    break;
+  case ir::ICmpPred::SLE:
+    currentBlock_->createInst(InstOpcode::SLT, dst, {getReg(rhs), getReg(lhs)});
+    currentBlock_->createInst(InstOpcode::XORI, dst,
+                              {getReg(dst), createImmediate(1)});
+    break;
+  default:
+    throw std::runtime_error("InstructionSelection: unhandled ICmpPred");
+  }
+}
+
+inline void InstructionSelection::visit(const ir::CallInst &call) {
+  // TODO
+}
+
+inline void InstructionSelection::visit(const ir::PhiInst &) {
+  throw std::runtime_error(
+      "InstructionSelection: PhiInst should have been eliminated");
+}
+
+inline void InstructionSelection::visit(const ir::SelectInst &) {
+  // We do not emit SelectInst previously, so leave blank
+}
+
+inline void InstructionSelection::visit(const ir::ZExtInst &zextInst) {
+  auto dst = createVirtualRegister();
+  std::shared_ptr<AsmOperand> src = nullptr;
+  if (valueOperandMap_.find(zextInst.source().get()) !=
+      valueOperandMap_.end()) {
+    src = valueOperandMap_[zextInst.source().get()];
+  } else {
+    if (auto constInt =
+            std::dynamic_pointer_cast<ir::ConstantInt>(zextInst.source())) {
+      src = createImmediate(constInt->value());
+    } else {
+      throw std::runtime_error("Unsupported operand for ZExtInst");
+    }
+  }
+
+  valueOperandMap_[&zextInst] = dst;
+  currentBlock_->createInst(InstOpcode::ANDI, dst,
+                            {getReg(src), createImmediate(0xFFFFFFFF)});
+}
+
+inline void InstructionSelection::visit(const ir::SExtInst &sextInst) {
+  auto dst = createVirtualRegister();
+  std::shared_ptr<AsmOperand> src = nullptr;
+  if (valueOperandMap_.find(sextInst.source().get()) !=
+      valueOperandMap_.end()) {
+    src = valueOperandMap_[sextInst.source().get()];
+  } else {
+    if (auto constInt =
+            std::dynamic_pointer_cast<ir::ConstantInt>(sextInst.source())) {
+      src = createImmediate(constInt->value());
+    } else {
+      throw std::runtime_error("Unsupported operand for SExtInst");
+    }
+  }
+
+  valueOperandMap_[&sextInst] = dst;
+  currentBlock_->createInst(
+      InstOpcode::SLLI, dst,
+      {getReg(src), createImmediate(32 - sextInst.srcBits())});
+  currentBlock_->createInst(
+      InstOpcode::SRAI, dst,
+      {getReg(dst), createImmediate(32 - sextInst.srcBits())});
+}
+
+inline void InstructionSelection::visit(const ir::TruncInst &truncInst) {
+  auto dst = createVirtualRegister();
+  std::shared_ptr<AsmOperand> src = nullptr;
+  if (valueOperandMap_.find(truncInst.source().get()) !=
+      valueOperandMap_.end()) {
+    src = valueOperandMap_[truncInst.source().get()];
+  } else {
+    if (auto constInt =
+            std::dynamic_pointer_cast<ir::ConstantInt>(truncInst.source())) {
+      src = createImmediate(constInt->value());
+    } else {
+      throw std::runtime_error("Unsupported operand for TruncInst");
+    }
+  }
+
+  valueOperandMap_[&truncInst] = dst;
+  currentBlock_->createInst(
+      InstOpcode::ANDI, dst,
+      {getReg(src), createImmediate((1u << truncInst.destBits()) - 1)});
+}
+
+inline void InstructionSelection::visit(const ir::MoveInst &moveInst) {
+  // addi rd, rs, 0
+  auto dst = createVirtualRegister();
+  std::shared_ptr<AsmOperand> src = nullptr;
+  if (valueOperandMap_.find(moveInst.source().get()) !=
+      valueOperandMap_.end()) {
+    src = valueOperandMap_[moveInst.source().get()];
+  } else {
+    if (auto constInt =
+            std::dynamic_pointer_cast<ir::ConstantInt>(moveInst.source())) {
+      src = createImmediate(constInt->value());
+    } else {
+      throw std::runtime_error("Unsupported operand for MoveInst");
+    }
+  }
+  valueOperandMap_[&moveInst] = dst;
+  currentBlock_->createInst(InstOpcode::ADDI, dst,
+                            {getReg(src), createImmediate(0)});
+}
 
 inline std::shared_ptr<Register> InstructionSelection::createVirtualRegister() {
   auto reg = std::make_shared<Register>();

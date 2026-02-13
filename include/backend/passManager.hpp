@@ -2,6 +2,7 @@
 
 #include "opt/cfg/cfg.hpp"
 #include "passes/phiElimination.hpp"
+#include "passes/instSelect.hpp"
 
 namespace rc::backend {
 
@@ -16,6 +17,9 @@ private:
 inline void PassManager::run(ir::Module &module) {
   PhiElimination phiElimination(cfg);
   phiElimination.run(&module);
+
+  InstructionSelection instSelect;
+  instSelect.generate(module);
 }
 
 } // namespace rc::backend

@@ -381,6 +381,14 @@ public:
 
   const std::shared_ptr<Value> &source() const { return src_; }
 
+  size_t srcBits() const {
+    auto srcInt = std::dynamic_pointer_cast<const IntegerType>(src_->type());
+    if (!srcInt) {
+      throw std::invalid_argument("SExtInst source type must be integer");
+    }
+    return srcInt->bits();
+  }
+
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
@@ -434,6 +442,20 @@ public:
       throw std::invalid_argument("TruncInst destination type is not integer");
     }
     return destInt->bits();
+  }
+
+  size_t shiftBits() const {
+    auto srcInt = std::dynamic_pointer_cast<const IntegerType>(src_->type());
+    auto destInt = std::dynamic_pointer_cast<const IntegerType>(type());
+    if (!srcInt || !destInt) {
+      throw std::invalid_argument(
+          "TruncInst source and destination types must be integer");
+    }
+    if (srcInt->bits() <= destInt->bits()) {
+      throw std::invalid_argument(
+          "TruncInst source type must be larger than destination type");
+    }
+    return srcInt->bits() - destInt->bits();
   }
 
   void replaceOperand(Value *oldOp, Value *newOp) override {
