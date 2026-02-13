@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -11,7 +12,6 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#include <functional>
 
 #include "ast/nodes/expr.hpp"
 #include "ast/nodes/pattern.hpp"
@@ -125,6 +125,12 @@ private:
   ValuePtr current_sret_ptr_;
   int next_string_id_{0};
 
+  struct AggregateInitTarget {
+    TypePtr ty;
+    ValuePtr ptr;
+  };
+  std::vector<AggregateInitTarget> aggregate_init_targets_;
+
   ValuePtr popOperand();
   void pushOperand(ValuePtr v);
   ValuePtr loadPtrValue(ValuePtr v, const SemType &semTy);
@@ -190,6 +196,9 @@ private:
   std::size_t computeTypeByteSize(const TypePtr &ty) const;
   bool isZeroLiteral(const Expression *expr) const;
   bool isAggregateType(const TypePtr &ty) const;
+  ValuePtr findAggregateInitTarget(const TypePtr &ty) const;
+  void pushAggregateInitTarget(const TypePtr &ty, ValuePtr ptr);
+  void popAggregateInitTarget();
 
   void emitMemcpy(ValuePtr dst, ValuePtr src, std::size_t byteSize);
 };
@@ -216,6 +225,7 @@ inline void IREmitter::run(const std::shared_ptr<RootNode> &root,
   struct_types_.clear();
   sret_functions_.clear();
   current_sret_ptr_ = nullptr;
+  aggregate_init_targets_.clear();
   interned_strings_.clear();
   next_string_id_ = 0;
   locals_.emplace_back();
@@ -230,9 +240,7 @@ inline void IREmitter::run(const std::shared_ptr<RootNode> &root,
   LOG_INFO("[IREmitter] Completed");
 }
 
-inline void IREmitter::visit(BaseNode &node) {
-  node.accept(*this);
-}
+inline void IREmitter::visit(BaseNode &node) { node.accept(*this); }
 
 inline void IREmitter::visit(FunctionDecl &node) {
   LOG_DEBUG("[IREmitter] Visiting function declaration: " + node.name);
@@ -279,8 +287,8 @@ inline void IREmitter::visit(BinaryExpression &node) {
       current_block_ = mergeBlock;
       auto i1_type = std::make_shared<IntegerType>(1, true);
       auto false_val = ConstantInt::getI1(false);
-        std::vector<PhiInst::Incoming> incomings = {{false_val, entryBlock.get()},
-                              {rhs, rhsExitBlock.get()}};
+      std::vector<PhiInst::Incoming> incomings = {{false_val, entryBlock.get()},
+                                                  {rhs, rhsExitBlock.get()}};
       auto result =
           current_block_->append<PhiInst>(i1_type, incomings, "and_result");
       pushOperand(result);
@@ -299,8 +307,8 @@ inline void IREmitter::visit(BinaryExpression &node) {
       current_block_ = mergeBlock;
       auto i1_type = std::make_shared<IntegerType>(1, true);
       auto true_val = ConstantInt::getI1(true);
-        std::vector<PhiInst::Incoming> incomings = {{true_val, entryBlock.get()},
-                              {rhs, rhsExitBlock.get()}};
+      std::vector<PhiInst::Incoming> incomings = {{true_val, entryBlock.get()},
+                                                  {rhs, rhsExitBlock.get()}};
       auto result =
           current_block_->append<PhiInst>(i1_type, incomings, "or_result");
       pushOperand(result);
@@ -311,9 +319,6 @@ inline void IREmitter::visit(BinaryExpression &node) {
   if (isAssignment(node.op.type)) {
     node.left->accept(*this);
     auto lhs = popOperand();
-    node.right->accept(*this);
-    auto rhs = popOperand();
-    rhs = loadPtrValue(rhs, context->lookupType(node.right.get()));
 
     auto lhsPtrTy = std::dynamic_pointer_cast<const PointerType>(lhs->type());
     if (!lhsPtrTy) {
@@ -321,13 +326,27 @@ inline void IREmitter::visit(BinaryExpression &node) {
       throw IRException("lhs is not addressable");
     }
 
+    bool forwardAggregateAssign = node.op.type == TokenType::ASSIGN &&
+                                  isAggregateType(lhsPtrTy->pointee());
+    if (forwardAggregateAssign) {
+      pushAggregateInitTarget(lhsPtrTy->pointee(), lhs);
+    }
+    node.right->accept(*this);
+    if (forwardAggregateAssign) {
+      popAggregateInitTarget();
+    }
+    auto rhs = popOperand();
+    rhs = loadPtrValue(rhs, context->lookupType(node.right.get()));
+
     if (node.op.type == TokenType::ASSIGN) {
       LOG_DEBUG("[IREmitter] Performing simple assignment");
       // For aggregate types, use memcpy since rhs is a pointer
       auto rhsPtrTy = std::dynamic_pointer_cast<const PointerType>(rhs->type());
       if (rhsPtrTy && isAggregateType(lhsPtrTy->pointee())) {
-        std::size_t byteSize = computeTypeByteSize(lhsPtrTy->pointee());
-        emitMemcpy(lhs, rhs, byteSize);
+        if (lhs != rhs) {
+          std::size_t byteSize = computeTypeByteSize(lhsPtrTy->pointee());
+          emitMemcpy(lhs, rhs, byteSize);
+        }
         pushOperand(lhs);
       } else {
         current_block_->append<StoreInst>(rhs, lhs);
@@ -475,10 +494,25 @@ inline void IREmitter::visit(BinaryExpression &node) {
 inline void IREmitter::visit(ReturnExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting return expression");
   if (node.value) {
-    (*node.value)->accept(*this);
-    auto v = popOperand();
     auto retSemTy = context->lookupType(node.value->get());
     auto retIrTy = context->resolveType(retSemTy);
+
+    if (current_sret_ptr_ && isAggregateType(retIrTy)) {
+      pushAggregateInitTarget(retIrTy, current_sret_ptr_);
+      (*node.value)->accept(*this);
+      popAggregateInitTarget();
+      auto v = popOperand();
+      auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(v->type());
+      if (valPtrTy && v != current_sret_ptr_) {
+        std::size_t byteSize = computeTypeByteSize(retIrTy);
+        emitMemcpy(current_sret_ptr_, v, byteSize);
+      }
+      current_block_->append<ReturnInst>();
+      return;
+    }
+
+    (*node.value)->accept(*this);
+    auto v = popOperand();
 
     if (current_sret_ptr_) {
       // copy result to sret pointer and return void
@@ -551,18 +585,26 @@ inline void IREmitter::visit(LetStatement &node) {
   // alloca & store
   auto *ident = dynamic_cast<IdentifierPattern *>(node.pattern.get());
 
-  node.expr->accept(*this);
-  auto init = popOperand();
-
   auto semTy = ScopeNode::resolve_type(node.type, current_scope_node);
   auto irTy = context->resolveType(semTy);
 
   auto slot = createAlloca(irTy, ident->name);
 
+  if (isAggregateType(irTy)) {
+    pushAggregateInitTarget(irTy, slot);
+  }
+  node.expr->accept(*this);
+  if (isAggregateType(irTy)) {
+    popAggregateInitTarget();
+  }
+  auto init = popOperand();
+
   auto initPtrTy = std::dynamic_pointer_cast<const PointerType>(init->type());
   if (initPtrTy && isAggregateType(irTy)) {
-    std::size_t byteSize = computeTypeByteSize(irTy);
-    emitMemcpy(slot, init, byteSize);
+    if (slot != init) {
+      std::size_t byteSize = computeTypeByteSize(irTy);
+      emitMemcpy(slot, init, byteSize);
+    }
   } else {
     init = loadPtrValue(init, semTy);
     current_block_->append<StoreInst>(init, slot);
@@ -851,7 +893,10 @@ inline void IREmitter::visit(CallExpression &node) {
   // For sret functions, create alloca
   ValuePtr sretSlot;
   if (needSret) {
-    sretSlot = createAlloca(originalRetTy, "sret_result");
+    sretSlot = findAggregateInitTarget(originalRetTy);
+    if (!sretSlot) {
+      sretSlot = createAlloca(originalRetTy, "sret_result");
+    }
     resolved.push_back(sretSlot);
   }
 
@@ -1050,20 +1095,27 @@ inline void IREmitter::visit(IfExpression &node) {
   if (node.else_block) {
     auto elseBlock = cur_func->createBlock("if_else");
     auto mergeBlock = cur_func->createBlock("if_merge");
-    current_block_->append<BranchInst>(condVal, thenBlock.get(), elseBlock.get());
+    current_block_->append<BranchInst>(condVal, thenBlock.get(),
+                                       elseBlock.get());
     // then block
     current_block_ = thenBlock;
+    if (useResultSlot) {
+      pushAggregateInitTarget(resultIrTy, resultSlot);
+    }
     if (node.then_block)
       node.then_block->accept(*this);
+    if (useResultSlot) {
+      popAggregateInitTarget();
+    }
     auto thenVal = popOperand();
     auto thenTerminated = current_block_->isTerminated();
     auto thenExitBlock = current_block_;
     if (!thenTerminated) {
       if (useResultSlot) {
-        auto thenPtrTy =
-            std::dynamic_pointer_cast<const PointerType>(thenVal->type());
-        std::size_t byteSize = computeTypeByteSize(resultIrTy);
-        emitMemcpy(resultSlot, thenVal, byteSize);
+        if (thenVal != resultSlot) {
+          std::size_t byteSize = computeTypeByteSize(resultIrTy);
+          emitMemcpy(resultSlot, thenVal, byteSize);
+        }
       } else {
         thenVal = loadPtrValue(thenVal, resultSemTy);
       }
@@ -1071,18 +1123,24 @@ inline void IREmitter::visit(IfExpression &node) {
     }
     // else block
     current_block_ = elseBlock;
+    if (useResultSlot) {
+      pushAggregateInitTarget(resultIrTy, resultSlot);
+    }
     if (node.else_block)
       std::static_pointer_cast<BlockExpression>(node.else_block.value())
           ->accept(*this);
+    if (useResultSlot) {
+      popAggregateInitTarget();
+    }
     auto elseVal = popOperand();
     auto elseTerminated = current_block_->isTerminated();
     auto elseExitBlock = current_block_;
     if (!elseTerminated) {
       if (useResultSlot) {
-        auto elsePtrTy =
-            std::dynamic_pointer_cast<const PointerType>(elseVal->type());
-        std::size_t byteSize = computeTypeByteSize(resultIrTy);
-        emitMemcpy(resultSlot, elseVal, byteSize);
+        if (elseVal != resultSlot) {
+          std::size_t byteSize = computeTypeByteSize(resultIrTy);
+          emitMemcpy(resultSlot, elseVal, byteSize);
+        }
       } else {
         elseVal = loadPtrValue(elseVal, resultSemTy);
       }
@@ -1121,20 +1179,27 @@ inline void IREmitter::visit(IfExpression &node) {
     }
   } else {
     auto mergeBlock = cur_func->createBlock("if_merge");
-    current_block_->append<BranchInst>(condVal, thenBlock.get(), mergeBlock.get());
+    current_block_->append<BranchInst>(condVal, thenBlock.get(),
+                                       mergeBlock.get());
     // then block
     current_block_ = thenBlock;
+    if (useResultSlot) {
+      pushAggregateInitTarget(resultIrTy, resultSlot);
+    }
     if (node.then_block)
       node.then_block->accept(*this);
+    if (useResultSlot) {
+      popAggregateInitTarget();
+    }
     auto thenVal = popOperand();
     auto thenTerminated = current_block_->isTerminated();
     auto thenExitBlock = current_block_;
     if (!thenTerminated) {
       if (useResultSlot) {
-        auto thenPtrTy =
-            std::dynamic_pointer_cast<const PointerType>(thenVal->type());
-        std::size_t byteSize = computeTypeByteSize(resultIrTy);
-        emitMemcpy(resultSlot, thenVal, byteSize);
+        if (thenVal != resultSlot) {
+          std::size_t byteSize = computeTypeByteSize(resultIrTy);
+          emitMemcpy(resultSlot, thenVal, byteSize);
+        }
       } else {
         thenVal = loadPtrValue(thenVal, resultSemTy);
       }
@@ -1226,7 +1291,10 @@ inline void IREmitter::visit(MethodCallExpression &node) {
 
   ValuePtr sretSlot;
   if (needSret) {
-    sretSlot = createAlloca(originalRetTy, "sret_result");
+    sretSlot = findAggregateInitTarget(originalRetTy);
+    if (!sretSlot) {
+      sretSlot = createAlloca(originalRetTy, "sret_result");
+    }
     args.push_back(sretSlot);
   }
 
@@ -1322,7 +1390,10 @@ inline void IREmitter::visit(StructExpression &node) {
 
   auto structSem = SemType::named(item);
   auto structIrTy = context->resolveType(structSem);
-  auto slot = createAlloca(structIrTy, "structtmp");
+  auto slot = findAggregateInitTarget(structIrTy);
+  if (!slot) {
+    slot = createAlloca(structIrTy, "structtmp");
+  }
 
   auto zero = ConstantInt::getI32(0, false);
   for (size_t i = 0; i < meta.named_fields.size(); ++i) {
@@ -1331,19 +1402,27 @@ inline void IREmitter::visit(StructExpression &node) {
     if (it == provided.end()) {
       throw IRException("missing initializer for field '" + field.first + "'");
     }
-    it->second->accept(*this);
-    auto val = popOperand();
     auto idxConst = ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
     auto fieldTy = context->resolveType(field.second);
     auto gep = current_block_->append<GetElementPtrInst>(
         fieldTy, slot, std::vector<ValuePtr>{zero, idxConst}, field.first);
 
-    // For aggregate fields, use memcpy instead of load+store
-    auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(val->type());
-    if (valPtrTy && isAggregateType(fieldTy)) {
-      std::size_t byteSize = computeTypeByteSize(fieldTy);
-      emitMemcpy(gep, val, byteSize);
+    if (isAggregateType(fieldTy)) {
+      pushAggregateInitTarget(fieldTy, gep);
+      it->second->accept(*this);
+      popAggregateInitTarget();
+      auto val = popOperand();
+      auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(val->type());
+      if (valPtrTy && val != gep) {
+        std::size_t byteSize = computeTypeByteSize(fieldTy);
+        emitMemcpy(gep, val, byteSize);
+      } else if (!valPtrTy) {
+        auto resolved = resolve_ptr(val, field.second, field.first);
+        current_block_->append<StoreInst>(resolved, gep);
+      }
     } else {
+      it->second->accept(*this);
+      auto val = popOperand();
       auto resolved = resolve_ptr(val, field.second, field.first);
       current_block_->append<StoreInst>(resolved, gep);
     }
@@ -1393,7 +1472,8 @@ inline void IREmitter::visit(WhileExpression &node) {
   node.condition->accept(*this);
   auto condVal = popOperand();
   condVal = loadPtrValue(condVal, context->lookupType(node.condition.get()));
-  current_block_->append<BranchInst>(condVal, bodyBlock.get(), afterBlock.get());
+  current_block_->append<BranchInst>(condVal, bodyBlock.get(),
+                                     afterBlock.get());
 
   current_block_ = bodyBlock;
   // break -> afterBlock, continue -> condBlock
@@ -1421,7 +1501,10 @@ inline void IREmitter::visit(ArrayExpression &node) {
 
   auto arrIrTy = context->resolveType(semTy);
   auto elemIrTy = context->resolveType(*arrSem.element);
-  auto slot = createAlloca(arrIrTy, "arrtmp");
+  auto slot = findAggregateInitTarget(arrIrTy);
+  if (!slot) {
+    slot = createAlloca(arrIrTy, "arrtmp");
+  }
   auto zero = ConstantInt::getI32(0, false);
 
   if (node.repeat) {
@@ -1443,65 +1526,79 @@ inline void IREmitter::visit(ArrayExpression &node) {
           std::make_shared<Value>(memsetFn->type(), memsetFn->name());
       current_block_->append<CallInst>(memsetSymbol, args, ptrTy);
     } else {
-      node.repeat->first->accept(*this);
-      auto val = popOperand();
-
-      auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(val->type());
       bool elemIsAggregate = isAggregateType(elemIrTy);
-
       std::size_t repeatCount = count;
-      if (elemIsAggregate && valPtrTy) {
-        // Use memcpy for each element
+      if (elemIsAggregate) {
         std::size_t elemByteSize = computeTypeByteSize(elemIrTy);
-        auto cur_func = functions_.back();
-        auto preheader = current_block_;
-        auto condBlock = cur_func->createBlock("arr_repeat_memcpy_cond");
-        auto bodyBlock = cur_func->createBlock("arr_repeat_memcpy_body");
-        auto afterBlock = cur_func->createBlock("arr_repeat_memcpy_after");
+        ValuePtr firstEltPtr;
 
-        preheader->append<BranchInst>(condBlock.get());
+        if (repeatCount > 0) {
+          auto firstIdx = ConstantInt::getI32(0, false);
+          firstEltPtr = current_block_->append<GetElementPtrInst>(
+              elemIrTy, slot, std::vector<ValuePtr>{zero, firstIdx}, "elt");
+          pushAggregateInitTarget(elemIrTy, firstEltPtr);
+          node.repeat->first->accept(*this);
+          popAggregateInitTarget();
+          auto firstVal = popOperand();
+          auto firstValPtrTy =
+              std::dynamic_pointer_cast<const PointerType>(firstVal->type());
+          if (firstValPtrTy && firstVal != firstEltPtr) {
+            emitMemcpy(firstEltPtr, firstVal, elemByteSize);
+          } else if (!firstValPtrTy) {
+            auto resolved = resolve_ptr(firstVal, *arrSem.element, "arr_init");
+            current_block_->append<StoreInst>(resolved, firstEltPtr);
+          }
+        } else {
+          node.repeat->first->accept(*this);
+          (void)popOperand();
+        }
 
-        // cond:
-        //   i = phi [0, preheader], [i_next, body]
-        //   br (i < N) body, after
-        current_block_ = condBlock;
-        auto i0 = ConstantInt::getI32(0, false);
-        auto n =
-            ConstantInt::getI32(static_cast<std::uint32_t>(repeatCount), false);
-        std::vector<PhiInst::Incoming> incomings = {{i0, preheader.get()}};
-        auto i = current_block_->append<PhiInst>(IntegerType::i32(false),
-                                                 incomings, "i");
-        auto cmp = current_block_->append<ICmpInst>(ICmpPred::ULT, i, n,
-                                                    "arr_repeat_cmp");
-        current_block_->append<BranchInst>(cmp, bodyBlock.get(), afterBlock.get());
+        if (repeatCount > 1) {
+          // Clone from element 0 into [1..N)
+          auto cur_func = functions_.back();
+          auto preheader = current_block_;
+          auto condBlock = cur_func->createBlock("arr_repeat_memcpy_cond");
+          auto bodyBlock = cur_func->createBlock("arr_repeat_memcpy_body");
+          auto afterBlock = cur_func->createBlock("arr_repeat_memcpy_after");
 
-        // body:
-        //   memcpy(&slot[i], val, elemByteSize)
-        //   i_next = i + 1
-        //   br cond
-        current_block_ = bodyBlock;
-        auto gep = current_block_->append<GetElementPtrInst>(
-            elemIrTy, slot, std::vector<ValuePtr>{zero, i}, "elt");
-        emitMemcpy(gep, val, elemByteSize);
-        auto one = ConstantInt::getI32(1, false);
-        auto i_next = current_block_->append<BinaryOpInst>(
-            BinaryOpKind::ADD, i, one, IntegerType::i32(false), "i_next");
-        current_block_->append<BranchInst>(condBlock.get());
-        i->addIncoming(i_next, bodyBlock.get());
+          preheader->append<BranchInst>(condBlock.get());
 
-        current_block_ = afterBlock;
+          current_block_ = condBlock;
+          auto i0 = ConstantInt::getI32(1, false);
+          auto n = ConstantInt::getI32(static_cast<std::uint32_t>(repeatCount),
+                                       false);
+          std::vector<PhiInst::Incoming> incomings = {{i0, preheader.get()}};
+          auto i = current_block_->append<PhiInst>(IntegerType::i32(false),
+                                                   incomings, "i");
+          auto cmp = current_block_->append<ICmpInst>(ICmpPred::ULT, i, n,
+                                                      "arr_repeat_cmp");
+          current_block_->append<BranchInst>(cmp, bodyBlock.get(),
+                                             afterBlock.get());
+
+          current_block_ = bodyBlock;
+          auto gep = current_block_->append<GetElementPtrInst>(
+              elemIrTy, slot, std::vector<ValuePtr>{zero, i}, "elt");
+          emitMemcpy(gep, firstEltPtr, elemByteSize);
+          auto one = ConstantInt::getI32(1, false);
+          auto i_next = current_block_->append<BinaryOpInst>(
+              BinaryOpKind::ADD, i, one, IntegerType::i32(false), "i_next");
+          current_block_->append<BranchInst>(condBlock.get());
+          i->addIncoming(i_next, bodyBlock.get());
+
+          current_block_ = afterBlock;
+        }
 
       } else {
-        auto resolved = resolve_ptr(val, *arrSem.element, "arr_init");
-
+        node.repeat->first->accept(*this);
+        auto val = popOperand();
         auto cur_func = functions_.back();
+        auto resolved = resolve_ptr(val, *arrSem.element, "arr_init");
         auto preheader = current_block_;
         auto condBlock = cur_func->createBlock("arr_repeat_store_cond");
         auto bodyBlock = cur_func->createBlock("arr_repeat_store_body");
         auto afterBlock = cur_func->createBlock("arr_repeat_store_after");
 
         preheader->append<BranchInst>(condBlock.get());
-
         current_block_ = condBlock;
         auto i0 = ConstantInt::getI32(0, false);
         auto n =
@@ -1511,8 +1608,8 @@ inline void IREmitter::visit(ArrayExpression &node) {
                                                  incomings, "i");
         auto cmp = current_block_->append<ICmpInst>(ICmpPred::ULT, i, n,
                                                     "arr_repeat_cmp");
-        current_block_->append<BranchInst>(cmp, bodyBlock.get(), afterBlock.get());
-
+        current_block_->append<BranchInst>(cmp, bodyBlock.get(),
+                                           afterBlock.get());
         current_block_ = bodyBlock;
         auto gep = current_block_->append<GetElementPtrInst>(
             elemIrTy, slot, std::vector<ValuePtr>{zero, i}, "elt");
@@ -1532,16 +1629,27 @@ inline void IREmitter::visit(ArrayExpression &node) {
         elemIsAggregate ? computeTypeByteSize(elemIrTy) : 0;
 
     for (std::size_t i = 0; i < node.elements.size(); ++i) {
-      node.elements[i]->accept(*this);
-      auto val = popOperand();
       auto idxConst = ConstantInt::getI32(static_cast<std::uint32_t>(i), false);
       auto gep = current_block_->append<GetElementPtrInst>(
           elemIrTy, slot, std::vector<ValuePtr>{zero, idxConst}, "elt");
 
-      auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(val->type());
-      if (elemIsAggregate && valPtrTy) {
-        emitMemcpy(gep, val, elemByteSize);
+      if (elemIsAggregate) {
+        pushAggregateInitTarget(elemIrTy, gep);
+        node.elements[i]->accept(*this);
+        popAggregateInitTarget();
+        auto val = popOperand();
+        auto valPtrTy =
+            std::dynamic_pointer_cast<const PointerType>(val->type());
+        if (valPtrTy && val != gep) {
+          emitMemcpy(gep, val, elemByteSize);
+        } else if (!valPtrTy) {
+          auto resolved =
+              resolve_ptr(val, *arrSem.element, "elt" + std::to_string(i));
+          current_block_->append<StoreInst>(resolved, gep);
+        }
       } else {
+        node.elements[i]->accept(*this);
+        auto val = popOperand();
         auto resolved =
             resolve_ptr(val, *arrSem.element, "elt" + std::to_string(i));
         current_block_->append<StoreInst>(resolved, gep);
@@ -2184,6 +2292,30 @@ inline ValuePtr IREmitter::resolve_ptr(ValuePtr value, const SemType &expected,
   return value;
 }
 
+inline ValuePtr IREmitter::findAggregateInitTarget(const TypePtr &ty) const {
+  if (!isAggregateType(ty)) {
+    return nullptr;
+  }
+  for (auto it = aggregate_init_targets_.rbegin();
+       it != aggregate_init_targets_.rend(); ++it) {
+    if (typeEquals(it->ty, ty)) {
+      return it->ptr;
+    }
+  }
+  return nullptr;
+}
+
+inline void IREmitter::pushAggregateInitTarget(const TypePtr &ty,
+                                               ValuePtr ptr) {
+  aggregate_init_targets_.push_back({ty, ptr});
+}
+
+inline void IREmitter::popAggregateInitTarget() {
+  if (!aggregate_init_targets_.empty()) {
+    aggregate_init_targets_.pop_back();
+  }
+}
+
 inline std::vector<SemType> IREmitter::build_effective_params(
     const FunctionMetaData &meta,
     const std::optional<SemType> &self_type) const {
@@ -2297,7 +2429,13 @@ inline FuncPtr IREmitter::emit_function(const FunctionMetaData &meta,
                                     : nullptr) {
       current_scope_node = child;
     }
+    if (useSret) {
+      pushAggregateInitTarget(originalRetTy, current_sret_ptr_);
+    }
     node.body.value()->accept(*this);
+    if (useSret) {
+      popAggregateInitTarget();
+    }
     ValuePtr result = operand_stack_.empty() ? nullptr : popOperand();
     bool terminated = current_block_->isTerminated();
     if (!terminated) {
@@ -2306,7 +2444,11 @@ inline FuncPtr IREmitter::emit_function(const FunctionMetaData &meta,
         if (result) {
           auto resPtrTy =
               std::dynamic_pointer_cast<const PointerType>(result->type());
-          if (resPtrTy && isAggregateType(originalRetTy)) {
+          if (resPtrTy && result == current_sret_ptr_) {
+            LOG_DEBUG(
+                "[IREmitter] sret result already in place, no copy needed");
+          } else if (resPtrTy && isAggregateType(originalRetTy) &&
+                     result != current_sret_ptr_) {
             std::size_t byteSize = computeTypeByteSize(originalRetTy);
             emitMemcpy(current_sret_ptr_, result, byteSize);
           } else if (resPtrTy) {
