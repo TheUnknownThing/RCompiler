@@ -4,11 +4,11 @@
 #include <vector>
 
 #include "ast/parser.hpp"
+#include "backend/passManager.hpp"
 #include "ir/gen.hpp"
 #include "ir/visit.hpp"
 #include "lexer/lexer.hpp"
 #include "opt/passManager.hpp"
-#include "backend/passManager.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "semantic/semantic.hpp"
 #include "utils/logger.hpp"
@@ -43,11 +43,11 @@ int main(int argc, char *argv[]) {
     rc::opt::ConstantContext constCtx;
     rc::opt::PassManager pm(constCtx);
     pm.run(emitter.module());
+    rc::ir::emitLLVM(emitter.module(), std::cout);
 
     rc::backend::PassManager backendPM;
     backendPM.run(emitter.module());
 
-    rc::ir::emitLLVM(emitter.module(), std::cout);
   } catch (const std::exception &e) {
     std::cerr << "Error: " << e.what() << std::endl;
     LOG_ERROR(std::string("Error: ") + e.what());

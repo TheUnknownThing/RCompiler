@@ -23,6 +23,7 @@ private:
       ir::Function &function,
       const std::unordered_set<ir::BasicBlock *> &reachable);
   void rebuildPredecessors(ir::Function &function);
+  void removeUndefPhiIncomingBlocks(ir::Function &function);
 };
 
 inline void DeadCodeElimVisitor::run(ir::Module &module) {
@@ -37,6 +38,7 @@ inline void DeadCodeElimVisitor::run(ir::Module &module) {
     squashUnreachableBlocks(*function, reachable);
 
     rebuildPredecessors(*function);
+    removeUndefPhiIncomingBlocks(*function);
   }
 }
 
@@ -229,6 +231,39 @@ inline void DeadCodeElimVisitor::rebuildPredecessors(ir::Function &function) {
     for (auto *succ : succs) {
       auto *succ_nonconst = const_cast<ir::BasicBlock *>(succ);
       succ_nonconst->addPredecessor(bb.get());
+    }
+  }
+}
+
+inline void
+DeadCodeElimVisitor::removeUndefPhiIncomingBlocks(ir::Function &function) {
+  for (const auto &bb : function.blocks()) {
+    std::unordered_set<ir::BasicBlock *> predecessors;
+    for (auto *pred : bb->predecessors()) {
+      predecessors.insert(pred);
+    }
+
+    for (const auto &inst : bb->instructions()) {
+      if (!inst) {
+        break;
+      }
+      auto *phi = dynamic_cast<ir::PhiInst *>(inst.get());
+      if (!phi) {
+        break;
+      }
+
+      auto &incomings = phi->incomings();
+      for (auto it = incomings.begin(); it != incomings.end();) {
+        auto *incomingBlock = it->second;
+        if (!incomingBlock || !predecessors.count(incomingBlock)) {
+          if (it->first) {
+            it->first->removeUse(phi);
+          }
+          it = incomings.erase(it);
+        } else {
+          ++it;
+        }
+      }
     }
   }
 }
