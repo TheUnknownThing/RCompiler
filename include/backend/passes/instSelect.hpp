@@ -305,10 +305,8 @@ inline void InstructionSelection::visit(const ir::BinaryOpInst &binOp) {
 }
 
 inline void InstructionSelection::visit(const ir::AllocaInst &alloca) {
-  auto dst = createVirtualRegister();
-  valueOperandMap_[&alloca] = dst;
-
-  createStackSlot(alloca.allocatedType());
+  auto slot = createStackSlot(alloca.allocatedType());
+  valueOperandMap_[&alloca] = slot;
 }
 
 inline void InstructionSelection::visit(const ir::LoadInst &load) {
@@ -401,13 +399,13 @@ inline void InstructionSelection::visit(const ir::BranchInst &branch) {
 }
 
 inline void InstructionSelection::visit(const ir::ReturnInst &ret) {
-  if (ret.isVoid()) {
-    currentBlock_->createInst(InstOpcode::RET, nullptr, {});
-  } else {
+  if (!ret.isVoid()) {
     auto retVal = resolveOperandOrImmediate(
         ret.value(), "return value not materialized", &ret);
-    currentBlock_->createInst(InstOpcode::RET, nullptr, {getReg(retVal)});
+    auto dst = createPhysicalRegister(10); // a0
+    currentBlock_->createInst(InstOpcode::MV, dst, {getReg(retVal)});
   }
+  currentBlock_->createInst(InstOpcode::RET, nullptr, {});
 }
 
 inline void InstructionSelection::visit(const ir::UnreachableInst &) {}
@@ -709,8 +707,44 @@ InstructionSelection::computeTypeByteSize(const ir::TypePtr &ty) const {
 
 inline std::pair<size_t, size_t>
 InstructionSelection::resolveGEP(const ir::GetElementPtrInst &gep) const {
-  // TODO
-  return {0, 0};
+  auto baseType = gep.basePointer()->type();
+  size_t offset = 0;
+  for (size_t i = 0; i < gep.indices().size(); ++i) {
+    auto idx = gep.indices()[i];
+    if (auto constIdx = std::dynamic_pointer_cast<ir::ConstantInt>(idx)) {
+      int64_t idxVal = constIdx->value();
+      if (idxVal < 0) {
+        throw std::runtime_error("negative GEP index not supported");
+      }
+      if (baseType->kind() == ir::TypeKind::Array) {
+        auto arrTy = std::dynamic_pointer_cast<const ir::ArrayType>(baseType);
+        auto elemLayout = computeTypeLayout(arrTy->elem());
+        size_t stride = alignTo(elemLayout.size, elemLayout.align);
+        offset += stride * idxVal;
+        baseType = arrTy->elem();
+      } else if (baseType->kind() == ir::TypeKind::Struct) {
+        auto structTy =
+            std::dynamic_pointer_cast<const ir::StructType>(baseType);
+        if (static_cast<size_t>(idxVal) >= structTy->fields().size()) {
+          throw std::runtime_error("struct GEP index out of bounds");
+        }
+        for (size_t j = 0; j < static_cast<size_t>(idxVal); ++j) {
+          auto fieldLayout = computeTypeLayout(structTy->fields()[j]);
+          offset = alignTo(offset, fieldLayout.align);
+          offset += fieldLayout.size;
+        }
+        baseType = structTy->fields()[idxVal];
+      } else if (baseType->kind() == ir::TypeKind::Pointer) {
+        auto ptrTy = std::dynamic_pointer_cast<const ir::PointerType>(baseType);
+        baseType = ptrTy->pointee();
+      } else {
+        throw std::runtime_error("GEP index into non-aggregate type");
+      }
+    } else {
+      throw std::runtime_error("non-constant GEP index not supported");
+    }
+  }
+  return {offset, computeTypeByteSize(baseType)};
 }
 
 inline Immediate *
