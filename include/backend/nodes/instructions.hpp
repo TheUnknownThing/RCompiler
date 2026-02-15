@@ -34,9 +34,15 @@ enum class InstOpcode {
   SRAI,
   SLTI,
   SLTIU,
+  LB,
+  LH,
   LW,
+  LBU,
+  LHU,
   JALR,
   // S-Type
+  SB,
+  SH,
   SW,
   // B-Type
   BEQ,
@@ -83,6 +89,12 @@ public:
     }
   }
 
+  InstOpcode getOpcode() const { return opcode; }
+  const std::shared_ptr<AsmOperand> &getDst() const { return dst; }
+  const std::vector<std::shared_ptr<AsmOperand>> &getUses() const {
+    return uses;
+  }
+
 private:
   InstOpcode opcode;
   std::shared_ptr<AsmOperand> dst;
@@ -108,6 +120,7 @@ class AsmFunction {
 public:
   std::string name;
   std::vector<std::unique_ptr<AsmBlock>> blocks;
+  size_t stackSize{0};
 
   AsmBlock *createBlock(const std::string &label) {
     auto block = std::make_unique<AsmBlock>(label);

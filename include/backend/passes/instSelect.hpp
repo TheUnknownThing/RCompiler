@@ -45,6 +45,10 @@ public:
   void visit(const ir::TruncInst &) override;
   void visit(const ir::MoveInst &) override;
 
+  const std::vector<std::unique_ptr<AsmFunction>> &functions() const {
+    return functions_;
+  }
+
 private:
   std::vector<std::unique_ptr<AsmFunction>> functions_;
 
@@ -75,6 +79,8 @@ private:
   TypeLayoutInfo computeTypeLayout(const ir::TypePtr &ty) const;
   size_t computeTypeByteSize(const ir::TypePtr &ty) const;
   size_t alignTo(size_t offset, size_t align) const;
+  std::pair<size_t, size_t>
+  resolveGEP(const ir::GetElementPtrInst &gep) const; // <offset, size>
 
   std::string getUniqueLabel(const ir::BasicBlock *block) {
     if (blockNames_.count(block) == 0) {
@@ -121,6 +127,7 @@ inline void InstructionSelection::visit(const ir::Function &function) {
   }
 
   LOG_DEBUG("[ISel] End function: " + function.name());
+  asmFunction->stackSize = alignTo(stackOffset_, 16);
   currentFunction_ = nullptr;
 }
 
@@ -283,19 +290,82 @@ inline void InstructionSelection::visit(const ir::BinaryOpInst &binOp) {
 }
 
 inline void InstructionSelection::visit(const ir::AllocaInst &alloca) {
-  // TODO
+  auto dst = createVirtualRegister();
+  valueOperandMap_[&alloca] = dst;
+
+  createStackSlot(alloca.allocatedType());
 }
 
 inline void InstructionSelection::visit(const ir::LoadInst &load) {
-  // TODO
+  if (isAggregateType(load.type())) {
+    throw std::runtime_error("loading aggregate should not exist");
+  }
+  auto dst = createVirtualRegister();
+  auto slot = std::dynamic_pointer_cast<StackSlot>(
+      valueOperandMap_[load.pointer().get()]);
+
+  if (!slot) {
+    throw std::runtime_error("LoadInst operand is not a stack slot");
+  }
+  valueOperandMap_[&load] = dst;
+
+  size_t loadSize = computeTypeByteSize(load.type());
+  if (loadSize == 0) {
+    throw std::runtime_error("cannot load type with zero byte size");
+  } else if (loadSize == 1) {
+    currentBlock_->createInst(InstOpcode::LB, dst, {slot});
+  } else if (loadSize == 2) {
+    currentBlock_->createInst(InstOpcode::LH, dst, {slot});
+  } else if (loadSize == 4) {
+    currentBlock_->createInst(InstOpcode::LW, dst, {slot});
+  } else {
+    throw std::runtime_error("unsupported load size: " +
+                             std::to_string(loadSize));
+  }
 }
 
 inline void InstructionSelection::visit(const ir::StoreInst &store) {
-  // TODO
+  if (isAggregateType(store.type())) {
+    throw std::runtime_error("storing aggregate should not exist");
+  }
+
+  auto src = resolveOperandOrImmediate(store.value(), "store value", &store);
+  auto slot = std::dynamic_pointer_cast<StackSlot>(
+      valueOperandMap_[store.pointer().get()]);
+  if (!slot) {
+    throw std::runtime_error("StoreInst pointer operand is not a stack slot");
+  }
+
+  size_t storeSize = computeTypeByteSize(store.value()->type());
+  if (storeSize == 0) {
+    throw std::runtime_error("cannot store type with zero byte size");
+  } else if (storeSize == 1) {
+    currentBlock_->createInst(InstOpcode::SB, nullptr, {getReg(src), slot});
+  } else if (storeSize == 2) {
+    currentBlock_->createInst(InstOpcode::SH, nullptr, {getReg(src), slot});
+  } else if (storeSize == 4) {
+    currentBlock_->createInst(InstOpcode::SW, nullptr, {getReg(src), slot});
+  } else {
+    throw std::runtime_error("unsupported store size: " +
+                             std::to_string(storeSize));
+  }
 }
 
 inline void InstructionSelection::visit(const ir::GetElementPtrInst &gep) {
-  // TODO
+  auto [offset, size] = resolveGEP(gep);
+  if (size == 0) {
+    throw std::runtime_error("cannot compute GEP with zero-size type");
+  }
+
+  auto slot = std::dynamic_pointer_cast<StackSlot>(
+      valueOperandMap_[gep.basePointer().get()]);
+
+  if (!slot) {
+    throw std::runtime_error("GEP base pointer is not a stack slot");
+  }
+
+  auto newSlot = std::make_shared<StackSlot>(slot->offset + offset, size);
+  valueOperandMap_[&gep] = newSlot;
 }
 
 inline void InstructionSelection::visit(const ir::BranchInst &branch) {
@@ -390,7 +460,12 @@ inline void InstructionSelection::visit(const ir::ICmpInst &icmp) {
 }
 
 inline void InstructionSelection::visit(const ir::CallInst &call) {
-  // TODO
+  if (call.type()->isVoid()) {
+
+  } else {
+    auto dst = createVirtualRegister();
+    valueOperandMap_[&call] = dst;
+  }
 }
 
 inline void InstructionSelection::visit(const ir::PhiInst &) {
@@ -593,6 +668,12 @@ InstructionSelection::computeTypeLayout(const ir::TypePtr &ty) const {
 inline size_t
 InstructionSelection::computeTypeByteSize(const ir::TypePtr &ty) const {
   return computeTypeLayout(ty).size;
+}
+
+inline std::pair<size_t, size_t>
+InstructionSelection::resolveGEP(const ir::GetElementPtrInst &gep) const {
+  // TODO
+  return {0, 0};
 }
 
 inline Immediate *

@@ -3,6 +3,9 @@
 #include "opt/cfg/cfg.hpp"
 #include "passes/phiElimination.hpp"
 #include "passes/instSelect.hpp"
+#include "passes/pseudoAsmEmitter.hpp"
+
+#include <iostream>
 
 namespace rc::backend {
 
@@ -20,6 +23,9 @@ inline void PassManager::run(ir::Module &module) {
 
   InstructionSelection instSelect;
   instSelect.generate(module);
+
+  PseudoAsmEmitter pseudoEmitter;
+  pseudoEmitter.emit(instSelect.functions(), std::cout);
 }
 
 } // namespace rc::backend

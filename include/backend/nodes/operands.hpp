@@ -9,6 +9,7 @@ enum class OperandType { REG, IMM, SYMBOL, STACK_SLOT };
 
 class AsmOperand {
 public:
+  virtual ~AsmOperand() = default;
   OperandType type;
 };
 
