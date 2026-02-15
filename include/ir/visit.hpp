@@ -172,6 +172,7 @@ private:
   std::vector<SemType> build_effective_params(
       const FunctionMetaData &meta,
       const std::optional<SemType> &self_type = std::nullopt) const;
+  TypePtr getParamType(const SemType &paramSemTy) const;
   SemType compute_self_type(const FunctionDecl &decl,
                             const CollectedItem *owner) const;
 
@@ -862,7 +863,7 @@ inline void IREmitter::visit(CallExpression &node) {
   std::vector<TypePtr> irParams;
   irParams.reserve(paramSems.size());
   for (const auto &p : paramSems) {
-    irParams.push_back(context->resolveType(p));
+    irParams.push_back(getParamType(p));
   }
   auto originalRetTy = context->resolveType(meta->return_type);
   auto retTy = originalRetTy;
@@ -990,7 +991,7 @@ inline void IREmitter::visit(StructDecl &node) {
     std::vector<TypePtr> irParams;
     irParams.reserve(params.size());
     for (const auto &p : params) {
-      irParams.push_back(context->resolveType(p));
+      irParams.push_back(getParamType(p));
     }
     auto originalRetTy = context->resolveType(m.return_type);
     auto retTy = originalRetTy;
@@ -1260,7 +1261,7 @@ inline void IREmitter::visit(MethodCallExpression &node) {
   std::vector<TypePtr> paramIr;
   paramIr.reserve(paramSems.size());
   for (const auto &p : paramSems) {
-    paramIr.push_back(context->resolveType(p));
+    paramIr.push_back(getParamType(p));
   }
   auto originalRetTy = context->resolveType(found->return_type);
   auto retTy = originalRetTy;
@@ -2330,6 +2331,14 @@ inline std::vector<SemType> IREmitter::build_effective_params(
   return params;
 }
 
+inline TypePtr IREmitter::getParamType(const SemType &paramSemTy) const {
+  auto irTy = context->resolveType(paramSemTy);
+  if (isAggregateType(irTy)) {
+    return std::make_shared<PointerType>(irTy);
+  }
+  return irTy;
+}
+
 inline SemType IREmitter::compute_self_type(const FunctionDecl &decl,
                                             const CollectedItem *owner) const {
   SemType base = decl.self_param->explicit_type.has_value()
@@ -2353,7 +2362,7 @@ inline FuncPtr IREmitter::emit_function(const FunctionMetaData &meta,
   std::vector<TypePtr> paramTyp;
   paramTyp.reserve(params.size());
   for (const auto &p : params) {
-    paramTyp.push_back(context->resolveType(p));
+    paramTyp.push_back(getParamType(p));
   }
 
   auto originalRetTy = context->resolveType(meta.return_type);
