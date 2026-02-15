@@ -2237,6 +2237,13 @@ inline ValuePtr IREmitter::resolve_ptr(ValuePtr value, const SemType &expected,
   auto valPtr = std::dynamic_pointer_cast<const PointerType>(value->type());
   auto expPtr = std::dynamic_pointer_cast<const PointerType>(expectedTy);
 
+  if (!expPtr && isAggregateType(expectedTy)) {
+    if (valPtr) {
+      return value;
+    }
+    throw IRException("resolve_ptr: aggregate value must be addressable");
+  }
+
   if (expPtr) {
     if (valPtr) {
       auto current = value;

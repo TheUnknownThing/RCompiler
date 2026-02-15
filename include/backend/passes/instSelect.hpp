@@ -15,6 +15,7 @@
 #include "utils/logger.hpp"
 
 #include <cstdint>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -100,6 +101,7 @@ private:
   }
 
   std::shared_ptr<Register> createVirtualRegister();
+  std::shared_ptr<Register> getOrCreateResultRegister(const ir::Value *value);
   std::shared_ptr<Register> createPhysicalRegister(int id);
   std::shared_ptr<Immediate> createImmediate(int32_t value);
   std::shared_ptr<StackSlot> createStackSlot(const ir::TypePtr &type);
@@ -174,13 +176,11 @@ inline void InstructionSelection::visit(const ir::BasicBlock &basicBlock) {
 }
 
 inline void InstructionSelection::visit(const ir::BinaryOpInst &binOp) {
-  auto dst = createVirtualRegister();
+  auto dst = getOrCreateResultRegister(&binOp);
   auto lhs = resolveOperandOrImmediate(
       binOp.lhs(), "LHS operand for binary operation", &binOp);
   auto rhs = resolveOperandOrImmediate(
       binOp.rhs(), "RHS operand for binary operation", &binOp);
-
-  valueOperandMap_[&binOp] = dst;
 
   auto immFitsShamt = [](int32_t v) -> bool { return v >= 0 && v < 32; };
 
@@ -313,19 +313,18 @@ inline void InstructionSelection::visit(const ir::LoadInst &load) {
   if (isAggregateType(load.type())) {
     throw std::runtime_error("loading aggregate should not exist");
   }
-  auto dst = createVirtualRegister();
-  auto slot = std::dynamic_pointer_cast<StackSlot>(
-      valueOperandMap_[load.pointer().get()]);
-
-  if (!slot) {
-    throw std::runtime_error("LoadInst operand is not a stack slot");
-  }
-  valueOperandMap_[&load] = dst;
+  auto dst = getOrCreateResultRegister(&load);
+  auto ptr = resolveOperandOrImmediate(load.pointer(),
+                                       "load pointer not materialized", &load);
+  auto slot = std::dynamic_pointer_cast<StackSlot>(ptr);
 
   size_t loadSize = computeTypeByteSize(load.type());
   if (loadSize == 0) {
     throw std::runtime_error("cannot load type with zero byte size");
-  } else if (loadSize == 1) {
+  }
+
+  if (slot) {
+    if (loadSize == 1) {
     currentBlock_->createInst(InstOpcode::LB, dst, {slot});
   } else if (loadSize == 2) {
     currentBlock_->createInst(InstOpcode::LH, dst, {slot});
@@ -335,6 +334,26 @@ inline void InstructionSelection::visit(const ir::LoadInst &load) {
     throw std::runtime_error("unsupported load size: " +
                              std::to_string(loadSize));
   }
+    return;
+  }
+
+  if (ptr->type == OperandType::REG) {
+    auto base = getReg(ptr);
+    auto zero = createImmediate(0);
+    if (loadSize == 1) {
+      currentBlock_->createInst(InstOpcode::LB, dst, {base, zero});
+    } else if (loadSize == 2) {
+      currentBlock_->createInst(InstOpcode::LH, dst, {base, zero});
+    } else if (loadSize == 4) {
+      currentBlock_->createInst(InstOpcode::LW, dst, {base, zero});
+    } else {
+      throw std::runtime_error("unsupported load size: " +
+                               std::to_string(loadSize));
+    }
+    return;
+  }
+
+  throw std::runtime_error("LoadInst pointer must be stack slot or register");
 }
 
 inline void InstructionSelection::visit(const ir::StoreInst &store) {
@@ -343,16 +362,17 @@ inline void InstructionSelection::visit(const ir::StoreInst &store) {
   }
 
   auto src = resolveOperandOrImmediate(store.value(), "store value", &store);
-  auto slot = std::dynamic_pointer_cast<StackSlot>(
-      valueOperandMap_[store.pointer().get()]);
-  if (!slot) {
-    throw std::runtime_error("StoreInst pointer operand is not a stack slot");
-  }
+  auto ptr = resolveOperandOrImmediate(
+      store.pointer(), "store pointer not materialized", &store);
+  auto slot = std::dynamic_pointer_cast<StackSlot>(ptr);
 
   size_t storeSize = computeTypeByteSize(store.value()->type());
   if (storeSize == 0) {
     throw std::runtime_error("cannot store type with zero byte size");
-  } else if (storeSize == 1) {
+  }
+
+  if (slot) {
+    if (storeSize == 1) {
     currentBlock_->createInst(InstOpcode::SB, nullptr, {getReg(src), slot});
   } else if (storeSize == 2) {
     currentBlock_->createInst(InstOpcode::SH, nullptr, {getReg(src), slot});
@@ -362,6 +382,29 @@ inline void InstructionSelection::visit(const ir::StoreInst &store) {
     throw std::runtime_error("unsupported store size: " +
                              std::to_string(storeSize));
   }
+    return;
+  }
+
+  if (ptr->type == OperandType::REG) {
+    auto base = getReg(ptr);
+    auto zero = createImmediate(0);
+    if (storeSize == 1) {
+      currentBlock_->createInst(InstOpcode::SB, nullptr,
+                                {getReg(src), base, zero});
+    } else if (storeSize == 2) {
+      currentBlock_->createInst(InstOpcode::SH, nullptr,
+                                {getReg(src), base, zero});
+    } else if (storeSize == 4) {
+      currentBlock_->createInst(InstOpcode::SW, nullptr,
+                                {getReg(src), base, zero});
+    } else {
+      throw std::runtime_error("unsupported store size: " +
+                               std::to_string(storeSize));
+    }
+    return;
+  }
+
+  throw std::runtime_error("StoreInst pointer must be stack slot or register");
 }
 
 inline void InstructionSelection::visit(const ir::GetElementPtrInst &gep) {
@@ -411,13 +454,11 @@ inline void InstructionSelection::visit(const ir::ReturnInst &ret) {
 inline void InstructionSelection::visit(const ir::UnreachableInst &) {}
 
 inline void InstructionSelection::visit(const ir::ICmpInst &icmp) {
-  auto dst = createVirtualRegister();
+  auto dst = getOrCreateResultRegister(&icmp);
   auto lhs =
       resolveOperandOrImmediate(icmp.lhs(), "LHS operand for ICmpInst", &icmp);
   auto rhs =
       resolveOperandOrImmediate(icmp.rhs(), "RHS operand for ICmpInst", &icmp);
-
-  valueOperandMap_[&icmp] = dst;
   switch (icmp.pred()) {
   case ir::ICmpPred::EQ:
     // rd = (rs1 ^ rs2) == 0
@@ -485,8 +526,7 @@ inline void InstructionSelection::visit(const ir::CallInst &call) {
     operands.insert(operands.end(), args.begin(), args.end());
     currentBlock_->createInst(InstOpcode::CALL, nullptr, operands);
   } else {
-    auto dst = createVirtualRegister();
-    valueOperandMap_[&call] = dst;
+    auto dst = getOrCreateResultRegister(&call);
     std::vector<std::shared_ptr<AsmOperand>> args;
     for (const auto &arg : call.args()) {
       args.push_back(resolveOperandOrImmediate(
@@ -509,21 +549,17 @@ inline void InstructionSelection::visit(const ir::SelectInst &) {
 }
 
 inline void InstructionSelection::visit(const ir::ZExtInst &zextInst) {
-  auto dst = createVirtualRegister();
+  auto dst = getOrCreateResultRegister(&zextInst);
   auto src = resolveOperandOrImmediate(zextInst.source(),
                                        "operand for ZExtInst", &zextInst);
-
-  valueOperandMap_[&zextInst] = dst;
   currentBlock_->createInst(InstOpcode::ANDI, dst,
                             {getReg(src), createImmediate(0xFFFFFFFF)});
 }
 
 inline void InstructionSelection::visit(const ir::SExtInst &sextInst) {
-  auto dst = createVirtualRegister();
+  auto dst = getOrCreateResultRegister(&sextInst);
   auto src = resolveOperandOrImmediate(sextInst.source(),
                                        "operand for SExtInst", &sextInst);
-
-  valueOperandMap_[&sextInst] = dst;
   currentBlock_->createInst(
       InstOpcode::SLLI, dst,
       {getReg(src), createImmediate(32 - sextInst.srcBits())});
@@ -533,11 +569,9 @@ inline void InstructionSelection::visit(const ir::SExtInst &sextInst) {
 }
 
 inline void InstructionSelection::visit(const ir::TruncInst &truncInst) {
-  auto dst = createVirtualRegister();
+  auto dst = getOrCreateResultRegister(&truncInst);
   auto src = resolveOperandOrImmediate(truncInst.source(),
                                        "operand for TruncInst", &truncInst);
-
-  valueOperandMap_[&truncInst] = dst;
   currentBlock_->createInst(
       InstOpcode::ANDI, dst,
       {getReg(src), createImmediate((1u << truncInst.destBits()) - 1)});
@@ -603,10 +637,7 @@ InstructionSelection::resolveOperandOrImmediate(
   }
 
   if (std::dynamic_pointer_cast<ir::Instruction>(value)) {
-    throw std::runtime_error(
-        std::string(reason) +
-        " is an instruction that has not been selected yet: " +
-        describe(value.get()));
+    return getOrCreateResultRegister(value.get());
   }
 
   throw std::runtime_error(std::string(reason) + ": " + describe(value.get()));
@@ -616,6 +647,22 @@ inline std::shared_ptr<Register> InstructionSelection::createVirtualRegister() {
   auto reg = std::make_shared<Register>();
   reg->id = regID_++;
   reg->is_virtual = true;
+  return reg;
+}
+
+inline std::shared_ptr<Register>
+InstructionSelection::getOrCreateResultRegister(const ir::Value *value) {
+  auto it = valueOperandMap_.find(value);
+  if (it != valueOperandMap_.end() && it->second) {
+    auto reg = std::dynamic_pointer_cast<Register>(it->second);
+    if (!reg) {
+      throw std::runtime_error("instruction result mapped to non-register");
+    }
+    return reg;
+  }
+
+  auto reg = createVirtualRegister();
+  valueOperandMap_[value] = reg;
   return reg;
 }
 
@@ -703,48 +750,6 @@ InstructionSelection::computeTypeLayout(const ir::TypePtr &ty) const {
 inline size_t
 InstructionSelection::computeTypeByteSize(const ir::TypePtr &ty) const {
   return computeTypeLayout(ty).size;
-}
-
-inline std::pair<size_t, size_t>
-InstructionSelection::resolveGEP(const ir::GetElementPtrInst &gep) const {
-  auto baseType = gep.basePointer()->type();
-  size_t offset = 0;
-  for (size_t i = 0; i < gep.indices().size(); ++i) {
-    auto idx = gep.indices()[i];
-    if (auto constIdx = std::dynamic_pointer_cast<ir::ConstantInt>(idx)) {
-      int64_t idxVal = constIdx->value();
-      if (idxVal < 0) {
-        throw std::runtime_error("negative GEP index not supported");
-      }
-      if (baseType->kind() == ir::TypeKind::Array) {
-        auto arrTy = std::dynamic_pointer_cast<const ir::ArrayType>(baseType);
-        auto elemLayout = computeTypeLayout(arrTy->elem());
-        size_t stride = alignTo(elemLayout.size, elemLayout.align);
-        offset += stride * idxVal;
-        baseType = arrTy->elem();
-      } else if (baseType->kind() == ir::TypeKind::Struct) {
-        auto structTy =
-            std::dynamic_pointer_cast<const ir::StructType>(baseType);
-        if (static_cast<size_t>(idxVal) >= structTy->fields().size()) {
-          throw std::runtime_error("struct GEP index out of bounds");
-        }
-        for (size_t j = 0; j < static_cast<size_t>(idxVal); ++j) {
-          auto fieldLayout = computeTypeLayout(structTy->fields()[j]);
-          offset = alignTo(offset, fieldLayout.align);
-          offset += fieldLayout.size;
-        }
-        baseType = structTy->fields()[idxVal];
-      } else if (baseType->kind() == ir::TypeKind::Pointer) {
-        auto ptrTy = std::dynamic_pointer_cast<const ir::PointerType>(baseType);
-        baseType = ptrTy->pointee();
-      } else {
-        throw std::runtime_error("GEP index into non-aggregate type");
-      }
-    } else {
-      throw std::runtime_error("non-constant GEP index not supported");
-    }
-  }
-  return {offset, computeTypeByteSize(baseType)};
 }
 
 inline Immediate *
