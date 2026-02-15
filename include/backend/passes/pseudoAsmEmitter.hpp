@@ -27,10 +27,12 @@ inline void PseudoAsmEmitter::emit(
     os << ".func " << function->name << " stack=" << function->stackSize
        << "\n";
 
-    for (const auto &block : function->blocks) {
-      os << block->name << ":\n";
-      for (const auto &inst : block->instructions) {
-        os << "  " << instName(*inst) << "\n";
+    if (!function->blocks.empty()) {
+      for (const auto &block : function->blocks) {
+        os << block->name << ":\n";
+        for (const auto &inst : block->instructions) {
+          os << "  " << instName(*inst) << "\n";
+        }
       }
     }
 
@@ -143,8 +145,8 @@ inline std::string PseudoAsmEmitter::opcodeName(InstOpcode opcode) const {
   return "<unknown-opcode>";
 }
 
-inline std::string
-PseudoAsmEmitter::operandName(const std::shared_ptr<AsmOperand> &operand) const {
+inline std::string PseudoAsmEmitter::operandName(
+    const std::shared_ptr<AsmOperand> &operand) const {
   if (!operand) {
     return "<null>";
   }

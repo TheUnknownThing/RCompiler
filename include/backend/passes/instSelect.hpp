@@ -61,6 +61,7 @@ private:
 
   const ir::Function *currentFunction_{nullptr};
   const ir::BasicBlock *currentIrBlock_{nullptr};
+
   AsmBlock *currentBlock_{nullptr};
   size_t stackOffset_ = 0;
 
@@ -121,13 +122,27 @@ inline void InstructionSelection::visit(const ir::Function &function) {
   auto asmFunction = std::make_unique<AsmFunction>();
   asmFunction->name = getUniqueFunctionName(&function);
   functions_.push_back(std::move(asmFunction));
-  stackOffset_ = 0;
-  for (const auto &basicBlock : function.blocks()) {
-    visit(*basicBlock);
+
+  // add arguments to valueOperandMap_
+  if (function.args().size() > 0) {
+    for (size_t i = 0; i <= 7 && i < function.args().size(); ++i) {
+      valueOperandMap_[function.args()[i].get()] =
+          createPhysicalRegister(10 + i);
+    }
+    for (size_t i = 8; i < function.args().size(); ++i) {
+      valueOperandMap_[function.args()[i].get()] =
+          createStackSlot(function.args()[i]->type());
+    }
   }
 
+  stackOffset_ = 0;
+  if (!function.blocks().empty()) {
+    for (const auto &basicBlock : function.blocks()) {
+      visit(*basicBlock);
+    }
+  }
   LOG_DEBUG("[ISel] End function: " + function.name());
-  asmFunction->stackSize = alignTo(stackOffset_, 16);
+  functions_.back()->stackSize = alignTo(stackOffset_, 16);
   currentFunction_ = nullptr;
 }
 
@@ -373,7 +388,7 @@ inline void InstructionSelection::visit(const ir::BranchInst &branch) {
     auto cond = resolveOperandOrImmediate(
         branch.cond(), "conditional branch condition not materialized",
         &branch);
-    currentBlock_->createInst(InstOpcode::BEQZ, nullptr,
+    currentBlock_->createInst(InstOpcode::BNEZ, nullptr,
                               {getReg(cond), createLabelOperand(branch.dest()),
                                createLabelOperand(branch.altDest())});
   } else {
@@ -461,10 +476,29 @@ inline void InstructionSelection::visit(const ir::ICmpInst &icmp) {
 
 inline void InstructionSelection::visit(const ir::CallInst &call) {
   if (call.type()->isVoid()) {
+    std::vector<std::shared_ptr<AsmOperand>> args;
+    for (const auto &arg : call.args()) {
+      args.push_back(resolveOperandOrImmediate(
+          arg, "call argument not materialized", &call));
+    }
 
+    std::vector<std::shared_ptr<AsmOperand>> operands;
+    operands.push_back(createFunctionOperand(call.calleeFunction()));
+    operands.insert(operands.end(), args.begin(), args.end());
+    currentBlock_->createInst(InstOpcode::CALL, nullptr, operands);
   } else {
     auto dst = createVirtualRegister();
     valueOperandMap_[&call] = dst;
+    std::vector<std::shared_ptr<AsmOperand>> args;
+    for (const auto &arg : call.args()) {
+      args.push_back(resolveOperandOrImmediate(
+          arg, "call argument not materialized", &call));
+    }
+
+    std::vector<std::shared_ptr<AsmOperand>> operands;
+    operands.push_back(createFunctionOperand(call.calleeFunction()));
+    operands.insert(operands.end(), args.begin(), args.end());
+    currentBlock_->createInst(InstOpcode::CALL, dst, operands);
   }
 }
 
@@ -564,7 +598,10 @@ InstructionSelection::resolveOperandOrImmediate(
   }
 
   if (std::dynamic_pointer_cast<ir::Argument>(value)) {
-    // TODO
+    throw std::runtime_error(std::string(reason) +
+                             " is a function argument that has not been mapped "
+                             "to a register or stack slot: " +
+                             describe(value.get()));
   }
 
   if (std::dynamic_pointer_cast<ir::Instruction>(value)) {
