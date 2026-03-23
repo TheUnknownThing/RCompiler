@@ -81,8 +81,15 @@ private:
   TypeLayoutInfo computeTypeLayout(const ir::TypePtr &ty) const;
   size_t computeTypeByteSize(const ir::TypePtr &ty) const;
   size_t alignTo(size_t offset, size_t align) const;
-  std::pair<size_t, size_t>
-  resolveGEP(const ir::GetElementPtrInst &gep) const; // <offset, size>
+  std::shared_ptr<Register>
+  materializeAddress(const std::shared_ptr<AsmOperand> &ptr,
+                     const ir::Instruction *inst, const char *reason);
+  void emitAddImmediate(const std::shared_ptr<Register> &dst,
+                        const std::shared_ptr<AsmOperand> &lhs,
+                        int64_t immValue);
+  std::shared_ptr<AsmOperand>
+  emitScaledIndex(const std::shared_ptr<ir::Value> &index, size_t stride,
+                  const ir::Instruction *inst);
 
   std::string getUniqueLabel(const ir::BasicBlock *block) {
     if (blockNames_.count(block) == 0) {
@@ -325,15 +332,15 @@ inline void InstructionSelection::visit(const ir::LoadInst &load) {
 
   if (slot) {
     if (loadSize == 1) {
-    currentBlock_->createInst(InstOpcode::LB, dst, {slot});
-  } else if (loadSize == 2) {
-    currentBlock_->createInst(InstOpcode::LH, dst, {slot});
-  } else if (loadSize == 4) {
-    currentBlock_->createInst(InstOpcode::LW, dst, {slot});
-  } else {
-    throw std::runtime_error("unsupported load size: " +
-                             std::to_string(loadSize));
-  }
+      currentBlock_->createInst(InstOpcode::LB, dst, {slot});
+    } else if (loadSize == 2) {
+      currentBlock_->createInst(InstOpcode::LH, dst, {slot});
+    } else if (loadSize == 4) {
+      currentBlock_->createInst(InstOpcode::LW, dst, {slot});
+    } else {
+      throw std::runtime_error("unsupported load size: " +
+                               std::to_string(loadSize));
+    }
     return;
   }
 
@@ -373,15 +380,15 @@ inline void InstructionSelection::visit(const ir::StoreInst &store) {
 
   if (slot) {
     if (storeSize == 1) {
-    currentBlock_->createInst(InstOpcode::SB, nullptr, {getReg(src), slot});
-  } else if (storeSize == 2) {
-    currentBlock_->createInst(InstOpcode::SH, nullptr, {getReg(src), slot});
-  } else if (storeSize == 4) {
-    currentBlock_->createInst(InstOpcode::SW, nullptr, {getReg(src), slot});
-  } else {
-    throw std::runtime_error("unsupported store size: " +
-                             std::to_string(storeSize));
-  }
+      currentBlock_->createInst(InstOpcode::SB, nullptr, {getReg(src), slot});
+    } else if (storeSize == 2) {
+      currentBlock_->createInst(InstOpcode::SH, nullptr, {getReg(src), slot});
+    } else if (storeSize == 4) {
+      currentBlock_->createInst(InstOpcode::SW, nullptr, {getReg(src), slot});
+    } else {
+      throw std::runtime_error("unsupported store size: " +
+                               std::to_string(storeSize));
+    }
     return;
   }
 
@@ -408,20 +415,215 @@ inline void InstructionSelection::visit(const ir::StoreInst &store) {
 }
 
 inline void InstructionSelection::visit(const ir::GetElementPtrInst &gep) {
-  auto [offset, size] = resolveGEP(gep);
-  if (size == 0) {
+  auto base = resolveOperandOrImmediate(
+      gep.basePointer(), "GEP base pointer not materialized", &gep);
+  auto currentType = gep.basePointer()->type();
+
+  int64_t staticOffset = 0;
+  std::shared_ptr<AsmOperand> dynamicOffset = nullptr;
+
+  auto appendDynamicOffset = [&](const std::shared_ptr<AsmOperand> &part) {
+    if (!dynamicOffset) {
+      dynamicOffset = part;
+      return;
+    }
+    auto merged = createVirtualRegister();
+    currentBlock_->createInst(InstOpcode::ADD, merged,
+                              {getReg(dynamicOffset), getReg(part)});
+    dynamicOffset = merged;
+  };
+
+  for (const auto &index : gep.indices()) {
+    if (currentType->kind() == ir::TypeKind::Pointer) {
+      auto ptrTy =
+          std::dynamic_pointer_cast<const ir::PointerType>(currentType);
+      if (!ptrTy) {
+        throw std::runtime_error("invalid pointer type in GEP");
+      }
+
+      size_t stride = computeTypeByteSize(ptrTy->pointee());
+      if (auto constIdx = std::dynamic_pointer_cast<ir::ConstantInt>(index)) {
+        staticOffset += static_cast<int64_t>(constIdx->value()) *
+                        static_cast<int64_t>(stride);
+      } else {
+        appendDynamicOffset(emitScaledIndex(index, stride, &gep));
+      }
+
+      currentType = ptrTy->pointee();
+      continue;
+    }
+
+    if (currentType->kind() == ir::TypeKind::Array) {
+      auto arrTy = std::dynamic_pointer_cast<const ir::ArrayType>(currentType);
+      if (!arrTy) {
+        throw std::runtime_error("invalid array type in GEP");
+      }
+
+      auto elemLayout = computeTypeLayout(arrTy->elem());
+      size_t stride = alignTo(elemLayout.size, elemLayout.align);
+      if (auto constIdx = std::dynamic_pointer_cast<ir::ConstantInt>(index)) {
+        staticOffset += static_cast<int64_t>(constIdx->value()) *
+                        static_cast<int64_t>(stride);
+      } else {
+        appendDynamicOffset(emitScaledIndex(index, stride, &gep));
+      }
+
+      currentType = arrTy->elem();
+      continue;
+    }
+
+    if (currentType->kind() == ir::TypeKind::Struct) {
+      auto structTy =
+          std::dynamic_pointer_cast<const ir::StructType>(currentType);
+      if (!structTy) {
+        throw std::runtime_error("invalid struct type in GEP");
+      }
+
+      auto constIdx = std::dynamic_pointer_cast<ir::ConstantInt>(index);
+      if (!constIdx) {
+        throw std::runtime_error(
+            "non-constant struct GEP index is not supported");
+      }
+
+      int64_t idxValue = constIdx->value();
+      if (idxValue < 0 ||
+          static_cast<size_t>(idxValue) >= structTy->fields().size()) {
+        throw std::runtime_error("struct GEP index out of bounds");
+      }
+
+      size_t fieldOffset = 0;
+      for (size_t fieldIndex = 0; fieldIndex < static_cast<size_t>(idxValue);
+           ++fieldIndex) {
+        auto fieldLayout = computeTypeLayout(structTy->fields()[fieldIndex]);
+        fieldOffset = alignTo(fieldOffset, fieldLayout.align);
+        fieldOffset += fieldLayout.size;
+      }
+
+      staticOffset += static_cast<int64_t>(fieldOffset);
+      currentType = structTy->fields()[idxValue];
+      continue;
+    }
+
+    throw std::runtime_error("GEP index into non-aggregate type");
+  }
+
+  size_t resultSize = computeTypeByteSize(currentType);
+  if (resultSize == 0) {
     throw std::runtime_error("cannot compute GEP with zero-size type");
   }
 
-  auto slot = std::dynamic_pointer_cast<StackSlot>(
-      valueOperandMap_[gep.basePointer().get()]);
-
-  if (!slot) {
-    throw std::runtime_error("GEP base pointer is not a stack slot");
+  auto slot = std::dynamic_pointer_cast<StackSlot>(base);
+  if (slot && !dynamicOffset && staticOffset >= 0) {
+    auto newSlot = std::make_shared<StackSlot>(
+        slot->offset + static_cast<size_t>(staticOffset), resultSize);
+    valueOperandMap_[&gep] = newSlot;
+    return;
   }
 
-  auto newSlot = std::make_shared<StackSlot>(slot->offset + offset, size);
-  valueOperandMap_[&gep] = newSlot;
+  auto baseAddrReg =
+      materializeAddress(base, &gep, "GEP base cannot be addressed");
+  std::shared_ptr<Register> addressReg = baseAddrReg;
+
+  if (staticOffset != 0) {
+    auto withStatic = createVirtualRegister();
+    emitAddImmediate(withStatic, addressReg, staticOffset);
+    addressReg = withStatic;
+  }
+
+  if (dynamicOffset) {
+    auto withDynamic = createVirtualRegister();
+    currentBlock_->createInst(InstOpcode::ADD, withDynamic,
+                              {addressReg, getReg(dynamicOffset)});
+    addressReg = withDynamic;
+  }
+
+  valueOperandMap_[&gep] = addressReg;
+}
+
+inline std::shared_ptr<Register>
+InstructionSelection::materializeAddress(const std::shared_ptr<AsmOperand> &ptr,
+                                         const ir::Instruction *inst,
+                                         const char *reason) {
+  if (!ptr) {
+    throw std::runtime_error(std::string(reason) + ": null pointer operand");
+  }
+
+  if (ptr->type == OperandType::REG) {
+    return std::static_pointer_cast<Register>(ptr);
+  }
+
+  if (auto slot = std::dynamic_pointer_cast<StackSlot>(ptr)) {
+    auto addr = createVirtualRegister();
+    auto sp = createPhysicalRegister(2);
+    emitAddImmediate(addr, sp, static_cast<int64_t>(slot->offset));
+    return addr;
+  }
+
+  throw std::runtime_error(std::string(reason) + ": " +
+                           (inst ? describe(inst) : std::string("<no inst>")));
+}
+
+inline void
+InstructionSelection::emitAddImmediate(const std::shared_ptr<Register> &dst,
+                                       const std::shared_ptr<AsmOperand> &lhs,
+                                       int64_t immValue) {
+  if (immValue < static_cast<int64_t>(std::numeric_limits<int32_t>::min()) ||
+      immValue > static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
+    throw std::runtime_error("offset exceeds 32-bit immediate range");
+  }
+
+  auto imm = createImmediate(static_cast<int32_t>(immValue));
+  if (imm->is_valid_12()) {
+    currentBlock_->createInst(InstOpcode::ADDI, dst, {getReg(lhs), imm});
+    return;
+  }
+
+  currentBlock_->createInst(InstOpcode::ADD, dst, {getReg(lhs), getReg(imm)});
+}
+
+inline std::shared_ptr<AsmOperand>
+InstructionSelection::emitScaledIndex(const std::shared_ptr<ir::Value> &index,
+                                      size_t stride,
+                                      const ir::Instruction *inst) {
+  auto idx =
+      resolveOperandOrImmediate(index, "GEP index not materialized", inst);
+  if (stride == 1) {
+    return idx;
+  }
+
+  if (auto imm = asImmediate(idx)) {
+    int64_t scaled =
+        static_cast<int64_t>(imm->value) * static_cast<int64_t>(stride);
+    if (scaled < static_cast<int64_t>(std::numeric_limits<int32_t>::min()) ||
+        scaled > static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
+      throw std::runtime_error("scaled GEP immediate offset out of range");
+    }
+    return createImmediate(static_cast<int32_t>(scaled));
+  }
+
+  auto indexReg = getReg(idx);
+
+  if ((stride & (stride - 1)) == 0 && stride < 32) {
+    size_t shift = 0;
+    while ((1u << shift) != stride) {
+      ++shift;
+    }
+    auto scaledReg = createVirtualRegister();
+    currentBlock_->createInst(
+        InstOpcode::SLLI, scaledReg,
+        {indexReg, createImmediate(static_cast<int32_t>(shift))});
+    return scaledReg;
+  }
+
+  if (stride > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+    throw std::runtime_error("GEP stride exceeds 32-bit immediate range");
+  }
+
+  auto scaledReg = createVirtualRegister();
+  auto strideImm = createImmediate(static_cast<int32_t>(stride));
+  currentBlock_->createInst(InstOpcode::MUL, scaledReg,
+                            {indexReg, getReg(strideImm)});
+  return scaledReg;
 }
 
 inline void InstructionSelection::visit(const ir::BranchInst &branch) {
