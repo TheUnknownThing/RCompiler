@@ -60,8 +60,28 @@ See [whitelist.md](whitelist.md) for the concrete, implementable subset of the R
         - Expression Analysis
     - [x] Control Flow Analysis
         - Return Path Verification
-- [x] Dirty Workarounds
-        - Handling `exit(0)` in `main`
 
 - [x] IR Codegen
     - [x] LLVM IR Emission
+    - [x] Module / function / basic block IR construction
+
+- [x] IR Optimization
+    - [x] CFG construction and refresh
+    - [x] Dead Code Elimination (DCE)
+        - Remove instructions after terminators
+        - Fold constant conditional branches
+        - Eliminate unreachable blocks
+    - [x] Mem2Reg / SSA promotion
+    - [x] Function inlining
+    - [x] Instruction combining
+        - Constant folding
+        - Algebraic simplification
+    - [x] Sparse Conditional Constant Propagation (SCCP)
+    - [x] CFG simplification
+        - Remove unreachable blocks
+        - Fold trivial phi nodes
+        - Merge trivial basic blocks
+    - [ ] GVN & GCM (TBD)
+    - [ ] Magic Numbers (TBD)
+
+- [ ] Backend Codegen (WIP)
