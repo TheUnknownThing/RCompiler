@@ -15,10 +15,11 @@ public:
 
 class Register : public AsmOperand {
 public:
-  explicit Register() : id(0), is_virtual(true) { type = OperandType::REG; }
+  explicit Register() : id(0), is_virtual(true), spilled(false) { type = OperandType::REG; }
 
   size_t id;
   bool is_virtual;
+  bool spilled = false;
 };
 
 class Immediate : public AsmOperand {
