@@ -43,14 +43,24 @@ private:
     size_t endPos{0};
   };
 
+  struct FixedRegisterSpan {
+    size_t start{std::numeric_limits<size_t>::max()};
+    size_t end{0};
+    bool valid{false};
+  };
+
   static constexpr size_t kSpillSlotSize = 4;
-  static constexpr std::array<int, 7> kAllocatableRegs = {5,  6,  7, 28,
-                                                          29, 30, 31};
+  static constexpr std::array<int, 15> kCallerSavedRegs = {
+      5,  6,  7,  10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30, 31};
+  static constexpr std::array<int, 11> kCalleeSavedRegs = {
+      9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27};
 
   size_t alignTo(size_t value, size_t align) const;
   size_t maxVirtualRegisterId(const AsmFunction &function) const;
   std::vector<std::vector<size_t>>
   computeSuccessors(const AsmFunction &function) const;
+  std::unordered_map<int, FixedRegisterSpan>
+  computeFixedRegisterSpans(const AsmFunction &function) const;
   std::vector<LiveInterval> buildIntervals(const AsmFunction &function) const;
   void linearScan(AsmFunction &function,
                   std::vector<LiveInterval> &intervals) const;
@@ -68,8 +78,13 @@ private:
                             const std::unordered_set<size_t> &spilled) const;
   bool isVirtualRegisterOperand(const std::shared_ptr<AsmOperand> &operand,
                                 size_t *id = nullptr) const;
+  bool isPhysicalRegisterOperand(const std::shared_ptr<AsmOperand> &operand,
+                                 int *id = nullptr) const;
   bool isCall(const AsmInst &inst) const;
   bool isTerminator(const AsmInst &inst) const;
+  const std::vector<int> &candidateRegisters(bool crossesCall) const;
+  bool overlapsFixedRegister(const FixedRegisterSpan &span, size_t start,
+                             size_t end) const;
   size_t blockLabelIndex(const std::vector<std::shared_ptr<AsmOperand>> &uses,
                          InstOpcode opcode) const;
   void extendInterval(std::unordered_map<size_t, LiveInterval> &intervals,
@@ -231,6 +246,49 @@ RegAlloc::computeSuccessors(const AsmFunction &function) const {
   return successors;
 }
 
+inline std::unordered_map<int, RegAlloc::FixedRegisterSpan>
+RegAlloc::computeFixedRegisterSpans(const AsmFunction &function) const {
+  std::unordered_map<int, FixedRegisterSpan> spans;
+  size_t position = 0;
+
+  for (const auto &block : function.blocks) {
+    if (!block) {
+      continue;
+    }
+    for (const auto &inst : block->instructions) {
+      if (!inst) {
+        continue;
+      }
+
+      auto record = [&](const std::shared_ptr<AsmOperand> &operand) {
+        int regId = -1;
+        if (!isPhysicalRegisterOperand(operand, &regId)) {
+          return;
+        }
+
+        auto &span = spans[regId];
+        if (!span.valid) {
+          span.start = position;
+          span.end = position;
+          span.valid = true;
+          return;
+        }
+
+        span.start = std::min(span.start, position);
+        span.end = std::max(span.end, position);
+      };
+
+      record(inst->getDst());
+      for (const auto &use : inst->getUses()) {
+        record(use);
+      }
+      ++position;
+    }
+  }
+
+  return spans;
+}
+
 inline std::vector<RegAlloc::LiveInterval>
 RegAlloc::buildIntervals(const AsmFunction &function) const {
   std::vector<BlockLiveness> blocks(function.blocks.size());
@@ -372,6 +430,7 @@ inline void RegAlloc::linearScan(AsmFunction &function,
                                  std::vector<LiveInterval> &intervals) const {
   std::unordered_set<size_t> spilledIds;
   std::vector<LiveInterval *> active;
+  const auto fixedRegSpans = computeFixedRegisterSpans(function);
   auto sortActive = [&]() {
     std::sort(active.begin(), active.end(),
               [](const LiveInterval *lhs, const LiveInterval *rhs) {
@@ -397,25 +456,52 @@ inline void RegAlloc::linearScan(AsmFunction &function,
                  active.end());
     sortActive();
 
-    if (interval.crossesCall) {
-      allocateSpill(interval);
-      continue;
-    }
+    const auto &candidates = candidateRegisters(interval.crossesCall);
+    std::vector<int> available;
+    available.reserve(candidates.size());
 
-    if (active.size() >= kAllocatableRegs.size()) {
-      auto spillIt = std::max_element(
-          active.begin(), active.end(),
-          [](const LiveInterval *lhs, const LiveInterval *rhs) {
-            if (lhs->end != rhs->end) {
-              return lhs->end < rhs->end;
-            }
-            return lhs->vregId < rhs->vregId;
-          });
-      if (spillIt == active.end()) {
-        throw std::runtime_error("RegAlloc: active set unexpectedly empty");
+    for (int physReg : candidates) {
+      bool occupied = false;
+      for (const auto *live : active) {
+        if (live->assignedPhysReg == physReg) {
+          occupied = true;
+          break;
+        }
+      }
+      if (occupied) {
+        continue;
       }
 
-      LiveInterval *spill = *spillIt;
+      auto fixedIt = fixedRegSpans.find(physReg);
+      if (fixedIt != fixedRegSpans.end() &&
+          overlapsFixedRegister(fixedIt->second, interval.start, interval.end)) {
+        continue;
+      }
+
+      available.push_back(physReg);
+    }
+
+    if (available.empty()) {
+      LiveInterval *spill = nullptr;
+      auto spillIt = active.end();
+      for (auto it = active.begin(); it != active.end(); ++it) {
+        if (std::find(candidates.begin(), candidates.end(),
+                      (*it)->assignedPhysReg) == candidates.end()) {
+          continue;
+        }
+
+        if (!spill || spill->end < (*it)->end ||
+            (spill->end == (*it)->end && spill->vregId < (*it)->vregId)) {
+          spill = *it;
+          spillIt = it;
+        }
+      }
+
+      if (!spill || spillIt == active.end()) {
+        allocateSpill(interval);
+        continue;
+      }
+
       if (spill->end > interval.end) {
         interval.assignedPhysReg = spill->assignedPhysReg;
         spill->assignedPhysReg = -1;
@@ -430,28 +516,9 @@ inline void RegAlloc::linearScan(AsmFunction &function,
       continue;
     }
 
-    std::unordered_set<int> usedRegs;
-    for (const auto *live : active) {
-      if (live->assignedPhysReg >= 0) {
-        usedRegs.insert(live->assignedPhysReg);
-      }
-    }
-
-    bool assigned = false;
-    for (int physReg : kAllocatableRegs) {
-      if (usedRegs.find(physReg) != usedRegs.end()) {
-        continue;
-      }
-      interval.assignedPhysReg = physReg;
-      active.push_back(&interval);
-      sortActive();
-      assigned = true;
-      break;
-    }
-
-    if (!assigned) {
-      allocateSpill(interval);
-    }
+    interval.assignedPhysReg = available.front();
+    active.push_back(&interval);
+    sortActive();
   }
 
   markSpilledRegisters(function, spilledIds);
@@ -701,6 +768,19 @@ RegAlloc::isVirtualRegisterOperand(const std::shared_ptr<AsmOperand> &operand,
   return true;
 }
 
+inline bool
+RegAlloc::isPhysicalRegisterOperand(const std::shared_ptr<AsmOperand> &operand,
+                                    int *id) const {
+  auto reg = std::dynamic_pointer_cast<Register>(operand);
+  if (!reg || reg->is_virtual) {
+    return false;
+  }
+  if (id) {
+    *id = static_cast<int>(reg->id);
+  }
+  return true;
+}
+
 inline bool RegAlloc::isCall(const AsmInst &inst) const {
   return inst.getOpcode() == InstOpcode::CALL;
 }
@@ -721,6 +801,29 @@ inline bool RegAlloc::isTerminator(const AsmInst &inst) const {
   default:
     return false;
   }
+}
+
+inline const std::vector<int> &
+RegAlloc::candidateRegisters(bool crossesCall) const {
+  static const std::vector<int> kCrossCallCandidates(kCalleeSavedRegs.begin(),
+                                                     kCalleeSavedRegs.end());
+  static const std::vector<int> kGeneralCandidates = []() {
+    std::vector<int> regs;
+    regs.reserve(kCallerSavedRegs.size() + kCalleeSavedRegs.size());
+    regs.insert(regs.end(), kCallerSavedRegs.begin(), kCallerSavedRegs.end());
+    regs.insert(regs.end(), kCalleeSavedRegs.begin(), kCalleeSavedRegs.end());
+    return regs;
+  }();
+
+  return crossesCall ? kCrossCallCandidates : kGeneralCandidates;
+}
+
+inline bool RegAlloc::overlapsFixedRegister(const FixedRegisterSpan &span,
+                                            size_t start, size_t end) const {
+  if (!span.valid) {
+    return false;
+  }
+  return !(end < span.start || span.end < start);
 }
 
 inline size_t

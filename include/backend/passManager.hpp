@@ -4,6 +4,7 @@
 #include "passes/phiElimination.hpp"
 #include "passes/instSelect.hpp"
 #include "passes/pseudoAsmEmitter.hpp"
+#include "passes/prologueEpilogue.hpp"
 #include "passes/regalloc.hpp"
 
 #include <iostream>
@@ -27,6 +28,9 @@ inline void PassManager::run(ir::Module &module) {
 
   RegAlloc regAlloc;
   regAlloc.allocate(instSelect.functions());
+
+  PrologueEpiloguePass framePass;
+  framePass.run(instSelect.functions());
 
   PseudoAsmEmitter pseudoEmitter;
   pseudoEmitter.emit(instSelect.functions(), std::cout);
