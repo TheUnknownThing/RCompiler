@@ -1,9 +1,9 @@
 #pragma once
 
 #include "opt/cfg/cfg.hpp"
+#include "passes/asmEmitter.hpp"
 #include "passes/phiElimination.hpp"
 #include "passes/instSelect.hpp"
-#include "passes/pseudoAsmEmitter.hpp"
 #include "passes/prologueEpilogue.hpp"
 #include "passes/regalloc.hpp"
 
@@ -13,13 +13,13 @@ namespace rc::backend {
 
 class PassManager {
 public:
-  void run(ir::Module &module);
+  void run(ir::Module &module, std::ostream &os);
 
 private:
   opt::CFGVisitor cfg;
 };
 
-inline void PassManager::run(ir::Module &module) {
+inline void PassManager::run(ir::Module &module, std::ostream &os) {
   PhiElimination phiElimination(cfg);
   phiElimination.run(&module);
 
@@ -32,8 +32,8 @@ inline void PassManager::run(ir::Module &module) {
   PrologueEpiloguePass framePass;
   framePass.run(instSelect.functions());
 
-  PseudoAsmEmitter pseudoEmitter;
-  pseudoEmitter.emit(instSelect.functions(), std::cout);
+  AsmEmitter asmEmitter;
+  asmEmitter.emit(instSelect.functions(), os);
 }
 
 } // namespace rc::backend

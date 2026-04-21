@@ -16,9 +16,22 @@
 int main(int argc, char *argv[]) {
   try {
     std::string filename = "";
-    if (argc > 1) {
-      filename = argv[1];
+    enum class EmitMode { LLVM, ASM };
+    EmitMode emitMode = EmitMode::LLVM;
+
+    for (int i = 1; i < argc; ++i) {
+      std::string arg = argv[i];
+      if (arg == "--emit-llvm") {
+        emitMode = EmitMode::LLVM;
+      } else if (arg == "--emit-asm" || arg == "-S") {
+        emitMode = EmitMode::ASM;
+      } else if (filename.empty()) {
+        filename = arg;
+      } else {
+        throw std::runtime_error("unexpected argument: " + arg);
+      }
     }
+
     rc::Preprocessor preprocessor(filename);
     auto preprocessed_code = preprocessor.preprocess();
 
@@ -43,10 +56,13 @@ int main(int argc, char *argv[]) {
     rc::opt::ConstantContext constCtx;
     rc::opt::PassManager pm(constCtx);
     pm.run(emitter.module());
-    rc::ir::emitLLVM(emitter.module(), std::cout);
 
-    rc::backend::PassManager backendPM;
-    backendPM.run(emitter.module());
+    if (emitMode == EmitMode::LLVM) {
+      rc::ir::emitLLVM(emitter.module(), std::cout);
+    } else {
+      rc::backend::PassManager backendPM;
+      backendPM.run(emitter.module(), std::cout);
+    }
 
   } catch (const std::exception &e) {
     std::cerr << "Error: " << e.what() << std::endl;
