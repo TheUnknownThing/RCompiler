@@ -503,6 +503,7 @@ inline void IREmitter::visit(ReturnExpression &node) {
       (*node.value)->accept(*this);
       popAggregateInitTarget();
       auto v = popOperand();
+      v = loadPtrValue(v, retSemTy);
       auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(v->type());
       if (valPtrTy && v != current_sret_ptr_) {
         std::size_t byteSize = computeTypeByteSize(retIrTy);
@@ -517,6 +518,7 @@ inline void IREmitter::visit(ReturnExpression &node) {
 
     if (current_sret_ptr_) {
       // copy result to sret pointer and return void
+      v = loadPtrValue(v, retSemTy);
       auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(v->type());
       // Result is a pointer to aggregate, use memcpy
       std::size_t byteSize = computeTypeByteSize(retIrTy);
@@ -525,12 +527,10 @@ inline void IREmitter::visit(ReturnExpression &node) {
       return;
     }
 
-    auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(v->type());
-    if (valPtrTy && isAggregateType(retIrTy)) {
-      v = current_block_->append<LoadInst>(v, retIrTy);
-    } else {
-      v = loadPtrValue(v, retSemTy);
+    if (isAggregateType(retIrTy)) {
+      throw IRException("aggregate return reached non-sret path");
     }
+    v = loadPtrValue(v, retSemTy);
 
     if (v->type()->isVoid()) {
       current_block_->append<ReturnInst>();
@@ -602,6 +602,7 @@ inline void IREmitter::visit(LetStatement &node) {
 
   auto initPtrTy = std::dynamic_pointer_cast<const PointerType>(init->type());
   if (initPtrTy && isAggregateType(irTy)) {
+    init = loadPtrValue(init, semTy);
     if (slot != init) {
       std::size_t byteSize = computeTypeByteSize(irTy);
       emitMemcpy(slot, init, byteSize);
@@ -1413,6 +1414,7 @@ inline void IREmitter::visit(StructExpression &node) {
       it->second->accept(*this);
       popAggregateInitTarget();
       auto val = popOperand();
+      val = loadPtrValue(val, field.second);
       auto valPtrTy = std::dynamic_pointer_cast<const PointerType>(val->type());
       if (valPtrTy && val != gep) {
         std::size_t byteSize = computeTypeByteSize(fieldTy);
@@ -1541,6 +1543,7 @@ inline void IREmitter::visit(ArrayExpression &node) {
           node.repeat->first->accept(*this);
           popAggregateInitTarget();
           auto firstVal = popOperand();
+          firstVal = loadPtrValue(firstVal, *arrSem.element);
           auto firstValPtrTy =
               std::dynamic_pointer_cast<const PointerType>(firstVal->type());
           if (firstValPtrTy && firstVal != firstEltPtr) {
@@ -1639,6 +1642,7 @@ inline void IREmitter::visit(ArrayExpression &node) {
         node.elements[i]->accept(*this);
         popAggregateInitTarget();
         auto val = popOperand();
+        val = loadPtrValue(val, *arrSem.element);
         auto valPtrTy =
             std::dynamic_pointer_cast<const PointerType>(val->type());
         if (valPtrTy && val != gep) {
@@ -2239,7 +2243,14 @@ inline ValuePtr IREmitter::resolve_ptr(ValuePtr value, const SemType &expected,
 
   if (!expPtr && isAggregateType(expectedTy)) {
     if (valPtr) {
-      return value;
+      auto aggregatePtr = loadPtrValue(value, expected);
+      auto aggregatePtrTy =
+          std::dynamic_pointer_cast<const PointerType>(aggregatePtr->type());
+      if (aggregatePtrTy && typeEquals(aggregatePtrTy->pointee(), expectedTy)) {
+        auto tmp = createAlloca(expectedTy, name.empty() ? "arg_copy" : name);
+        emitMemcpy(tmp, aggregatePtr, computeTypeByteSize(expectedTy));
+        return tmp;
+      }
     }
     throw IRException("resolve_ptr: aggregate value must be addressable");
   }
@@ -2458,6 +2469,7 @@ inline FuncPtr IREmitter::emit_function(const FunctionMetaData &meta,
       if (useSret) {
         // For sret, copy result to sret pointer and return void
         if (result) {
+          result = loadPtrValue(result, meta.return_type);
           auto resPtrTy =
               std::dynamic_pointer_cast<const PointerType>(result->type());
           if (resPtrTy && result == current_sret_ptr_) {
@@ -2467,12 +2479,8 @@ inline FuncPtr IREmitter::emit_function(const FunctionMetaData &meta,
                      result != current_sret_ptr_) {
             std::size_t byteSize = computeTypeByteSize(originalRetTy);
             emitMemcpy(current_sret_ptr_, result, byteSize);
-          } else if (resPtrTy) {
-            auto loaded =
-                current_block_->append<LoadInst>(result, originalRetTy);
-            current_block_->append<StoreInst>(loaded, current_sret_ptr_);
           } else {
-            current_block_->append<StoreInst>(result, current_sret_ptr_);
+            throw IRException("sret aggregate result is not addressable");
           }
         }
         current_block_->append<ReturnInst>();
@@ -2486,6 +2494,9 @@ inline FuncPtr IREmitter::emit_function(const FunctionMetaData &meta,
         auto resPtrTy =
             std::dynamic_pointer_cast<const PointerType>(result->type());
 
+        if (isAggregateType(retIrTy)) {
+          throw IRException("aggregate return reached non-sret path");
+        }
         result = loadPtrValue(result, meta.return_type);
         current_block_->append<ReturnInst>(result);
       }
