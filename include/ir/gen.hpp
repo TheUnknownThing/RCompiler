@@ -741,9 +741,6 @@ private:
 };
 
 // Convenience free function
-inline void emitLLVM(const Module &mod, std::ostream &out = std::cout) {
-  LLVMEmitter emitter(out);
-  emitter.emitModule(mod);
-}
+void emitLLVM(const Module &mod, std::ostream &out = std::cout);
 
 } // namespace rc::ir

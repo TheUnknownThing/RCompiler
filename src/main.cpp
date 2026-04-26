@@ -1,5 +1,3 @@
-#define LOGGING_LEVEL_NONE
-
 #include <string>
 #include <vector>
 

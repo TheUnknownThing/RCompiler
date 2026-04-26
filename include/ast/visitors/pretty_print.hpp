@@ -746,11 +746,7 @@ private:
 };
 
 // Utility function to pretty print any AST node
-inline std::string pretty_print(BaseNode &node, int indent_level = 0) {
-  PrettyPrintVisitor visitor(indent_level, true);
-  node.accept(visitor);
-  return visitor.get_result();
-}
+std::string pretty_print(BaseNode &node, int indent_level = 0);
 
 } // namespace rc
 

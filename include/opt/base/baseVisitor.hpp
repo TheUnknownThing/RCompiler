@@ -34,23 +34,5 @@ public:
   virtual void visit(ir::SelectInst &selectInst);
 };
 
-inline void IRBaseVisitor::visit(ir::Module &) {}
-inline void IRBaseVisitor::visit(ir::Function &) {}
-inline void IRBaseVisitor::visit(ir::BasicBlock &) {}
 
-inline void IRBaseVisitor::visit(ir::BinaryOpInst &) {}
-inline void IRBaseVisitor::visit(ir::BranchInst &) {}
-inline void IRBaseVisitor::visit(ir::UnreachableInst &) {}
-inline void IRBaseVisitor::visit(ir::ReturnInst &) {}
-inline void IRBaseVisitor::visit(ir::AllocaInst &) {}
-inline void IRBaseVisitor::visit(ir::LoadInst &) {}
-inline void IRBaseVisitor::visit(ir::StoreInst &) {}
-inline void IRBaseVisitor::visit(ir::GetElementPtrInst &) {}
-inline void IRBaseVisitor::visit(ir::ICmpInst &) {}
-inline void IRBaseVisitor::visit(ir::SExtInst &) {}
-inline void IRBaseVisitor::visit(ir::ZExtInst &) {}
-inline void IRBaseVisitor::visit(ir::TruncInst &) {}
-inline void IRBaseVisitor::visit(ir::CallInst &) {}
-inline void IRBaseVisitor::visit(ir::PhiInst &) {}
-inline void IRBaseVisitor::visit(ir::SelectInst &) {}
 } // namespace rc::opt
