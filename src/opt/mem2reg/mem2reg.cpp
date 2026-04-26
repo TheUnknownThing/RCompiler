@@ -61,10 +61,18 @@ void Mem2RegVisitor::replace_use_with_value(ir::Function &function) {
     if (store_count == 1 && alloca_load_insts.count(alloca) > 0) {
       bool can_replace = true;
       for (auto *user : alloca->get_uses()) {
-        if (dynamic_cast<ir::StoreInst *>(user)) {
+        if (auto *store = dynamic_cast<ir::StoreInst *>(user)) {
+          if (store->pointer().get() != alloca) {
+            can_replace = false;
+            break;
+          }
           continue;
         }
-        if (dynamic_cast<ir::LoadInst *>(user)) {
+        if (auto *load = dynamic_cast<ir::LoadInst *>(user)) {
+          if (load->pointer().get() != alloca) {
+            can_replace = false;
+            break;
+          }
           continue;
         }
         // getelementptr or other use - cannot replace
