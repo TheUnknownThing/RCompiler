@@ -6,6 +6,7 @@
 namespace rc::backend {
 
 enum class OperandType { REG, IMM, SYMBOL, STACK_SLOT };
+enum class StackSlotKind { FRAME, INCOMING_ARG };
 
 class AsmOperand {
 public:
@@ -33,12 +34,15 @@ public:
 
 class StackSlot : public AsmOperand {
 public:
-  explicit StackSlot(size_t offset, size_t size) : offset(offset), size(size) {
+  explicit StackSlot(size_t offset, size_t size,
+                     StackSlotKind kind = StackSlotKind::FRAME)
+      : offset(offset), size(size), kind(kind) {
     type = OperandType::STACK_SLOT;
   }
 
   size_t offset;
   size_t size;
+  StackSlotKind kind;
 };
 
 class Symbol : public AsmOperand {
