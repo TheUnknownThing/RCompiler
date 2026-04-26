@@ -14,7 +14,7 @@ BUILTIN := ci/files/IR/builtin.c
 build:
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF >/dev/null 2>&1
-	@cd $(BUILD_DIR) && make rcompiler -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4) >/dev/null 2>&1
+	@cmake --build $(BUILD_DIR) --target rcompiler -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4) >/dev/null 2>&1
 
 # Run: read from STDIN, output IR to STDOUT, builtin to STDERR
 run:

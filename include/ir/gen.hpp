@@ -13,10 +13,10 @@
 #include <vector>
 
 #include "instructions/binary.hpp"
-#include "instructions/controlFlow.hpp"
+#include "instructions/control_flow.hpp"
 #include "instructions/memory.hpp"
 #include "instructions/misc.hpp"
-#include "instructions/topLevel.hpp"
+#include "instructions/top_level.hpp"
 #include "instructions/visitor.hpp"
 
 namespace rc::ir {
@@ -26,39 +26,39 @@ public:
   explicit LLVMEmitter(std::ostream &out = std::cout) : out_(out) {}
 
   // Entry points
-  void emitModule(const Module &mod) {
+  void emit_module(const Module &mod) {
     reset();
-    collectIdentifiedStructs(mod);
+    collect_identified_structs(mod);
     // Header comments
     out_ << "; ModuleID = '" << mod.name() << "'\n";
-    if (!mod.target().dataLayout.empty()) {
-      out_ << "target datalayout = \"" << mod.target().dataLayout << "\"\n";
+    if (!mod.target().data_layout.empty()) {
+      out_ << "target datalayout = \"" << mod.target().data_layout << "\"\n";
     }
     if (!mod.target().triple.empty()) {
       out_ << "target triple = \"" << mod.target().triple << "\"\n";
     }
     // Identified struct declarations
-    for (const auto &decl : structDeclOrder_) {
-      out_ << "%" << decl << " = type " << identifiedStructBody_.at(decl)
+    for (const auto &decl : struct_decl_order_) {
+      out_ << "%" << decl << " = type " << identified_struct_body_.at(decl)
            << "\n";
     }
-    if (!structDeclOrder_.empty())
+    if (!struct_decl_order_.empty())
       out_ << "\n";
 
     for (const auto &c : mod.constants()) {
       if (!c)
         continue;
       if (auto cs = dynamic_cast<const ConstantString *>(c.get())) {
-        out_ << "@" << constantName(*c) << " = constant "
-             << typeToString(cs->arrayType()) << " " << encodeStringData(*cs)
+        out_ << "@" << constant_name(*c) << " = constant "
+             << type_to_string(cs->array_type()) << " " << encode_string_data(*cs)
              << "\n";
       } else if (auto ca = dynamic_cast<const ConstantArray *>(c.get())) {
-        out_ << "@" << constantName(*c) << " = constant "
-             << typeToString(ca->arrayType()) << " " << encodeArrayData(*ca)
+        out_ << "@" << constant_name(*c) << " = constant "
+             << type_to_string(ca->array_type()) << " " << encode_array_data(*ca)
              << "\n";
       } else {
-        out_ << "@" << constantName(*c) << " = constant "
-             << typeToString(c->type()) << " " << valueRef(*c) << "\n";
+        out_ << "@" << constant_name(*c) << " = constant "
+             << type_to_string(c->type()) << " " << value_ref(*c) << "\n";
       }
     }
     if (!mod.constants().empty())
@@ -66,27 +66,27 @@ public:
 
     // Functions
     for (const auto &fn : mod.functions()) {
-      emitFunction(*fn);
+      emit_function(*fn);
       out_ << "\n";
     }
   }
 
-  void emitFunction(const Function &fn) {
-    nameState_.clear();
-    blockNames_.clear();
-    nextValueId_ = 0;
-    nextBlockId_ = 0;
+  void emit_function(const Function &fn) {
+    name_state_.clear();
+    block_names_.clear();
+    next_value_id_ = 0;
+    next_block_id_ = 0;
 
     const auto &fty = fn.type();
-    const bool isDecl = fn.isExternal();
-    std::string mangledName = functionName(fn);
+    const bool is_decl = fn.is_external();
+    std::string mangled_name = function_name(fn);
 
-    if (isDecl) {
-      out_ << "declare " << typeToString(fty->returnType()) << " @"
-           << mangledName << "(";
+    if (is_decl) {
+      out_ << "declare " << type_to_string(fty->return_type()) << " @"
+           << mangled_name << "(";
     } else {
-      out_ << "define " << typeToString(fty->returnType()) << " @"
-           << mangledName << "(";
+      out_ << "define " << type_to_string(fty->return_type()) << " @"
+           << mangled_name << "(";
     }
 
     // Arguments
@@ -94,12 +94,12 @@ public:
       if (i)
         out_ << ", ";
       const auto &arg = fn.args()[i];
-      const auto &pty = fty->paramTypes()[i];
-      out_ << typeToString(pty) << " " << localName(arg.get());
+      const auto &pty = fty->param_types()[i];
+      out_ << type_to_string(pty) << " " << local_name(arg.get());
     }
     out_ << ")";
 
-    if (isDecl) {
+    if (is_decl) {
       out_ << "\n";
       return;
     }
@@ -108,11 +108,11 @@ public:
 
     // Pre-assign basic block names
     for (const auto &bb : fn.blocks()) {
-      (void)localLabel(bb.get());
+      (void)local_label(bb.get());
     }
 
     for (const auto &bb : fn.blocks()) {
-      emitBasicBlock(*bb);
+      emit_basic_block(*bb);
     }
 
     out_ << "}" << "\n";
@@ -122,53 +122,53 @@ private:
   std::ostream &out_;
 
   // Per-module state for identified structs
-  std::unordered_set<std::string> identifiedNames_;
-  std::unordered_map<std::string, std::string> identifiedStructBody_;
-  std::vector<std::string> structDeclOrder_;
+  std::unordered_set<std::string> identified_names_;
+  std::unordered_map<std::string, std::string> identified_struct_body_;
+  std::vector<std::string> struct_decl_order_;
 
   // Per-function naming state
-  std::unordered_map<const Value *, std::string> nameState_;
-  std::unordered_map<const BasicBlock *, std::string> blockNames_;
-  std::unordered_map<const Function *, std::string> functionNames_;
-  std::unordered_map<const StructType *, std::string> structNames_;
-  std::unordered_map<const Constant *, std::string> globalConstNames_;
-  std::unordered_map<std::string, int> functionNameCounters_;
-  int nextValueId_{0};
-  int nextBlockId_{0};
+  std::unordered_map<const Value *, std::string> name_state_;
+  std::unordered_map<const BasicBlock *, std::string> block_names_;
+  std::unordered_map<const Function *, std::string> function_names_;
+  std::unordered_map<const StructType *, std::string> struct_names_;
+  std::unordered_map<const Constant *, std::string> global_const_names_;
+  std::unordered_map<std::string, int> function_name_counters_;
+  int next_value_id_{0};
+  int next_block_id_{0};
 
   void reset() {
-    identifiedNames_.clear();
-    identifiedStructBody_.clear();
-    structDeclOrder_.clear();
-    functionNames_.clear();
-    structNames_.clear();
-    globalConstNames_.clear();
-    functionNameCounters_.clear();
+    identified_names_.clear();
+    identified_struct_body_.clear();
+    struct_decl_order_.clear();
+    function_names_.clear();
+    struct_names_.clear();
+    global_const_names_.clear();
+    function_name_counters_.clear();
   }
 
   // Naming helpers
-  std::string localName(const Value *v) {
-    auto it = nameState_.find(v);
-    if (it != nameState_.end())
+  std::string local_name(const Value *v) {
+    auto it = name_state_.find(v);
+    if (it != name_state_.end())
       return "%" + it->second;
-    std::string base = v->name().empty() ? genTmp() : v->name() + genTmp();
-    nameState_[v] = base;
+    std::string base = v->name().empty() ? gen_tmp() : v->name() + gen_tmp();
+    name_state_[v] = base;
     return "%" + base;
   }
 
-  std::string localLabel(const BasicBlock *bb) {
-    auto it = blockNames_.find(bb);
-    if (it != blockNames_.end())
+  std::string local_label(const BasicBlock *bb) {
+    auto it = block_names_.find(bb);
+    if (it != block_names_.end())
       return it->second;
     std::string base =
-        bb->name().empty() ? genBlock() : bb->name() + genBlock();
-    blockNames_[bb] = base;
+        bb->name().empty() ? gen_block() : bb->name() + gen_block();
+    block_names_[bb] = base;
     return base;
   }
 
-  std::string genTmp() { return "val" + std::to_string(nextValueId_++); }
-  std::string genBlock() { return "bb" + std::to_string(nextBlockId_++); }
-  std::string uniqueGlobal(const std::string &base,
+  std::string gen_tmp() { return "val" + std::to_string(next_value_id_++); }
+  std::string gen_block() { return "bb" + std::to_string(next_block_id_++); }
+  std::string unique_global(const std::string &base,
                            std::unordered_map<std::string, int> &counters) {
     auto &ctr = counters[base];
     std::string name = base;
@@ -179,38 +179,38 @@ private:
     return name;
   }
 
-  std::string functionName(const Function &fn) {
-    auto it = functionNames_.find(&fn);
-    if (it != functionNames_.end())
+  std::string function_name(const Function &fn) {
+    auto it = function_names_.find(&fn);
+    if (it != function_names_.end())
       return it->second;
     auto base = fn.name().empty() ? "fn" : fn.name();
-    auto mangled = uniqueGlobal(base, functionNameCounters_);
-    functionNames_[&fn] = mangled;
+    auto mangled = unique_global(base, function_name_counters_);
+    function_names_[&fn] = mangled;
     return mangled;
   }
 
-  std::string structName(const StructType &st) {
-    auto it = structNames_.find(&st);
-    if (it != structNames_.end()) {
+  std::string struct_name(const StructType &st) {
+    auto it = struct_names_.find(&st);
+    if (it != struct_names_.end()) {
       return it->second;
     }
     auto base = st.name().empty() ? "struct" : st.name();
-    structNames_[&st] = base;
+    struct_names_[&st] = base;
     return base;
   }
 
-  std::string constantName(const Constant &c) {
-    auto it = globalConstNames_.find(&c);
-    if (it != globalConstNames_.end()) {
+  std::string constant_name(const Constant &c) {
+    auto it = global_const_names_.find(&c);
+    if (it != global_const_names_.end()) {
       return it->second;
     }
     auto base = c.name().empty() ? "cst" : c.name();
-    globalConstNames_[&c] = base;
+    global_const_names_[&c] = base;
     return base;
   }
 
   // Type printing
-  std::string typeToString(const TypePtr &ty) {
+  std::string type_to_string(const TypePtr &ty) {
     switch (ty->kind()) {
     case TypeKind::Void:
       return "void";
@@ -224,20 +224,20 @@ private:
     case TypeKind::Array: {
       auto at = std::static_pointer_cast<const ArrayType>(ty);
       std::ostringstream oss;
-      oss << "[" << at->count() << " x " << typeToString(at->elem()) << "]";
+      oss << "[" << at->count() << " x " << type_to_string(at->elem()) << "]";
       return oss.str();
     }
     case TypeKind::Struct: {
       auto st = std::static_pointer_cast<const StructType>(ty);
       if (!st->name().empty()) {
-        return "%" + structName(*st);
+        return "%" + struct_name(*st);
       }
       std::ostringstream oss;
       oss << "{";
       for (size_t i = 0; i < st->fields().size(); ++i) {
         if (i)
           oss << ", ";
-        oss << typeToString(st->fields()[i]);
+        oss << type_to_string(st->fields()[i]);
       }
       oss << "}";
       return oss.str();
@@ -245,14 +245,14 @@ private:
     case TypeKind::Function: {
       auto ft = std::static_pointer_cast<const FunctionType>(ty);
       std::ostringstream oss;
-      oss << typeToString(ft->returnType()) << " (";
-      for (size_t i = 0; i < ft->paramTypes().size(); ++i) {
+      oss << type_to_string(ft->return_type()) << " (";
+      for (size_t i = 0; i < ft->param_types().size(); ++i) {
         if (i)
           oss << ", ";
-        oss << typeToString(ft->paramTypes()[i]);
+        oss << type_to_string(ft->param_types()[i]);
       }
-      if (ft->isVarArg()) {
-        if (!ft->paramTypes().empty())
+      if (ft->is_var_arg()) {
+        if (!ft->param_types().empty())
           oss << ", ";
         oss << "...";
       }
@@ -264,28 +264,28 @@ private:
   }
 
   // Collect identified struct definitions to print once per module
-  void collectIdentifiedStructs(const Module &mod) {
-    auto collectType = [&](const TypePtr &t, auto &&self) -> void {
+  void collect_identified_structs(const Module &mod) {
+    auto collect_type = [&](const TypePtr &t, auto &&self) -> void {
       switch (t->kind()) {
       case TypeKind::Struct: {
         auto st = std::static_pointer_cast<const StructType>(t);
         if (!st->name().empty()) {
-          auto id = structName(*st);
-          if (identifiedNames_.count(id)) {
+          auto id = struct_name(*st);
+          if (identified_names_.count(id)) {
             break;
           }
-          identifiedNames_.insert(id);
+          identified_names_.insert(id);
           // Build body text
           std::ostringstream b;
           b << "{";
           for (size_t i = 0; i < st->fields().size(); ++i) {
             if (i)
               b << ", ";
-            b << typeToString(st->fields()[i]);
+            b << type_to_string(st->fields()[i]);
           }
           b << "}";
-          identifiedStructBody_[id] = b.str();
-          structDeclOrder_.push_back(id);
+          identified_struct_body_[id] = b.str();
+          struct_decl_order_.push_back(id);
         }
         // Recurse into fields
         for (const auto &f : st->fields())
@@ -304,8 +304,8 @@ private:
       }
       case TypeKind::Function: {
         auto ft = std::static_pointer_cast<const FunctionType>(t);
-        self(ft->returnType(), self);
-        for (const auto &p : ft->paramTypes())
+        self(ft->return_type(), self);
+        for (const auto &p : ft->param_types())
           self(p, self);
         break;
       }
@@ -315,13 +315,13 @@ private:
     };
 
     for (const auto &fn : mod.functions()) {
-      collectType(fn->type(), collectType);
+      collect_type(fn->type(), collect_type);
       for (const auto &bb : fn->blocks()) {
         for (const auto &inst : bb->instructions()) {
-          collectType(inst->type(), collectType);
+          collect_type(inst->type(), collect_type);
           // Scan operands for pointer/aggregate types
-          visitOperands(*inst, [&](const Value &op) {
-            collectType(op.type(), collectType);
+          visit_operands(*inst, [&](const Value &op) {
+            collect_type(op.type(), collect_type);
           });
         }
       }
@@ -329,7 +329,7 @@ private:
   }
 
   // Operand printing
-  std::string valueRef(const Value &v) {
+  std::string value_ref(const Value &v) {
     if (auto ci = dynamic_cast<const ConstantInt *>(&v)) {
       auto ty = std::static_pointer_cast<const IntegerType>(ci->type());
       if (ty->bits() == 1)
@@ -337,13 +337,13 @@ private:
       return std::to_string(ci->value());
     }
     if (auto cs = dynamic_cast<const ConstantString *>(&v)) {
-      return "@" + constantName(*cs);
+      return "@" + constant_name(*cs);
     }
     if (auto ca = dynamic_cast<const ConstantArray *>(&v)) {
       if (ca->name().empty()) {
-        return encodeArrayData(*ca);
+        return encode_array_data(*ca);
       }
-      return "@" + constantName(*ca);
+      return "@" + constant_name(*ca);
     }
     if (dynamic_cast<const ConstantNull *>(&v)) {
       return "";
@@ -354,10 +354,10 @@ private:
     if (dynamic_cast<const UndefValue *>(&v)) {
       return "undef";
     }
-    return localName(&v);
+    return local_name(&v);
   }
 
-  std::string encodeStringData(const ConstantString &cs) const {
+  std::string encode_string_data(const ConstantString &cs) const {
     std::ostringstream oss;
     oss << "c\"";
     for (unsigned char ch : cs.data()) {
@@ -392,9 +392,9 @@ private:
     return oss.str();
   }
 
-  std::string encodeArrayData(const ConstantArray &ca) {
-    auto at = std::static_pointer_cast<const ArrayType>(ca.arrayType());
-    const auto &elemTy = at->elem();
+  std::string encode_array_data(const ConstantArray &ca) {
+    auto at = std::static_pointer_cast<const ArrayType>(ca.array_type());
+    const auto &elem_ty = at->elem();
     std::ostringstream oss;
     oss << "[";
     for (size_t i = 0; i < ca.elements().size(); ++i) {
@@ -402,23 +402,23 @@ private:
         oss << ", ";
       if (auto inner =
               dynamic_cast<const ConstantArray *>(ca.elements()[i].get())) {
-        oss << typeToString(elemTy) << " " << encodeArrayData(*inner);
+        oss << type_to_string(elem_ty) << " " << encode_array_data(*inner);
       } else {
-        oss << typeToString(elemTy) << " " << valueRef(*ca.elements()[i]);
+        oss << type_to_string(elem_ty) << " " << value_ref(*ca.elements()[i]);
       }
     }
     oss << "]";
     return oss.str();
   }
 
-  std::string typedValueRef(const Value &v) {
+  std::string typed_value_ref(const Value &v) {
     std::ostringstream oss;
-    oss << typeToString(v.type()) << " " << valueRef(v);
+    oss << type_to_string(v.type()) << " " << value_ref(v);
     return oss.str();
   }
 
   // Iterate instruction operands in a generic way for type collection
-  template <class F> void visitOperands(const Instruction &inst, F &&fn) {
+  template <class F> void visit_operands(const Instruction &inst, F &&fn) {
     struct OperandVisitor final : InstructionVisitor {
       F &fn;
 
@@ -430,8 +430,8 @@ private:
       }
 
       void visit(const AllocaInst &a) override {
-        if (a.arraySize()) {
-          fn(*a.arraySize());
+        if (a.array_size()) {
+          fn(*a.array_size());
         }
       }
       void visit(const LoadInst &ld) override { fn(*ld.pointer()); }
@@ -440,19 +440,19 @@ private:
         fn(*st.pointer());
       }
       void visit(const GetElementPtrInst &gep) override {
-        fn(*gep.basePointer());
+        fn(*gep.base_pointer());
         for (const auto &idx : gep.indices()) {
           fn(*idx);
         }
       }
 
       void visit(const BranchInst &br) override {
-        if (br.isConditional() && br.cond()) {
+        if (br.is_conditional() && br.cond()) {
           fn(*br.cond());
         }
       }
       void visit(const ReturnInst &r) override {
-        if (!r.isVoid() && r.value()) {
+        if (!r.is_void() && r.value()) {
           fn(*r.value());
         }
       }
@@ -479,32 +479,33 @@ private:
       }
       void visit(const SelectInst &sel) override {
         fn(*sel.cond());
-        fn(*sel.ifTrue());
-        fn(*sel.ifFalse());
+        fn(*sel.if_true());
+        fn(*sel.if_false());
       }
       void visit(const ZExtInst &zext) override { fn(*zext.source()); }
       void visit(const SExtInst &sext) override { fn(*sext.source()); }
       void visit(const TruncInst &trunc) override { fn(*trunc.source()); }
+      void visit(const MoveInst &move) override { fn(*move.source()); }
     } visitor{fn};
 
     inst.accept(visitor);
   }
 
   // Block/function emission
-  void emitBasicBlock(const BasicBlock &bb) {
-    out_ << localLabel(&bb) << ":\n";
+  void emit_basic_block(const BasicBlock &bb) {
+    out_ << local_label(&bb) << ":\n";
     for (const auto &inst : bb.instructions()) {
       out_ << "  ";
-      emitInstruction(*inst);
+      emit_instruction(*inst);
       out_ << "\n";
 
-      if (inst->isTerminator()) {
+      if (inst->is_terminator()) {
         break;
       }
     }
   }
 
-  void emitInstruction(const Instruction &inst) {
+  void emit_instruction(const Instruction &inst) {
     struct EmitVisitor final : InstructionVisitor {
       LLVMEmitter &self;
 
@@ -553,35 +554,35 @@ private:
           op = "xor";
           break;
         }
-        self.out_ << self.localName(&bi) << " = " << op << " "
-                  << self.typeToString(bi.type()) << " "
-                  << self.valueRef(*bi.lhs()) << ", "
-                  << self.valueRef(*bi.rhs());
+        self.out_ << self.local_name(&bi) << " = " << op << " "
+                  << self.type_to_string(bi.type()) << " "
+                  << self.value_ref(*bi.lhs()) << ", "
+                  << self.value_ref(*bi.rhs());
       }
 
       void visit(const BranchInst &br) override {
-        if (br.isConditional()) {
-          self.out_ << "br i1 " << self.valueRef(*br.cond()) << ", label %"
-                    << self.localLabel(br.dest()) << ", label %"
-                    << self.localLabel(br.altDest());
+        if (br.is_conditional()) {
+          self.out_ << "br i1 " << self.value_ref(*br.cond()) << ", label %"
+                    << self.local_label(br.dest()) << ", label %"
+                    << self.local_label(br.alt_dest());
         } else {
-          self.out_ << "br label %" << self.localLabel(br.dest());
+          self.out_ << "br label %" << self.local_label(br.dest());
         }
       }
 
       void visit(const ReturnInst &r) override {
-        if (r.isVoid()) {
+        if (r.is_void()) {
           self.out_ << "ret void";
         } else {
-          self.out_ << "ret " << self.typedValueRef(*r.value());
+          self.out_ << "ret " << self.typed_value_ref(*r.value());
         }
       }
 
       void visit(const AllocaInst &a) override {
-        self.out_ << self.localName(&a) << " = alloca "
-                  << self.typeToString(a.allocatedType());
-        if (a.arraySize()) {
-          self.out_ << ", " << self.typedValueRef(*a.arraySize());
+        self.out_ << self.local_name(&a) << " = alloca "
+                  << self.type_to_string(a.allocated_type());
+        if (a.array_size()) {
+          self.out_ << ", " << self.typed_value_ref(*a.array_size());
         }
         if (a.alignment()) {
           self.out_ << ", align " << a.alignment();
@@ -589,12 +590,9 @@ private:
       }
 
       void visit(const LoadInst &ld) override {
-        self.out_ << self.localName(&ld) << " = load ";
-        if (ld.isVolatile()) {
-          self.out_ << "volatile ";
-        }
-        self.out_ << self.typeToString(ld.type()) << ", ptr "
-                  << self.valueRef(*ld.pointer());
+        self.out_ << self.local_name(&ld) << " = load ";
+        self.out_ << self.type_to_string(ld.type()) << ", ptr "
+                  << self.value_ref(*ld.pointer());
         if (ld.alignment()) {
           self.out_ << ", align " << ld.alignment();
         }
@@ -602,71 +600,71 @@ private:
 
       void visit(const StoreInst &st) override {
         self.out_ << "store ";
-        if (st.isVolatile()) {
+        if (st.is_volatile()) {
           self.out_ << "volatile ";
         }
-        self.out_ << self.typedValueRef(*st.value()) << ", ptr "
-                  << self.valueRef(*st.pointer());
+        self.out_ << self.typed_value_ref(*st.value()) << ", ptr "
+                  << self.value_ref(*st.pointer());
         if (st.alignment()) {
           self.out_ << ", align " << st.alignment();
         }
       }
 
       void visit(const GetElementPtrInst &gep) override {
-        self.out_ << self.localName(&gep) << " = getelementptr ";
-        auto basePtrTy = std::static_pointer_cast<const PointerType>(
-            gep.basePointer()->type());
-        self.out_ << self.typeToString(basePtrTy->pointee()) << ", ptr "
-                  << self.valueRef(*gep.basePointer());
+        self.out_ << self.local_name(&gep) << " = getelementptr ";
+        auto base_ptr_ty = std::static_pointer_cast<const PointerType>(
+            gep.base_pointer()->type());
+        self.out_ << self.type_to_string(base_ptr_ty->pointee()) << ", ptr "
+                  << self.value_ref(*gep.base_pointer());
         for (const auto &idx : gep.indices()) {
-          self.out_ << ", " << self.typedValueRef(*idx);
+          self.out_ << ", " << self.typed_value_ref(*idx);
         }
       }
 
       void visit(const ICmpInst &ic) override {
-        self.out_ << self.localName(&ic) << " = icmp "
-                  << self.icmpPredToString(ic.pred()) << " "
-                  << self.typeToString(ic.lhs()->type()) << " "
-                  << self.valueRef(*ic.lhs()) << ", "
-                  << self.valueRef(*ic.rhs());
+        self.out_ << self.local_name(&ic) << " = icmp "
+                  << self.icmp_pred_to_string(ic.pred()) << " "
+                  << self.type_to_string(ic.lhs()->type()) << " "
+                  << self.value_ref(*ic.lhs()) << ", "
+                  << self.value_ref(*ic.rhs());
       }
 
       void visit(const CallInst &call) override {
-        const bool hasResult = call.type()->kind() != TypeKind::Void;
-        if (hasResult) {
-          self.out_ << self.localName(&call) << " = ";
+        const bool has_result = call.type()->kind() != TypeKind::Void;
+        if (has_result) {
+          self.out_ << self.local_name(&call) << " = ";
         }
-        self.out_ << "call " << self.typeToString(call.type()) << " "
-                  << self.calleeRef(*call.callee()) << "(";
+        self.out_ << "call " << self.type_to_string(call.type()) << " "
+                  << self.callee_ref(*call.callee()) << "(";
         for (size_t i = 0; i < call.args().size(); ++i) {
           if (i) {
             self.out_ << ", ";
           }
-          self.out_ << self.typedValueRef(*call.args()[i]);
+          self.out_ << self.typed_value_ref(*call.args()[i]);
         }
         self.out_ << ")";
       }
 
       void visit(const PhiInst &phi) override {
-        self.out_ << self.localName(&phi) << " = phi "
-                  << self.typeToString(phi.type()) << " ";
+        self.out_ << self.local_name(&phi) << " = phi "
+                  << self.type_to_string(phi.type()) << " ";
         for (size_t i = 0; i < phi.incomings().size(); ++i) {
           if (i) {
             self.out_ << ", ";
           }
           const auto &inc = phi.incomings()[i];
-          self.out_ << "[ " << self.valueRef(*inc.first) << ", %"
-                    << self.localLabel(inc.second) << " ]";
+          self.out_ << "[ " << self.value_ref(*inc.first) << ", %"
+                    << self.local_label(inc.second) << " ]";
         }
       }
 
       void visit(const SelectInst &sel) override {
-        self.out_ << self.localName(&sel) << " = select i1 "
-                  << self.valueRef(*sel.cond()) << ", "
-                  << self.typeToString(sel.type()) << " "
-                  << self.valueRef(*sel.ifTrue()) << ", "
-                  << self.typeToString(sel.type()) << " "
-                  << self.valueRef(*sel.ifFalse());
+        self.out_ << self.local_name(&sel) << " = select i1 "
+                  << self.value_ref(*sel.cond()) << ", "
+                  << self.type_to_string(sel.type()) << " "
+                  << self.value_ref(*sel.if_true()) << ", "
+                  << self.type_to_string(sel.type()) << " "
+                  << self.value_ref(*sel.if_false());
       }
 
       void visit(const UnreachableInst & /*u*/) override {
@@ -674,43 +672,48 @@ private:
       }
 
       void visit(const ZExtInst &zext) override {
-        self.out_ << self.localName(&zext) << " = zext "
-                  << self.typedValueRef(*zext.source()) << " to "
-                  << self.typeToString(zext.type());
+        self.out_ << self.local_name(&zext) << " = zext "
+                  << self.typed_value_ref(*zext.source()) << " to "
+                  << self.type_to_string(zext.type());
       }
 
       void visit(const SExtInst &sext) override {
-        self.out_ << self.localName(&sext) << " = sext "
-                  << self.typedValueRef(*sext.source()) << " to "
-                  << self.typeToString(sext.type());
+        self.out_ << self.local_name(&sext) << " = sext "
+                  << self.typed_value_ref(*sext.source()) << " to "
+                  << self.type_to_string(sext.type());
       }
 
       void visit(const TruncInst &trunc) override {
-        self.out_ << self.localName(&trunc) << " = trunc "
-                  << self.typedValueRef(*trunc.source()) << " to "
-                  << self.typeToString(trunc.type());
+        self.out_ << self.local_name(&trunc) << " = trunc "
+                  << self.typed_value_ref(*trunc.source()) << " to "
+                  << self.type_to_string(trunc.type());
+      }
+
+      void visit(const MoveInst &move) override {
+        self.out_ << "move " << self.typed_value_ref(*move.source()) << " "
+                  << self.local_name(move.destination().get());
       }
     } visitor{*this};
 
     inst.accept(visitor);
   }
 
-  std::string calleeRef(const Value &callee) {
+  std::string callee_ref(const Value &callee) {
     auto callee_typ =
         std::dynamic_pointer_cast<const FunctionType>(callee.type());
     if (!callee_typ || !callee_typ->function()) {
       throw std::invalid_argument("Callee must reference a function");
     }
-    const auto *fnPtr = callee_typ->function();
-    auto it = functionNames_.find(fnPtr);
-    if (it == functionNames_.end()) {
-      auto name = functionName(*fnPtr);
-      it = functionNames_.emplace(fnPtr, name).first;
+    const auto *fn_ptr = callee_typ->function();
+    auto it = function_names_.find(fn_ptr);
+    if (it == function_names_.end()) {
+      auto name = function_name(*fn_ptr);
+      it = function_names_.emplace(fn_ptr, name).first;
     }
     return "@" + it->second;
   }
 
-  const char *icmpPredToString(ICmpPred p) const {
+  const char *icmp_pred_to_string(ICmpPred p) const {
     switch (p) {
     case ICmpPred::EQ:
       return "eq";
@@ -738,9 +741,6 @@ private:
 };
 
 // Convenience free function
-inline void emitLLVM(const Module &mod, std::ostream &out = std::cout) {
-  LLVMEmitter emitter(out);
-  emitter.emitModule(mod);
-}
+void emit_llvm(const Module &mod, std::ostream &out = std::cout);
 
 } // namespace rc::ir

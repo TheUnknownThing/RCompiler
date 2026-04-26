@@ -8,7 +8,7 @@
 #include <variant>
 #include <vector>
 
-#include "ast/nodes/topLevel.hpp"
+#include "ast/nodes/top_level.hpp"
 #include "semantic/error/exceptions.hpp"
 #include "semantic/types.hpp"
 
@@ -145,9 +145,9 @@ public:
   }
 
   ScopeNode *add_child_scope(std::string name, const BaseNode *owner_node) {
-    childNodes.push_back(
+    child_nodes.push_back(
         std::make_unique<ScopeNode>(std::move(name), this, owner_node));
-    return childNodes.back().get();
+    return child_nodes.back().get();
   }
 
   std::vector<CollectedItem> items() const {
@@ -188,8 +188,8 @@ public:
 
   std::vector<ScopeNode *> children() const {
     std::vector<ScopeNode *> out;
-    out.reserve(childNodes.size());
-    for (const auto &c : childNodes) {
+    out.reserve(child_nodes.size());
+    for (const auto &c : child_nodes) {
       out.push_back(c.get());
     }
     return out;
@@ -198,7 +198,7 @@ public:
   const ScopeNode *find_child_scope_by_owner(const BaseNode *owner_node) const {
     if (!owner_node)
       return nullptr;
-    for (const auto &c : childNodes) {
+    for (const auto &c : child_nodes) {
       if (c && c->owner == owner_node)
         return c.get();
     }
@@ -207,7 +207,7 @@ public:
   ScopeNode *find_child_scope_by_owner(const BaseNode *owner_node) {
     if (!owner_node)
       return nullptr;
-    for (const auto &c : childNodes) {
+    for (const auto &c : child_nodes) {
       if (c && c->owner == owner_node)
         return c.get();
     }
@@ -264,62 +264,16 @@ public:
 private:
   std::map<std::string, CollectedItem> value_items_;
   std::map<std::string, CollectedItem> type_items_;
-  std::vector<std::unique_ptr<ScopeNode>> childNodes;
+  std::vector<std::unique_ptr<ScopeNode>> child_nodes;
   std::vector<std::unique_ptr<BaseItem>> owned_items_;
 };
 
-inline ScopeNode *enterScope(ScopeNode *&current, const std::string &name,
-                             const BaseNode *owner_node) {
-  if (!current)
-    throw SemanticException("null current scope");
-  current = current->add_child_scope(name, owner_node);
-  return current;
-}
+ScopeNode *enter_scope(ScopeNode *&current, const std::string &name,
+                             const BaseNode *owner_node);
 
-inline void exitScope(ScopeNode *&current) {
-  if (!current)
-    throw SemanticException("null current scope");
-  if (current->parent) {
-    current = current->parent;
-  } else {
-    // Root, do not exit
-  }
-}
+void exit_scope(ScopeNode *&current);
 
 // printer
-inline void print_scope_tree(const ScopeNode &scope, int indent = 0) {
-  auto indent_str = std::string(indent, ' ');
-  if (indent == 0) {
-    if (!scope.name.empty()) { // empty name = root
-      std::cout << "<root:" << scope.name << ">" << std::endl;
-    }
-  } else {
-    std::cout << indent_str << "scope " << scope.name << std::endl;
-  }
-  for (const auto &item : scope.items()) {
-    std::cout << indent_str << "  item " << item.name << " (";
-    switch (item.kind) {
-    case ItemKind::Function:
-      std::cout << "fn";
-      break;
-    case ItemKind::Constant:
-      std::cout << "const";
-      break;
-    case ItemKind::Struct:
-      std::cout << "struct";
-      break;
-    case ItemKind::Enum:
-      std::cout << "enum";
-      break;
-    case ItemKind::Trait:
-      std::cout << "trait";
-      break;
-    }
-    std::cout << ")" << std::endl;
-  }
-  for (const auto &child : scope.children()) {
-    print_scope_tree(*child, indent + 2);
-  }
-}
+void print_scope_tree(const ScopeNode &scope, int indent = 0);
 
 } // namespace rc
