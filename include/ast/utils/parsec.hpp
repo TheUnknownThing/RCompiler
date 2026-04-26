@@ -105,7 +105,7 @@ public:
         });
   }
 
-  template <typename U> Parser<T> thenL(const Parser<U> &other) const {
+  template <typename U> Parser<T> then_l(const Parser<U> &other) const {
     return Parser<T>([*this, other](const std::vector<rc::Token> &toks,
                                     size_t &pos) -> ParseResult<T> {
       size_t saved_pos = pos;
@@ -123,7 +123,7 @@ public:
     });
   }
 
-  template <typename U> Parser<U> thenR(const Parser<U> &other) const {
+  template <typename U> Parser<U> then_r(const Parser<U> &other) const {
     return Parser<U>([*this, other](const std::vector<rc::Token> &toks,
                                     size_t &pos) -> ParseResult<U> {
       size_t saved_pos = pos;

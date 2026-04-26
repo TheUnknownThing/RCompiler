@@ -30,7 +30,7 @@ public:
 
   TypeKind kind() const { return kind_; }
 
-  bool isVoid() const { return kind_ == TypeKind::Void; }
+  bool is_void() const { return kind_ == TypeKind::Void; }
 
 private:
   TypeKind kind_;
@@ -48,11 +48,11 @@ public:
 
 class IntegerType final : public Type {
 public:
-  IntegerType(unsigned bits, bool isSigned)
-      : Type(TypeKind::Integer), bits_(bits), signed_(isSigned) {}
+  IntegerType(unsigned bits, bool is_signed)
+      : Type(TypeKind::Integer), bits_(bits), signed_(is_signed) {}
 
   unsigned bits() const { return bits_; }
-  bool isSigned() const { return signed_; }
+  bool is_signed() const { return signed_; }
 
   static std::shared_ptr<IntegerType> i1() {
     return std::make_shared<IntegerType>(1, true);
@@ -105,7 +105,7 @@ public:
         name_(std::move(name)) {}
   const std::vector<TypePtr> &fields() const { return fields_; }
   const std::string &name() const { return name_; }
-  bool isEmpty() const { return fields_.empty(); }
+  bool is_empty() const { return fields_.empty(); }
 
 private:
   std::vector<TypePtr> fields_;
@@ -114,22 +114,22 @@ private:
 
 class FunctionType final : public Type {
 public:
-  FunctionType(TypePtr retTy, std::vector<TypePtr> paramTys,
-               bool isVarArg = false,
+  FunctionType(TypePtr ret_ty, std::vector<TypePtr> param_tys,
+               bool is_var_arg = false,
                Function *function = nullptr)
-      : Type(TypeKind::Function), ret_(std::move(retTy)),
-        params_(std::move(paramTys)), varArg_(isVarArg),
+      : Type(TypeKind::Function), ret_(std::move(ret_ty)),
+        params_(std::move(param_tys)), var_arg_(is_var_arg),
         function_(std::move(function)) {}
-  const TypePtr &returnType() const { return ret_; }
-  const std::vector<TypePtr> &paramTypes() const { return params_; }
-  bool isVarArg() const { return varArg_; }
+  const TypePtr &return_type() const { return ret_; }
+  const std::vector<TypePtr> &param_types() const { return params_; }
+  bool is_var_arg() const { return var_arg_; }
   Function *function() const { return function_; }
-  void setFunction(Function *fn) { function_ = fn; }
+  void set_function(Function *fn) { function_ = fn; }
 
 private:
   TypePtr ret_;
   std::vector<TypePtr> params_;
-  bool varArg_;
+  bool var_arg_;
   Function *function_;
 };
 
@@ -144,14 +144,14 @@ public:
 
   const TypePtr &type() const { return type_; }
   const std::string &name() const { return name_; }
-  void setName(std::string n) { name_ = std::move(n); }
-  void addUse(Instruction *ins) { use_list.push_back(ins); }
-  void removeUse(Instruction *ins) { use_list.remove(ins); }
-  std::list<Instruction *> &getUses() { return use_list; }
-  const std::list<Instruction *> &getUses() const { return use_list; }
+  void set_name(std::string n) { name_ = std::move(n); }
+  void add_use(Instruction *ins) { use_list.push_back(ins); }
+  void remove_use(Instruction *ins) { use_list.remove(ins); }
+  std::list<Instruction *> &get_uses() { return use_list; }
+  const std::list<Instruction *> &get_uses() const { return use_list; }
 
 protected:
-  void setType(TypePtr t) { type_ = std::move(t); }
+  void set_type(TypePtr t) { type_ = std::move(t); }
 
 private:
   TypePtr type_;
@@ -172,65 +172,65 @@ using ValueRemapMap = std::unordered_map<Value *, std::shared_ptr<Value>>;
 using BlockRemapMap =
   std::unordered_map<BasicBlock *, BasicBlock *>;
 
-std::shared_ptr<Value> remapValue(const std::shared_ptr<Value> &v,
-                                         const ValueRemapMap &valueMap);
+std::shared_ptr<Value> remap_value(const std::shared_ptr<Value> &v,
+                                         const ValueRemapMap &value_map);
 
-BasicBlock *remapBlock(BasicBlock *bb, const BlockRemapMap &blockMap);
+BasicBlock *remap_block(BasicBlock *bb, const BlockRemapMap &block_map);
 
 class Instruction : public Value {
 public:
   explicit Instruction(BasicBlock *parent, TypePtr ty, std::string name = {})
       : Value(std::move(ty), std::move(name)), parent_(parent) {}
 
-  void addOperands(std::vector<Value *> ops) {
+  void add_operands(std::vector<Value *> ops) {
     operands.insert(operands.end(), ops.begin(), ops.end());
     for (auto *op : ops) {
-      op->addUse(this);
+      op->add_use(this);
     }
   }
-  void addOperands(const std::vector<std::shared_ptr<Value>> &ops) {
+  void add_operands(const std::vector<std::shared_ptr<Value>> &ops) {
     for (const auto &op : ops) {
       operands.push_back(op.get());
-      op->addUse(this);
+      op->add_use(this);
     }
   }
-  void addOperand(Value *op) {
+  void add_operand(Value *op) {
     operands.push_back(op);
-    op->addUse(this);
+    op->add_use(this);
   }
-  void addOperand(const std::shared_ptr<Value> &op) {
+  void add_operand(const std::shared_ptr<Value> &op) {
     operands.push_back(op.get());
-    op->addUse(this);
+    op->add_use(this);
   }
 
-  std::vector<Value *> &getOperands() { return operands; }
-  const std::vector<Value *> &getOperands() const { return operands; }
+  std::vector<Value *> &get_operands() { return operands; }
+  const std::vector<Value *> &get_operands() const { return operands; }
 
   virtual void accept(InstructionVisitor &v) const = 0;
-  virtual bool isTerminator() const { return false; }
+  virtual bool is_terminator() const { return false; }
 
-  virtual void replaceOperand(Value *oldOp, Value *newOp) = 0;
+  virtual void replace_operand(Value *old_op, Value *new_op) = 0;
 
   virtual std::shared_ptr<Instruction>
-  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
-            const BlockRemapMap &blockMap) const = 0;
+  clone_inst(BasicBlock *new_parent, const ValueRemapMap &value_map,
+            const BlockRemapMap &block_map) const = 0;
 
-  virtual void dropAllReferences() {
+  virtual void drop_all_references() {
     for (auto *op : operands) {
       if (op) {
-        op->removeUse(this);
+        op->remove_use(this);
       }
     }
     operands.clear();
   }
 
   BasicBlock *parent() const { return parent_; }
-  void setParent(BasicBlock *p) { parent_ = p; }
+  void set_parent(BasicBlock *p) { parent_ = p; }
 
   Instruction *next() const { return next_; }
-  void setNext(Instruction *next) { next_ = next; }
+  void set_next(Instruction *next) { next_ = next; }
   Instruction *prev() const { return prev_; }
-  void setPrev(Instruction *prev) { prev_ = prev; }
+  void set_prev(Instruction *prev) { prev_ = prev; }
 
   using Value::Value;
   ~Instruction() override = default;
@@ -250,17 +250,17 @@ public:
 
   std::uint64_t value() const { return value_; }
 
-  static std::shared_ptr<ConstantInt> getI1(bool v) {
+  static std::shared_ptr<ConstantInt> get_i1(bool v) {
     return std::make_shared<ConstantInt>(IntegerType::i1(), v ? 1ULL : 0ULL);
   }
-  static std::shared_ptr<ConstantInt> getI32(std::uint32_t v,
-                                             bool isSigned = true) {
-    return std::make_shared<ConstantInt>(IntegerType::i32(isSigned), v);
+  static std::shared_ptr<ConstantInt> get_i32(std::uint32_t v,
+                                             bool is_signed = true) {
+    return std::make_shared<ConstantInt>(IntegerType::i32(is_signed), v);
   }
 
   bool equals(const Constant &other) const override {
-    if (auto otherInt = dynamic_cast<const ConstantInt *>(&other)) {
-      return value_ == otherInt->value();
+    if (auto other_int = dynamic_cast<const ConstantInt *>(&other)) {
+      return value_ == other_int->value();
     }
     return false;
   }
@@ -280,7 +280,7 @@ public:
 
 class ConstantNull final : public Constant {
 public:
-  explicit ConstantNull(TypePtr ptrTy) : Constant(std::move(ptrTy)) {}
+  explicit ConstantNull(TypePtr ptr_ty) : Constant(std::move(ptr_ty)) {}
 
   bool equals(const Constant &other) const override {
     return dynamic_cast<const ConstantNull *>(&other) != nullptr;
@@ -300,35 +300,35 @@ class ConstantString final : public Constant {
 public:
   explicit ConstantString(std::string data)
       : Constant(nullptr), data_(std::move(data)),
-        arrayType_(
+        array_type_(
             std::make_shared<ArrayType>(IntegerType::i8(false), data_.size())) {
-    setType(std::make_shared<PointerType>(IntegerType::i8(false)));
+    set_type(std::make_shared<PointerType>(IntegerType::i8(false)));
   }
 
   const std::string &data() const { return data_; }
-  TypePtr arrayType() const { return arrayType_; }
+  TypePtr array_type() const { return array_type_; }
 
   bool equals(const Constant &other) const override {
-    if (auto otherStr = dynamic_cast<const ConstantString *>(&other)) {
-      return data_ == otherStr->data();
+    if (auto other_str = dynamic_cast<const ConstantString *>(&other)) {
+      return data_ == other_str->data();
     }
     return false;
   }
 
 private:
   std::string data_;
-  TypePtr arrayType_;
+  TypePtr array_type_;
 };
 
 class ConstantPtr final : public Constant {
 public:
-  ConstantPtr(TypePtr ptrTy, std::shared_ptr<Constant> pointee)
-      : Constant(std::move(ptrTy)), pointee_(std::move(pointee)) {}
+  ConstantPtr(TypePtr ptr_ty, std::shared_ptr<Constant> pointee)
+      : Constant(std::move(ptr_ty)), pointee_(std::move(pointee)) {}
   const std::shared_ptr<Constant> &pointee() const { return pointee_; }
 
   bool equals(const Constant &other) const override {
-    if (auto otherPtr = dynamic_cast<const ConstantPtr *>(&other)) {
-      return pointee_->equals(*otherPtr->pointee());
+    if (auto other_ptr = dynamic_cast<const ConstantPtr *>(&other)) {
+      return pointee_->equals(*other_ptr->pointee());
     }
     return false;
   }
@@ -339,26 +339,26 @@ private:
 
 class ConstantArray final : public Constant {
 public:
-  ConstantArray(TypePtr elemTy, std::vector<std::shared_ptr<Constant>> elems)
+  ConstantArray(TypePtr elem_ty, std::vector<std::shared_ptr<Constant>> elems)
       : Constant(nullptr), elements_(std::move(elems)),
-        arrayType_(
-            std::make_shared<ArrayType>(std::move(elemTy), elements_.size())) {
-    setType(std::make_shared<PointerType>(arrayType_));
+        array_type_(
+            std::make_shared<ArrayType>(std::move(elem_ty), elements_.size())) {
+    set_type(std::make_shared<PointerType>(array_type_));
   }
 
   const std::vector<std::shared_ptr<Constant>> &elements() const {
     return elements_;
   }
-  TypePtr arrayType() const { return arrayType_; }
+  TypePtr array_type() const { return array_type_; }
 
   bool equals(const Constant &other) const override {
-    auto otherArr = dynamic_cast<const ConstantArray *>(&other);
-    if (!otherArr)
+    auto other_arr = dynamic_cast<const ConstantArray *>(&other);
+    if (!other_arr)
       return false;
-    if (elements_.size() != otherArr->elements_.size())
+    if (elements_.size() != other_arr->elements_.size())
       return false;
     for (size_t i = 0; i < elements_.size(); ++i) {
-      if (!elements_[i]->equals(*otherArr->elements_[i]))
+      if (!elements_[i]->equals(*other_arr->elements_[i]))
         return false;
     }
     return true;
@@ -366,7 +366,7 @@ public:
 
 private:
   std::vector<std::shared_ptr<Constant>> elements_;
-  TypePtr arrayType_;
+  TypePtr array_type_;
 };
 
 } // namespace rc::ir

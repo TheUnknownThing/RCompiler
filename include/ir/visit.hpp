@@ -16,10 +16,10 @@
 #include "ast/nodes/expr.hpp"
 #include "ast/nodes/pattern.hpp"
 #include "ast/nodes/stmt.hpp"
-#include "ast/nodes/topLevel.hpp"
+#include "ast/nodes/top_level.hpp"
 #include "ast/types.hpp"
 #include "lexer/lexer.hpp"
-#include "semantic/analyzer/constEvaluator.hpp"
+#include "semantic/analyzer/const_evaluator.hpp"
 #include "semantic/scope.hpp"
 #include "semantic/types.hpp"
 #include "utils/logger.hpp"
@@ -27,10 +27,10 @@
 #include "context.hpp"
 #include "error/exceptions.hpp"
 #include "instructions/binary.hpp"
-#include "instructions/controlFlow.hpp"
+#include "instructions/control_flow.hpp"
 #include "instructions/memory.hpp"
 #include "instructions/misc.hpp"
-#include "instructions/topLevel.hpp"
+#include "instructions/top_level.hpp"
 #include "instructions/type.hpp"
 
 namespace rc::ir {
@@ -125,24 +125,24 @@ private:
   };
   std::vector<AggregateInitTarget> aggregate_init_targets_;
 
-  ValuePtr popOperand();
-  void pushOperand(ValuePtr v);
-  ValuePtr loadPtrValue(ValuePtr v, const SemType &semTy);
-  ValuePtr createAlloca(const TypePtr &ty, const std::string &name = {},
-                        ValuePtr arraySize = nullptr, unsigned alignment = 0);
-  bool typeEquals(const TypePtr &a, const TypePtr &b) const;
-  ValuePtr lookupLocal(const std::string &name) const;
-  void bindLocal(const std::string &name, ValuePtr v);
-  void pushLocalScope();
-  void popLocalScope();
+  ValuePtr pop_operand();
+  void push_operand(ValuePtr v);
+  ValuePtr load_ptr_value(ValuePtr v, const SemType &sem_ty);
+  ValuePtr create_alloca(const TypePtr &ty, const std::string &name = {},
+                        ValuePtr array_size = nullptr, unsigned alignment = 0);
+  bool type_equals(const TypePtr &a, const TypePtr &b) const;
+  ValuePtr lookup_local(const std::string &name) const;
+  void bind_local(const std::string &name, ValuePtr v);
+  void push_local_scope();
+  void pop_local_scope();
 
-  bool isAssignment(TokenType tt) const;
-  bool isInteger(SemPrimitiveKind k) const;
+  bool is_assignment(TokenType tt) const;
+  bool is_integer(SemPrimitiveKind k) const;
 
-  std::optional<BinaryOpKind> tokenToOP(TokenType tt) const;
+  std::optional<BinaryOpKind> token_to_op(TokenType tt) const;
 
   // mangling helpers
-  std::string getScopeName(const ScopeNode *scope) const;
+  std::string get_scope_name(const ScopeNode *scope) const;
   std::string mangle_struct(const CollectedItem &item) const;
   std::string mangle_constant(
       const std::string &name, const ScopeNode *owner_scope,
@@ -166,7 +166,7 @@ private:
   std::vector<SemType> build_effective_params(
       const FunctionMetaData &meta,
       const std::optional<SemType> &self_type = std::nullopt) const;
-  TypePtr getParamType(const SemType &paramSemTy) const;
+  TypePtr get_param_type(const SemType &param_sem_ty) const;
   SemType compute_self_type(const FunctionDecl &decl,
                             const CollectedItem *owner) const;
 
@@ -177,25 +177,25 @@ private:
 
   FuncPtr memset_fn_;
   FuncPtr memcpy_fn_;
-  FuncPtr createMemsetFn();
-  FuncPtr createMemcpyFn();
+  FuncPtr create_memset_fn();
+  FuncPtr create_memcpy_fn();
   std::shared_ptr<ConstantString>
-  internStringLiteral(const std::string &data_with_null);
-  static char decodeCharLiteral(const std::string &literal);
-  static std::string decodeStringLiteral(const std::string &literal);
+  intern_string_literal(const std::string &data_with_null);
+  static char decode_char_literal(const std::string &literal);
+  static std::string decode_string_literal(const std::string &literal);
   struct TypeLayoutInfo {
     std::size_t size;
     std::size_t align;
   };
-  TypeLayoutInfo computeTypeLayout(const TypePtr &ty) const;
-  std::size_t computeTypeByteSize(const TypePtr &ty) const;
-  bool isZeroLiteral(const Expression *expr) const;
-  bool isAggregateType(const TypePtr &ty) const;
-  ValuePtr findAggregateInitTarget(const TypePtr &ty) const;
-  void pushAggregateInitTarget(const TypePtr &ty, ValuePtr ptr);
-  void popAggregateInitTarget();
+  TypeLayoutInfo compute_type_layout(const TypePtr &ty) const;
+  std::size_t compute_type_byte_size(const TypePtr &ty) const;
+  bool is_zero_literal(const Expression *expr) const;
+  bool is_aggregate_type(const TypePtr &ty) const;
+  ValuePtr find_aggregate_init_target(const TypePtr &ty) const;
+  void push_aggregate_init_target(const TypePtr &ty, ValuePtr ptr);
+  void pop_aggregate_init_target();
 
-  void emitMemcpy(ValuePtr dst, ValuePtr src, std::size_t byteSize);
+  void emit_memcpy(ValuePtr dst, ValuePtr src, std::size_t byte_size);
 };
 
 // Implementation
@@ -270,7 +270,7 @@ private:
 
 
 
-std::size_t alignTo(std::size_t value, std::size_t align);
+std::size_t align_to(std::size_t value, std::size_t align);
 
 
 

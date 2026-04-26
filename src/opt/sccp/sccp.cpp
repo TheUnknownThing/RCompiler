@@ -4,12 +4,12 @@ namespace rc::opt {
 
 void SCCPVisitor::run(ir::Module &module) {
   for (const auto &function : module.functions()) {
-    instructionWorklist_.clear();
+    instruction_worklist_.clear();
     edges_.clear();
-    latticeValues_.clear();
-    constantValues_.clear();
-    executableBlocks_.clear();
-    instructionsToRemove_.clear();
+    lattice_values_.clear();
+    constant_values_.clear();
+    executable_blocks_.clear();
+    instructions_to_remove_.clear();
 
     visit(*function);
   }
@@ -17,14 +17,14 @@ void SCCPVisitor::run(ir::Module &module) {
 void SCCPVisitor::visit(ir::Value &value) {
   if (auto function = dynamic_cast<ir::Function *>(&value)) {
     visit(*function);
-  } else if (auto basicBlock = dynamic_cast<ir::BasicBlock *>(&value)) {
-    visit(*basicBlock);
+  } else if (auto basic_block = dynamic_cast<ir::BasicBlock *>(&value)) {
+    visit(*basic_block);
   } else if (auto branch = dynamic_cast<ir::BranchInst *>(&value)) {
     visit(*branch);
   } else if (auto ret = dynamic_cast<ir::ReturnInst *>(&value)) {
     visit(*ret);
-  } else if (auto binOp = dynamic_cast<ir::BinaryOpInst *>(&value)) {
-    visit(*binOp);
+  } else if (auto bin_op = dynamic_cast<ir::BinaryOpInst *>(&value)) {
+    visit(*bin_op);
   } else if (auto load = dynamic_cast<ir::LoadInst *>(&value)) {
     visit(*load);
   } else if (auto store = dynamic_cast<ir::StoreInst *>(&value)) {
@@ -55,52 +55,52 @@ void SCCPVisitor::visit(ir::Function &function) {
     return;
   }
 
-  auto initBlock =
+  auto init_block =
       std::make_shared<ir::BasicBlock>("__sccp_init_block__", &function);
   edges_.push_back(
-      std::make_pair(initBlock.get(), function.blocks().front().get()));
+      std::make_pair(init_block.get(), function.blocks().front().get()));
 
   for (auto arg : function.args()) {
-    latticeValues_[arg.get()] = LatticeValueKind::OVERDEF;
+    lattice_values_[arg.get()] = LatticeValueKind::OVERDEF;
   }
 
-  while (!edges_.empty() || !instructionWorklist_.empty()) {
+  while (!edges_.empty() || !instruction_worklist_.empty()) {
     // pop controlFlowWorklist first
     while (!edges_.empty()) {
       auto edge = edges_.back();
       edges_.pop_back();
-      auto *toBB = edge.second;
-      if (executableBlocks_.count(toBB) == 0) {
-        executableBlocks_.insert(toBB);
-        for (const auto &inst : toBB->instructions()) {
+      auto *to_bb = edge.second;
+      if (executable_blocks_.count(to_bb) == 0) {
+        executable_blocks_.insert(to_bb);
+        for (const auto &inst : to_bb->instructions()) {
           if (!inst || dynamic_cast<ir::UnreachableInst *>(inst.get())) {
             break;
           }
-          instructionWorklist_.push_back(inst.get());
+          instruction_worklist_.push_back(inst.get());
         }
 
-        if (utils::detail::successors(*toBB).size() == 1) {
-          auto *succ = utils::detail::successors(*toBB).front();
-          edges_.push_back(std::make_pair(toBB, succ));
+        if (utils::detail::successors(*to_bb).size() == 1) {
+          auto *succ = utils::detail::successors(*to_bb).front();
+          edges_.push_back(std::make_pair(to_bb, succ));
         }
       }
 
       // process PHI nodes
-      for (const auto &inst : toBB->instructions()) {
+      for (const auto &inst : to_bb->instructions()) {
         if (!inst || dynamic_cast<ir::UnreachableInst *>(inst.get())) {
           break;
         }
         if (auto *phi = dynamic_cast<ir::PhiInst *>(inst.get())) {
-          instructionWorklist_.push_back(phi);
+          instruction_worklist_.push_back(phi);
         } else {
           break; // PHI nodes are always at the beginning
         }
       }
     }
 
-    while (!instructionWorklist_.empty()) {
-      auto *inst = instructionWorklist_.back();
-      instructionWorklist_.pop_back();
+    while (!instruction_worklist_.empty()) {
+      auto *inst = instruction_worklist_.back();
+      instruction_worklist_.pop_back();
       visit(*inst);
     }
   }
@@ -108,58 +108,58 @@ void SCCPVisitor::visit(ir::Function &function) {
   // cleanup
   for (auto bb : function.blocks()) {
     for (const auto &inst : bb->instructions()) {
-      if (getLatticeValue(inst.get()) == LatticeValueKind::CONSTANT) {
-        auto constVal = constantValues_[inst.get()];
-        utils::replaceAllUsesWith(*inst, constVal.get());
-        instructionsToRemove_.insert(inst.get());
+      if (get_lattice_value(inst.get()) == LatticeValueKind::CONSTANT) {
+        auto const_val = constant_values_[inst.get()];
+        utils::replace_all_uses_with(*inst, const_val.get());
+        instructions_to_remove_.insert(inst.get());
       }
     }
   }
 
-  removeDeadInstructions(function);
+  remove_dead_instructions(function);
 }
-void SCCPVisitor::visit(ir::BasicBlock &basicBlock) {
-  LOG_DEBUG("SCCP visiting basic block: " + basicBlock.name());
-  for (const auto &inst : basicBlock.instructions()) {
+void SCCPVisitor::visit(ir::BasicBlock &basic_block) {
+  LOG_DEBUG("SCCP visiting basic block: " + basic_block.name());
+  for (const auto &inst : basic_block.instructions()) {
     if (!inst || dynamic_cast<ir::UnreachableInst *>(inst.get())) {
       break;
     }
-    instructionWorklist_.push_back(inst.get());
+    instruction_worklist_.push_back(inst.get());
   }
 }
-void SCCPVisitor::visit(ir::BinaryOpInst &binaryOpInst) {
-  LOG_DEBUG("SCCP visiting binary op: " + binaryOpInst.name());
-  auto kind = evaluateKind(binaryOpInst.lhs().get(), binaryOpInst.rhs().get());
-  auto prev = getLatticeValue(&binaryOpInst);
+void SCCPVisitor::visit(ir::BinaryOpInst &binary_op_inst) {
+  LOG_DEBUG("SCCP visiting binary op: " + binary_op_inst.name());
+  auto kind = evaluate_kind(binary_op_inst.lhs().get(), binary_op_inst.rhs().get());
+  auto prev = get_lattice_value(&binary_op_inst);
   if (kind != prev) {
     if (kind == LatticeValueKind::CONSTANT) {
-      auto lhsConst = constantValues_[binaryOpInst.lhs().get()];
-      auto rhsConst = constantValues_[binaryOpInst.rhs().get()];
+      auto lhs_const = constant_values_[binary_op_inst.lhs().get()];
+      auto rhs_const = constant_values_[binary_op_inst.rhs().get()];
 
-      std::shared_ptr<ir::Constant> resultConst = nullptr;
-      if (auto lhsInt = std::dynamic_pointer_cast<ir::ConstantInt>(lhsConst)) {
-        auto lhsValue = lhsInt->value();
-        if (auto rhsInt =
-                std::dynamic_pointer_cast<ir::ConstantInt>(rhsConst)) {
-          auto rhsValue = rhsInt->value();
-          switch (binaryOpInst.op()) {
+      std::shared_ptr<ir::Constant> result_const = nullptr;
+      if (auto lhs_int = std::dynamic_pointer_cast<ir::ConstantInt>(lhs_const)) {
+        auto lhs_value = lhs_int->value();
+        if (auto rhs_int =
+                std::dynamic_pointer_cast<ir::ConstantInt>(rhs_const)) {
+          auto rhs_value = rhs_int->value();
+          switch (binary_op_inst.op()) {
           case ir::BinaryOpKind::ADD:
-            resultConst = context_->getIntConstant(
-                static_cast<std::int32_t>(lhsValue + rhsValue), false);
+            result_const = context_->get_int_constant(
+                static_cast<std::int32_t>(lhs_value + rhs_value), false);
             break;
           case ir::BinaryOpKind::SUB:
-            resultConst = context_->getIntConstant(
-                static_cast<std::int32_t>(lhsValue - rhsValue), false);
+            result_const = context_->get_int_constant(
+                static_cast<std::int32_t>(lhs_value - rhs_value), false);
             break;
           case ir::BinaryOpKind::MUL:
-            resultConst = context_->getIntConstant(
-                static_cast<std::int32_t>(lhsValue * rhsValue), false);
+            result_const = context_->get_int_constant(
+                static_cast<std::int32_t>(lhs_value * rhs_value), false);
             break;
           case ir::BinaryOpKind::SDIV:
           case ir::BinaryOpKind::UDIV:
-            if (rhsValue != 0) {
-              resultConst = context_->getIntConstant(
-                  static_cast<std::int32_t>(lhsValue / rhsValue), false);
+            if (rhs_value != 0) {
+              result_const = context_->get_int_constant(
+                  static_cast<std::int32_t>(lhs_value / rhs_value), false);
             } else {
               kind = LatticeValueKind::OVERDEF;
             }
@@ -176,46 +176,46 @@ void SCCPVisitor::visit(ir::BinaryOpInst &binaryOpInst) {
       }
 
       if (kind == LatticeValueKind::CONSTANT) {
-        constantValues_[&binaryOpInst] = resultConst;
+        constant_values_[&binary_op_inst] = result_const;
       }
     }
 
-    latticeValues_[&binaryOpInst] = kind;
+    lattice_values_[&binary_op_inst] = kind;
 
-    for (auto *user : binaryOpInst.getUses()) {
+    for (auto *user : binary_op_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instructionWorklist_.push_back(inst);
+        instruction_worklist_.push_back(inst);
       }
     }
   }
 }
-void SCCPVisitor::visit(ir::BranchInst &branchInst) {
+void SCCPVisitor::visit(ir::BranchInst &branch_inst) {
   LOG_DEBUG("SCCP visiting branch instruction");
-  if (branchInst.isConditional()) {
-    auto condKind = getLatticeValue(branchInst.cond().get());
-    if (condKind == LatticeValueKind::CONSTANT) {
-      auto condConst = constantValues_[branchInst.cond().get()];
-      auto constBool = std::dynamic_pointer_cast<ir::ConstantInt>(condConst);
-      if (constBool && constBool->value() != 0) {
-        auto *targetBB = branchInst.dest();
-        edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
+  if (branch_inst.is_conditional()) {
+    auto cond_kind = get_lattice_value(branch_inst.cond().get());
+    if (cond_kind == LatticeValueKind::CONSTANT) {
+      auto cond_const = constant_values_[branch_inst.cond().get()];
+      auto const_bool = std::dynamic_pointer_cast<ir::ConstantInt>(cond_const);
+      if (const_bool && const_bool->value() != 0) {
+        auto *target_bb = branch_inst.dest();
+        edges_.push_back(std::make_pair(branch_inst.parent(), target_bb));
       } else {
-        auto *targetBB = branchInst.altDest();
-        edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
+        auto *target_bb = branch_inst.alt_dest();
+        edges_.push_back(std::make_pair(branch_inst.parent(), target_bb));
       }
-    } else if (condKind == LatticeValueKind::OVERDEF) {
-      auto *targetBB = branchInst.dest();
-      edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
+    } else if (cond_kind == LatticeValueKind::OVERDEF) {
+      auto *target_bb = branch_inst.dest();
+      edges_.push_back(std::make_pair(branch_inst.parent(), target_bb));
 
-      auto *altBB = branchInst.altDest();
-      edges_.push_back(std::make_pair(branchInst.parent(), altBB));
+      auto *alt_bb = branch_inst.alt_dest();
+      edges_.push_back(std::make_pair(branch_inst.parent(), alt_bb));
     } else {
       // undef cond, do nothing
       return;
     }
   } else {
-    auto *targetBB = branchInst.dest();
-    edges_.push_back(std::make_pair(branchInst.parent(), targetBB));
+    auto *target_bb = branch_inst.dest();
+    edges_.push_back(std::make_pair(branch_inst.parent(), target_bb));
   }
 }
 void SCCPVisitor::visit(ir::UnreachableInst &) {
@@ -226,41 +226,41 @@ void SCCPVisitor::visit(ir::ReturnInst &) {
   LOG_DEBUG("SCCP visiting return instruction");
   // no-op
 }
-void SCCPVisitor::visit(ir::AllocaInst &allocaInst) {
+void SCCPVisitor::visit(ir::AllocaInst &alloca_inst) {
   LOG_DEBUG("SCCP visiting alloca instruction");
   // overdef
-  auto prev = getLatticeValue(&allocaInst);
+  auto prev = get_lattice_value(&alloca_inst);
   if (prev != LatticeValueKind::OVERDEF) {
-    latticeValues_[&allocaInst] = LatticeValueKind::OVERDEF;
+    lattice_values_[&alloca_inst] = LatticeValueKind::OVERDEF;
 
-    for (auto *user : allocaInst.getUses()) {
+    for (auto *user : alloca_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instructionWorklist_.push_back(inst);
+        instruction_worklist_.push_back(inst);
       }
     }
   }
 }
-void SCCPVisitor::visit(ir::LoadInst &loadInst) {
+void SCCPVisitor::visit(ir::LoadInst &load_inst) {
   LOG_DEBUG("SCCP visiting load instruction");
-  auto prev = getLatticeValue(&loadInst);
-  if (auto ptr = dynamic_cast<ir::ConstantPtr *>(loadInst.pointer().get())) {
-    latticeValues_[&loadInst] = LatticeValueKind::CONSTANT;
-    constantValues_[&loadInst] = ptr->pointee();
+  auto prev = get_lattice_value(&load_inst);
+  if (auto ptr = dynamic_cast<ir::ConstantPtr *>(load_inst.pointer().get())) {
+    lattice_values_[&load_inst] = LatticeValueKind::CONSTANT;
+    constant_values_[&load_inst] = ptr->pointee();
     if (prev != LatticeValueKind::CONSTANT) {
-      for (auto *user : loadInst.getUses()) {
+      for (auto *user : load_inst.get_uses()) {
         if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-          instructionWorklist_.push_back(inst);
+          instruction_worklist_.push_back(inst);
         }
       }
     }
   } else {
     // overdef
     if (prev != LatticeValueKind::OVERDEF) {
-      latticeValues_[&loadInst] = LatticeValueKind::OVERDEF;
+      lattice_values_[&load_inst] = LatticeValueKind::OVERDEF;
 
-      for (auto *user : loadInst.getUses()) {
+      for (auto *user : load_inst.get_uses()) {
         if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-          instructionWorklist_.push_back(inst);
+          instruction_worklist_.push_back(inst);
         }
       }
     }
@@ -270,21 +270,21 @@ void SCCPVisitor::visit(ir::StoreInst &) {
   LOG_DEBUG("SCCP visiting store instruction");
   // no-op
 }
-void SCCPVisitor::visit(ir::GetElementPtrInst &getElementPtrInst) {
+void SCCPVisitor::visit(ir::GetElementPtrInst &get_element_ptr_inst) {
   LOG_DEBUG("SCCP visiting getelementptr instruction");
-  auto prev = getLatticeValue(&getElementPtrInst);
+  auto prev = get_lattice_value(&get_element_ptr_inst);
   if (auto arr = dynamic_cast<ir::ConstantArray *>(
-          getElementPtrInst.basePointer().get())) {
+          get_element_ptr_inst.base_pointer().get())) {
     LOG_DEBUG("GEP base is constant array");
-    for (const auto &idx : getElementPtrInst.indices()) {
+    for (const auto &idx : get_element_ptr_inst.indices()) {
       if (!dynamic_cast<ir::ConstantInt *>(idx.get())) {
         // overdef
         if (prev != LatticeValueKind::OVERDEF) {
-          latticeValues_[&getElementPtrInst] = LatticeValueKind::OVERDEF;
+          lattice_values_[&get_element_ptr_inst] = LatticeValueKind::OVERDEF;
 
-          for (auto *user : getElementPtrInst.getUses()) {
+          for (auto *user : get_element_ptr_inst.get_uses()) {
             if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-              instructionWorklist_.push_back(inst);
+              instruction_worklist_.push_back(inst);
             }
           }
         }
@@ -292,26 +292,26 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &getElementPtrInst) {
       }
     }
     // could be constant folded
-    auto currentUnfold = arr;
-    for (size_t i = 1; i < getElementPtrInst.indices().size(); ++i) {
+    auto current_unfold = arr;
+    for (size_t i = 1; i < get_element_ptr_inst.indices().size(); ++i) {
       // all the middle indices produce constArray
-      auto idxConst = std::dynamic_pointer_cast<ir::ConstantInt>(
-          getElementPtrInst.indices()[i]);
-      auto idxValue = idxConst->value();
-      if (auto innerArr = dynamic_cast<ir::ConstantArray *>(
-              currentUnfold->elements()[idxValue].get())) {
-        currentUnfold = innerArr;
-      } else if (auto constElem = dynamic_cast<ir::Constant *>(
-                     currentUnfold->elements()[idxValue].get())) {
-        latticeValues_[&getElementPtrInst] = LatticeValueKind::CONSTANT;
-        constantValues_[&getElementPtrInst] = context_->getPtrToConstElement(
+      auto idx_const = std::dynamic_pointer_cast<ir::ConstantInt>(
+          get_element_ptr_inst.indices()[i]);
+      auto idx_value = idx_const->value();
+      if (auto inner_arr = dynamic_cast<ir::ConstantArray *>(
+              current_unfold->elements()[idx_value].get())) {
+        current_unfold = inner_arr;
+      } else if (auto const_elem = dynamic_cast<ir::Constant *>(
+                     current_unfold->elements()[idx_value].get())) {
+        lattice_values_[&get_element_ptr_inst] = LatticeValueKind::CONSTANT;
+        constant_values_[&get_element_ptr_inst] = context_->get_ptr_to_const_element(
             std::dynamic_pointer_cast<ir::Constant>(
-                constElem->shared_from_this()));
+                const_elem->shared_from_this()));
 
         if (prev != LatticeValueKind::CONSTANT) {
-          for (auto *user : getElementPtrInst.getUses()) {
+          for (auto *user : get_element_ptr_inst.get_uses()) {
             if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-              instructionWorklist_.push_back(inst);
+              instruction_worklist_.push_back(inst);
             }
           }
         }
@@ -319,12 +319,12 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &getElementPtrInst) {
       } else {
         // overdef
         if (prev != LatticeValueKind::OVERDEF) {
-          latticeValues_[&getElementPtrInst] = LatticeValueKind::OVERDEF;
+          lattice_values_[&get_element_ptr_inst] = LatticeValueKind::OVERDEF;
 
           if (prev != LatticeValueKind::OVERDEF) {
-            for (auto *user : getElementPtrInst.getUses()) {
+            for (auto *user : get_element_ptr_inst.get_uses()) {
               if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-                instructionWorklist_.push_back(inst);
+                instruction_worklist_.push_back(inst);
               }
             }
           }
@@ -333,39 +333,39 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &getElementPtrInst) {
       }
     }
   } else if (auto ptr = dynamic_cast<ir::ConstantPtr *>(
-                 getElementPtrInst.basePointer().get())) {
+                 get_element_ptr_inst.base_pointer().get())) {
     LOG_DEBUG("GEP base is constant pointer");
     // could be constant folded
-    auto pointeeConst = ptr->pointee();
-    for (size_t i = 0; i < getElementPtrInst.indices().size(); ++i) {
-      auto idxConst = std::dynamic_pointer_cast<ir::ConstantInt>(
-          getElementPtrInst.indices()[i]);
-      auto idxValue = idxConst->value();
-      if (auto arr = dynamic_cast<ir::ConstantArray *>(pointeeConst.get())) {
-        pointeeConst = arr->elements()[idxValue];
+    auto pointee_const = ptr->pointee();
+    for (size_t i = 0; i < get_element_ptr_inst.indices().size(); ++i) {
+      auto idx_const = std::dynamic_pointer_cast<ir::ConstantInt>(
+          get_element_ptr_inst.indices()[i]);
+      auto idx_value = idx_const->value();
+      if (auto arr = dynamic_cast<ir::ConstantArray *>(pointee_const.get())) {
+        pointee_const = arr->elements()[idx_value];
       } else {
         // overdef
         if (prev != LatticeValueKind::OVERDEF) {
-          latticeValues_[&getElementPtrInst] = LatticeValueKind::OVERDEF;
+          lattice_values_[&get_element_ptr_inst] = LatticeValueKind::OVERDEF;
 
-          for (auto *user : getElementPtrInst.getUses()) {
+          for (auto *user : get_element_ptr_inst.get_uses()) {
             if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-              instructionWorklist_.push_back(inst);
+              instruction_worklist_.push_back(inst);
             }
           }
         }
         return;
       }
     }
-    latticeValues_[&getElementPtrInst] = LatticeValueKind::CONSTANT;
-    constantValues_[&getElementPtrInst] =
-        context_->getPtrToConstElement(std::dynamic_pointer_cast<ir::Constant>(
-            pointeeConst->shared_from_this()));
+    lattice_values_[&get_element_ptr_inst] = LatticeValueKind::CONSTANT;
+    constant_values_[&get_element_ptr_inst] =
+        context_->get_ptr_to_const_element(std::dynamic_pointer_cast<ir::Constant>(
+            pointee_const->shared_from_this()));
 
     if (prev != LatticeValueKind::CONSTANT) {
-      for (auto *user : getElementPtrInst.getUses()) {
+      for (auto *user : get_element_ptr_inst.get_uses()) {
         if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-          instructionWorklist_.push_back(inst);
+          instruction_worklist_.push_back(inst);
         }
       }
     }
@@ -373,72 +373,72 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &getElementPtrInst) {
   } else {
     // overdef
     if (prev != LatticeValueKind::OVERDEF) {
-      latticeValues_[&getElementPtrInst] = LatticeValueKind::OVERDEF;
+      lattice_values_[&get_element_ptr_inst] = LatticeValueKind::OVERDEF;
 
-      for (auto *user : getElementPtrInst.getUses()) {
+      for (auto *user : get_element_ptr_inst.get_uses()) {
         if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-          instructionWorklist_.push_back(inst);
+          instruction_worklist_.push_back(inst);
         }
       }
     }
   }
 }
-void SCCPVisitor::visit(ir::ICmpInst &icmpInst) {
+void SCCPVisitor::visit(ir::ICmpInst &icmp_inst) {
   LOG_DEBUG("SCCP visiting icmp instruction");
-  auto kind = evaluateKind(icmpInst.lhs().get(), icmpInst.rhs().get());
-  auto prev = getLatticeValue(&icmpInst);
+  auto kind = evaluate_kind(icmp_inst.lhs().get(), icmp_inst.rhs().get());
+  auto prev = get_lattice_value(&icmp_inst);
   if (kind != prev) {
     if (kind == LatticeValueKind::CONSTANT) {
-      auto lhsConst = constantValues_[icmpInst.lhs().get()];
-      auto rhsConst = constantValues_[icmpInst.rhs().get()];
+      auto lhs_const = constant_values_[icmp_inst.lhs().get()];
+      auto rhs_const = constant_values_[icmp_inst.rhs().get()];
 
-      std::shared_ptr<ir::Constant> resultConst = nullptr;
-      if (auto lhsInt = std::dynamic_pointer_cast<ir::ConstantInt>(lhsConst)) {
-        auto lhsValue = lhsInt->value();
-        if (auto rhsInt =
-                std::dynamic_pointer_cast<ir::ConstantInt>(rhsConst)) {
-          auto rhsValue = rhsInt->value();
-          bool cmpResult = false;
-          switch (icmpInst.pred()) {
+      std::shared_ptr<ir::Constant> result_const = nullptr;
+      if (auto lhs_int = std::dynamic_pointer_cast<ir::ConstantInt>(lhs_const)) {
+        auto lhs_value = lhs_int->value();
+        if (auto rhs_int =
+                std::dynamic_pointer_cast<ir::ConstantInt>(rhs_const)) {
+          auto rhs_value = rhs_int->value();
+          bool cmp_result = false;
+          switch (icmp_inst.pred()) {
           case ir::ICmpPred::EQ:
-            cmpResult = (lhsValue == rhsValue);
+            cmp_result = (lhs_value == rhs_value);
             break;
           case ir::ICmpPred::NE:
-            cmpResult = (lhsValue != rhsValue);
+            cmp_result = (lhs_value != rhs_value);
             break;
           case ir::ICmpPred::SLT:
-            cmpResult = (static_cast<std::int32_t>(lhsValue) <
-                         static_cast<std::int32_t>(rhsValue));
+            cmp_result = (static_cast<std::int32_t>(lhs_value) <
+                         static_cast<std::int32_t>(rhs_value));
             break;
           case ir::ICmpPred::SGT:
-            cmpResult = (static_cast<std::int32_t>(lhsValue) >
-                         static_cast<std::int32_t>(rhsValue));
+            cmp_result = (static_cast<std::int32_t>(lhs_value) >
+                         static_cast<std::int32_t>(rhs_value));
             break;
           case ir::ICmpPred::SLE:
-            cmpResult = (static_cast<std::int32_t>(lhsValue) <=
-                         static_cast<std::int32_t>(rhsValue));
+            cmp_result = (static_cast<std::int32_t>(lhs_value) <=
+                         static_cast<std::int32_t>(rhs_value));
             break;
           case ir::ICmpPred::SGE:
-            cmpResult = (static_cast<std::int32_t>(lhsValue) >=
-                         static_cast<std::int32_t>(rhsValue));
+            cmp_result = (static_cast<std::int32_t>(lhs_value) >=
+                         static_cast<std::int32_t>(rhs_value));
             break;
           case ir::ICmpPred::ULT:
-            cmpResult = (lhsValue < rhsValue);
+            cmp_result = (lhs_value < rhs_value);
             break;
           case ir::ICmpPred::UGT:
-            cmpResult = (lhsValue > rhsValue);
+            cmp_result = (lhs_value > rhs_value);
             break;
           case ir::ICmpPred::ULE:
-            cmpResult = (lhsValue <= rhsValue);
+            cmp_result = (lhs_value <= rhs_value);
             break;
           case ir::ICmpPred::UGE:
-            cmpResult = (lhsValue >= rhsValue);
+            cmp_result = (lhs_value >= rhs_value);
             break;
           default:
             kind = LatticeValueKind::OVERDEF;
             break;
           }
-          resultConst = context_->getIntConstant(cmpResult ? 1 : 0, false);
+          result_const = context_->get_int_constant(cmp_result ? 1 : 0, false);
         } else {
           kind = LatticeValueKind::OVERDEF;
         }
@@ -447,205 +447,205 @@ void SCCPVisitor::visit(ir::ICmpInst &icmpInst) {
       }
 
       if (kind == LatticeValueKind::CONSTANT) {
-        constantValues_[&icmpInst] = resultConst;
+        constant_values_[&icmp_inst] = result_const;
       }
     }
-    latticeValues_[&icmpInst] = kind;
+    lattice_values_[&icmp_inst] = kind;
 
-    for (auto *user : icmpInst.getUses()) {
+    for (auto *user : icmp_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instructionWorklist_.push_back(inst);
+        instruction_worklist_.push_back(inst);
       }
     }
   }
 }
-void SCCPVisitor::visit(ir::SExtInst &sextInst) {
+void SCCPVisitor::visit(ir::SExtInst &sext_inst) {
   LOG_DEBUG("SCCP visiting sext instruction");
-  auto kind = getLatticeValue(sextInst.source().get());
-  auto prev = getLatticeValue(&sextInst);
+  auto kind = get_lattice_value(sext_inst.source().get());
+  auto prev = get_lattice_value(&sext_inst);
   if (kind != prev) {
     if (kind == LatticeValueKind::CONSTANT) {
-      auto srcConst = constantValues_[sextInst.source().get()];
-      if (auto srcInt = std::dynamic_pointer_cast<ir::ConstantInt>(srcConst)) {
+      auto src_const = constant_values_[sext_inst.source().get()];
+      if (auto src_int = std::dynamic_pointer_cast<ir::ConstantInt>(src_const)) {
         LOG_DEBUG("SCCP folding sext constant");
-        auto srcValue = srcInt->value();
-        std::int32_t signedValue = static_cast<std::int32_t>(srcValue);
-        std::int32_t extendedValue = signedValue;
-        constantValues_[&sextInst] = context_->getIntConstant(
-            static_cast<std::uint32_t>(extendedValue), false);
+        auto src_value = src_int->value();
+        std::int32_t signed_value = static_cast<std::int32_t>(src_value);
+        std::int32_t extended_value = signed_value;
+        constant_values_[&sext_inst] = context_->get_int_constant(
+            static_cast<std::uint32_t>(extended_value), false);
       } else {
         kind = LatticeValueKind::OVERDEF;
       }
     }
 
-    latticeValues_[&sextInst] = kind;
+    lattice_values_[&sext_inst] = kind;
 
-    for (auto *user : sextInst.getUses()) {
+    for (auto *user : sext_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instructionWorklist_.push_back(inst);
+        instruction_worklist_.push_back(inst);
       }
     }
   }
 }
-void SCCPVisitor::visit(ir::ZExtInst &zextInst) {
+void SCCPVisitor::visit(ir::ZExtInst &zext_inst) {
   LOG_DEBUG("SCCP visiting zext instruction");
-  auto kind = getLatticeValue(zextInst.source().get());
-  auto prev = getLatticeValue(&zextInst);
+  auto kind = get_lattice_value(zext_inst.source().get());
+  auto prev = get_lattice_value(&zext_inst);
   if (kind != prev) {
     if (kind == LatticeValueKind::CONSTANT) {
-      auto srcConst = constantValues_[zextInst.source().get()];
-      if (auto srcInt = std::dynamic_pointer_cast<ir::ConstantInt>(srcConst)) {
-        auto srcValue = srcInt->value();
+      auto src_const = constant_values_[zext_inst.source().get()];
+      if (auto src_int = std::dynamic_pointer_cast<ir::ConstantInt>(src_const)) {
+        auto src_value = src_int->value();
         LOG_DEBUG("SCCP folding zext constant");
-        constantValues_[&zextInst] = context_->getIntConstant(srcValue, false);
+        constant_values_[&zext_inst] = context_->get_int_constant(src_value, false);
       } else {
         kind = LatticeValueKind::OVERDEF;
       }
     }
 
-    latticeValues_[&zextInst] = kind;
+    lattice_values_[&zext_inst] = kind;
 
-    for (auto *user : zextInst.getUses()) {
+    for (auto *user : zext_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instructionWorklist_.push_back(inst);
+        instruction_worklist_.push_back(inst);
       }
     }
   }
 }
-void SCCPVisitor::visit(ir::TruncInst &truncInst) {
+void SCCPVisitor::visit(ir::TruncInst &trunc_inst) {
   LOG_DEBUG("SCCP visiting trunc instruction");
-  auto kind = getLatticeValue(truncInst.source().get());
-  auto prev = getLatticeValue(&truncInst);
+  auto kind = get_lattice_value(trunc_inst.source().get());
+  auto prev = get_lattice_value(&trunc_inst);
   if (kind != prev) {
     if (kind == LatticeValueKind::CONSTANT) {
-      auto srcConst = constantValues_[truncInst.source().get()];
-      if (auto srcInt = std::dynamic_pointer_cast<ir::ConstantInt>(srcConst)) {
+      auto src_const = constant_values_[trunc_inst.source().get()];
+      if (auto src_int = std::dynamic_pointer_cast<ir::ConstantInt>(src_const)) {
         LOG_DEBUG("SCCP folding trunc constant");
-        auto srcValue = srcInt->value();
-        std::uint32_t truncatedValue =
-            srcValue & ((1u << truncInst.destBits()) - 1);
-        constantValues_[&truncInst] =
-            context_->getIntConstant(static_cast<int>(truncatedValue), false);
+        auto src_value = src_int->value();
+        std::uint32_t truncated_value =
+            src_value & ((1u << trunc_inst.dest_bits()) - 1);
+        constant_values_[&trunc_inst] =
+            context_->get_int_constant(static_cast<int>(truncated_value), false);
       } else {
         kind = LatticeValueKind::OVERDEF;
       }
     }
-    latticeValues_[&truncInst] = kind;
+    lattice_values_[&trunc_inst] = kind;
 
-    for (auto *user : truncInst.getUses()) {
+    for (auto *user : trunc_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instructionWorklist_.push_back(inst);
+        instruction_worklist_.push_back(inst);
       }
     }
   }
 }
-void SCCPVisitor::visit(ir::CallInst &callInst) {
+void SCCPVisitor::visit(ir::CallInst &call_inst) {
   LOG_DEBUG("SCCP visiting call instruction");
   // overdef
-  auto prev = getLatticeValue(&callInst);
+  auto prev = get_lattice_value(&call_inst);
   if (prev != LatticeValueKind::OVERDEF) {
-    latticeValues_[&callInst] = LatticeValueKind::OVERDEF;
+    lattice_values_[&call_inst] = LatticeValueKind::OVERDEF;
 
-    for (auto *user : callInst.getUses()) {
+    for (auto *user : call_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instructionWorklist_.push_back(inst);
+        instruction_worklist_.push_back(inst);
       }
     }
   }
 }
-void SCCPVisitor::visit(ir::PhiInst &phiInst) {
+void SCCPVisitor::visit(ir::PhiInst &phi_inst) {
   LOG_DEBUG("SCCP visiting phi instruction");
 
-  auto prev = getLatticeValue(&phiInst);
-  LatticeValueKind resultKind = LatticeValueKind::UNDEF;
-  std::shared_ptr<ir::Constant> constValue = nullptr;
-  ir::Value *mergedValue = nullptr;
+  auto prev = get_lattice_value(&phi_inst);
+  LatticeValueKind result_kind = LatticeValueKind::UNDEF;
+  std::shared_ptr<ir::Constant> const_value = nullptr;
+  ir::Value *merged_value = nullptr;
 
-  auto incoming = phiInst.incomings();
+  auto incoming = phi_inst.incomings();
   for (const auto &[value, bb] : incoming) {
-    if (executableBlocks_.count(bb) == 0) {
+    if (executable_blocks_.count(bb) == 0) {
       continue;
     }
-    auto kind = getLatticeValue(value.get());
-    auto [mergedKind, mergedConst] =
-        mergePHIValues(resultKind, mergedValue, kind, value.get());
+    auto kind = get_lattice_value(value.get());
+    auto [merged_kind, merged_const] =
+        merge_phi_values(result_kind, merged_value, kind, value.get());
 
-    if (mergedKind == LatticeValueKind::OVERDEF) {
-      resultKind = LatticeValueKind::OVERDEF;
-      constValue = nullptr;
+    if (merged_kind == LatticeValueKind::OVERDEF) {
+      result_kind = LatticeValueKind::OVERDEF;
+      const_value = nullptr;
       break;
     }
 
-    resultKind = mergedKind;
-    if (resultKind == LatticeValueKind::CONSTANT) {
-      constValue = mergedConst;
-      if (!mergedValue) {
-        mergedValue = value.get();
+    result_kind = merged_kind;
+    if (result_kind == LatticeValueKind::CONSTANT) {
+      const_value = merged_const;
+      if (!merged_value) {
+        merged_value = value.get();
       }
     } else {
-      constValue = nullptr;
-      mergedValue = nullptr;
+      const_value = nullptr;
+      merged_value = nullptr;
     }
   }
 
-  latticeValues_[&phiInst] = resultKind;
-  if (resultKind == LatticeValueKind::CONSTANT) {
-    constantValues_[&phiInst] = constValue;
+  lattice_values_[&phi_inst] = result_kind;
+  if (result_kind == LatticeValueKind::CONSTANT) {
+    constant_values_[&phi_inst] = const_value;
   }
 
-  if (latticeValues_[&phiInst] != prev) {
+  if (lattice_values_[&phi_inst] != prev) {
 
-    for (auto *user : phiInst.getUses()) {
+    for (auto *user : phi_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instructionWorklist_.push_back(inst);
+        instruction_worklist_.push_back(inst);
       }
     }
   }
 }
-void SCCPVisitor::visit(ir::SelectInst &selectInst) {
+void SCCPVisitor::visit(ir::SelectInst &select_inst) {
   LOG_DEBUG("SCCP visiting select instruction");
 
-  auto prev = getLatticeValue(&selectInst);
-  auto cond = getLatticeValue(selectInst.cond().get());
+  auto prev = get_lattice_value(&select_inst);
+  auto cond = get_lattice_value(select_inst.cond().get());
   if (cond == LatticeValueKind::CONSTANT) {
-    auto condConst = constantValues_[selectInst.cond().get()];
-    auto condInt = std::dynamic_pointer_cast<ir::ConstantInt>(condConst);
-    const bool takeTrue = condInt && condInt->value() != 0;
-    auto chosen = takeTrue ? selectInst.ifTrue() : selectInst.ifFalse();
-    auto chosenKind = getLatticeValue(chosen.get());
-    latticeValues_[&selectInst] = chosenKind;
-    if (chosenKind == LatticeValueKind::CONSTANT) {
-      constantValues_[&selectInst] = constantValues_[chosen.get()];
+    auto cond_const = constant_values_[select_inst.cond().get()];
+    auto cond_int = std::dynamic_pointer_cast<ir::ConstantInt>(cond_const);
+    const bool take_true = cond_int && cond_int->value() != 0;
+    auto chosen = take_true ? select_inst.if_true() : select_inst.if_false();
+    auto chosen_kind = get_lattice_value(chosen.get());
+    lattice_values_[&select_inst] = chosen_kind;
+    if (chosen_kind == LatticeValueKind::CONSTANT) {
+      constant_values_[&select_inst] = constant_values_[chosen.get()];
     }
 
   } else if (cond == LatticeValueKind::UNDEF) {
     // result is UNDEF
-    latticeValues_[&selectInst] = LatticeValueKind::UNDEF;
+    lattice_values_[&select_inst] = LatticeValueKind::UNDEF;
   } else {
     // cond == overdef, merge
-    auto trueKind = getLatticeValue(selectInst.ifTrue().get());
-    auto falseKind = getLatticeValue(selectInst.ifFalse().get());
-    auto [resultKind, constValue] =
-        mergePHIValues(trueKind, selectInst.ifTrue().get(), falseKind,
-                       selectInst.ifFalse().get());
-    latticeValues_[&selectInst] = resultKind;
-    if (resultKind == LatticeValueKind::CONSTANT) {
-      constantValues_[&selectInst] = constValue;
+    auto true_kind = get_lattice_value(select_inst.if_true().get());
+    auto false_kind = get_lattice_value(select_inst.if_false().get());
+    auto [result_kind, const_value] =
+        merge_phi_values(true_kind, select_inst.if_true().get(), false_kind,
+                       select_inst.if_false().get());
+    lattice_values_[&select_inst] = result_kind;
+    if (result_kind == LatticeValueKind::CONSTANT) {
+      constant_values_[&select_inst] = const_value;
     }
   }
 
-  if (latticeValues_[&selectInst] != prev) {
+  if (lattice_values_[&select_inst] != prev) {
 
-    for (auto *user : selectInst.getUses()) {
+    for (auto *user : select_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instructionWorklist_.push_back(inst);
+        instruction_worklist_.push_back(inst);
       }
     }
   }
 }
-void SCCPVisitor::removeDeadInstructions(ir::Function &function) {
+void SCCPVisitor::remove_dead_instructions(ir::Function &function) {
 
-  auto instructionSafeToRemove = [&](ir::Instruction *inst) -> bool {
+  auto instruction_safe_to_remove = [&](ir::Instruction *inst) -> bool {
     // An instruction is safe to remove if it has no side effects.
     if (dynamic_cast<ir::StoreInst *>(inst) ||
         dynamic_cast<ir::CallInst *>(inst) ||
@@ -662,19 +662,19 @@ void SCCPVisitor::removeDeadInstructions(ir::Function &function) {
     // NOTE: upon removing the instructions, we also need to adjust its next &
     // prev ptr.
     for (auto it = instrs.begin(); it != instrs.end();) {
-      if ((instructionsToRemove_.count(it->get()) || it->get()->getUses().empty()) &&
-          instructionSafeToRemove(
+      if ((instructions_to_remove_.count(it->get()) || it->get()->get_uses().empty()) &&
+          instruction_safe_to_remove(
               std::static_pointer_cast<ir::Instruction>(*it).get())) {
         auto inst = std::static_pointer_cast<ir::Instruction>(*it);
-        inst->dropAllReferences();
+        inst->drop_all_references();
 
         auto *prev = inst->prev();
         auto *next = inst->next();
         if (prev) {
-          prev->setNext(next);
+          prev->set_next(next);
         }
         if (next) {
-          next->setPrev(prev);
+          next->set_prev(prev);
         }
         it = instrs.erase(it);
       } else {
@@ -683,17 +683,17 @@ void SCCPVisitor::removeDeadInstructions(ir::Function &function) {
     }
   }
 }
-void SCCPVisitor::removeDeadBlocks(ir::Function &function) {
+void SCCPVisitor::remove_dead_blocks(ir::Function &function) {
 
   for (auto &bb : function.blocks()) {
     // remove predecessors' entries to this block
     for (auto *pred : bb->predecessors()) {
-      pred->removePredecessor(bb.get());
+      pred->remove_predecessor(bb.get());
     }
   }
 
   for (auto it = function.blocks().begin(); it != function.blocks().end();) {
-    if (executableBlocks_.count(it->get()) == 0) {
+    if (executable_blocks_.count(it->get()) == 0) {
       it = function.blocks().erase(it);
     } else {
       ++it;

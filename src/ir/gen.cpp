@@ -2,9 +2,9 @@
 
 namespace rc::ir {
 
-void emitLLVM(const Module &mod, std::ostream &out) {
+void emit_llvm(const Module &mod, std::ostream &out) {
   LLVMEmitter emitter(out);
-  emitter.emitModule(mod);
+  emitter.emit_module(mod);
 }
 
 } // namespace rc::ir

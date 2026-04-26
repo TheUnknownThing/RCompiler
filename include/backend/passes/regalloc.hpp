@@ -26,22 +26,22 @@ public:
 
 private:
   struct LiveInterval {
-    size_t vregId{0};
+    size_t vreg_id{0};
     size_t start{std::numeric_limits<size_t>::max()};
     size_t end{0};
-    int assignedPhysReg{-1};
+    int assigned_phys_reg{-1};
     bool spilled{false};
-    bool crossesCall{false};
-    std::shared_ptr<StackSlot> spillSlot;
+    bool crosses_call{false};
+    std::shared_ptr<StackSlot> spill_slot;
   };
 
   struct BlockLiveness {
     std::unordered_set<size_t> use;
     std::unordered_set<size_t> def;
-    std::unordered_set<size_t> liveIn;
-    std::unordered_set<size_t> liveOut;
-    size_t startPos{0};
-    size_t endPos{0};
+    std::unordered_set<size_t> live_in;
+    std::unordered_set<size_t> live_out;
+    size_t start_pos{0};
+    size_t end_pos{0};
   };
 
   struct FixedRegisterSpan {
@@ -50,50 +50,50 @@ private:
     bool valid{false};
   };
 
-  static constexpr size_t kSpillSlotSize = 4;
-  static constexpr std::array<int, 14> kCallerSavedRegs = {
+  static constexpr size_t k_spill_slot_size = 4;
+  static constexpr std::array<int, 14> k_caller_saved_regs = {
       6,  7,  10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30, 31};
-  static constexpr std::array<int, 11> kCalleeSavedRegs = {
+  static constexpr std::array<int, 11> k_callee_saved_regs = {
       9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27};
 
-  size_t alignTo(size_t value, size_t align) const;
-  size_t maxVirtualRegisterId(const AsmFunction &function) const;
+  size_t align_to(size_t value, size_t align) const;
+  size_t max_virtual_register_id(const AsmFunction &function) const;
   std::vector<std::vector<size_t>>
-  computeSuccessors(const AsmFunction &function) const;
+  compute_successors(const AsmFunction &function) const;
   std::unordered_map<int, FixedRegisterSpan>
-  computeFixedRegisterSpans(const AsmFunction &function) const;
-  std::vector<LiveInterval> buildIntervals(const AsmFunction &function) const;
-  void linearScan(AsmFunction &function,
+  compute_fixed_register_spans(const AsmFunction &function) const;
+  std::vector<LiveInterval> build_intervals(const AsmFunction &function) const;
+  void linear_scan(AsmFunction &function,
                   std::vector<LiveInterval> &intervals) const;
-  void graphColor(AsmFunction &function,
+  void graph_color(AsmFunction &function,
                   std::vector<LiveInterval> &intervals) const;
-  bool rewriteSpills(AsmFunction &function,
+  bool rewrite_spills(AsmFunction &function,
                      const std::vector<LiveInterval> &intervals,
-                     size_t &nextVirtualRegId) const;
+                     size_t &next_virtual_reg_id) const;
   void
-  assignPhysicalRegisters(AsmFunction &function,
+  assign_physical_registers(AsmFunction &function,
                           const std::vector<LiveInterval> &intervals) const;
-  std::shared_ptr<Register> createVirtualRegister(size_t id) const;
-  std::shared_ptr<Register> createPhysicalRegister(size_t id) const;
-  std::shared_ptr<StackSlot> createSpillSlot(AsmFunction &function) const;
-  void clearSpillFlags(AsmFunction &function) const;
-  void markSpilledRegisters(AsmFunction &function,
+  std::shared_ptr<Register> create_virtual_register(size_t id) const;
+  std::shared_ptr<Register> create_physical_register(size_t id) const;
+  std::shared_ptr<StackSlot> create_spill_slot(AsmFunction &function) const;
+  void clear_spill_flags(AsmFunction &function) const;
+  void mark_spilled_registers(AsmFunction &function,
                             const std::unordered_set<size_t> &spilled) const;
-  bool isVirtualRegisterOperand(const std::shared_ptr<AsmOperand> &operand,
+  bool is_virtual_register_operand(const std::shared_ptr<AsmOperand> &operand,
                                 size_t *id = nullptr) const;
-  bool isPhysicalRegisterOperand(const std::shared_ptr<AsmOperand> &operand,
+  bool is_physical_register_operand(const std::shared_ptr<AsmOperand> &operand,
                                  int *id = nullptr) const;
-  bool isCall(const AsmInst &inst) const;
-  bool isTerminator(const AsmInst &inst) const;
-  const std::vector<int> &candidateRegisters(bool crossesCall) const;
-  bool overlapsFixedRegister(const FixedRegisterSpan &span, size_t start,
+  bool is_call(const AsmInst &inst) const;
+  bool is_terminator(const AsmInst &inst) const;
+  const std::vector<int> &candidate_registers(bool crosses_call) const;
+  bool overlaps_fixed_register(const FixedRegisterSpan &span, size_t start,
                              size_t end) const;
-  size_t blockLabelIndex(const std::vector<std::shared_ptr<AsmOperand>> &uses,
+  size_t block_label_index(const std::vector<std::shared_ptr<AsmOperand>> &uses,
                          InstOpcode opcode) const;
-  void extendInterval(std::unordered_map<size_t, LiveInterval> &intervals,
-                      size_t vregId, size_t start, size_t end) const;
+  void extend_interval(std::unordered_map<size_t, LiveInterval> &intervals,
+                      size_t vreg_id, size_t start, size_t end) const;
   std::unique_ptr<AsmInst>
-  cloneInst(const AsmInst &inst, const std::shared_ptr<AsmOperand> &dst,
+  clone_inst(const AsmInst &inst, const std::shared_ptr<AsmOperand> &dst,
             const std::vector<std::shared_ptr<AsmOperand>> &uses) const;
 };
 

@@ -2,14 +2,14 @@
 
 namespace rc {
 
-ScopeNode *enterScope(ScopeNode *&current, const std::string &name,
+ScopeNode *enter_scope(ScopeNode *&current, const std::string &name,
                              const BaseNode *owner_node) {
   if (!current)
     throw SemanticException("null current scope");
   current = current->add_child_scope(name, owner_node);
   return current;
 }
-void exitScope(ScopeNode *&current) {
+void exit_scope(ScopeNode *&current) {
   if (!current)
     throw SemanticException("null current scope");
   if (current->parent) {

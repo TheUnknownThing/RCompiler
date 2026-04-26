@@ -2,14 +2,14 @@
 
 namespace rc::ir {
 
-SemType Context::lookupType(const BaseNode *node) const {
-  auto it = exprCache_.find(node);
-  if (it == exprCache_.end()) {
+SemType Context::lookup_type(const BaseNode *node) const {
+  auto it = expr_cache_.find(node);
+  if (it == expr_cache_.end()) {
     throw std::runtime_error("Context::lookupType: type not found for node");
   }
   return it->second;
 }
-TypePtr Context::resolveType(const SemType &type) const {
+TypePtr Context::resolve_type(const SemType &type) const {
   if (type.is_primitive()) {
     switch (type.as_primitive().kind) {
     case SemPrimitiveKind::BOOL:
@@ -42,17 +42,17 @@ TypePtr Context::resolveType(const SemType &type) const {
   }
   if (type.is_reference()) {
     return std::make_shared<PointerType>(
-        resolveType(*type.as_reference().target));
+        resolve_type(*type.as_reference().target));
   }
   if (type.is_array()) {
-    return std::make_shared<ArrayType>(resolveType(*type.as_array().element),
+    return std::make_shared<ArrayType>(resolve_type(*type.as_array().element),
                                        type.as_array().size);
   }
   if (type.is_tuple()) {
     std::vector<TypePtr> elems;
     elems.reserve(type.as_tuple().elements.size());
     for (const auto &elem : type.as_tuple().elements) {
-      elems.push_back(resolveType(elem));
+      elems.push_back(resolve_type(elem));
     }
     return std::make_shared<StructType>(std::move(elems));
   }
@@ -64,7 +64,7 @@ TypePtr Context::resolveType(const SemType &type) const {
     if (item->kind == ItemKind::Struct && item->has_struct_meta()) {
       std::vector<TypePtr> fields;
       for (const auto &field : item->as_struct_meta().named_fields) {
-        fields.push_back(resolveType(field.second));
+        fields.push_back(resolve_type(field.second));
       }
       return std::make_shared<StructType>(std::move(fields), item->name);
     }

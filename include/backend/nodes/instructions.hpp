@@ -74,7 +74,7 @@ public:
   AsmInst(InstOpcode opc, std::vector<std::shared_ptr<AsmOperand>> uses)
       : opcode(opc), dst(nullptr), uses(std::move(uses)) {}
 
-  bool isPseudo() const {
+  bool is_pseudo() const {
     switch (opcode) {
     case InstOpcode::MV:
     case InstOpcode::LI:
@@ -89,9 +89,9 @@ public:
     }
   }
 
-  InstOpcode getOpcode() const { return opcode; }
-  const std::shared_ptr<AsmOperand> &getDst() const { return dst; }
-  const std::vector<std::shared_ptr<AsmOperand>> &getUses() const {
+  InstOpcode get_opcode() const { return opcode; }
+  const std::shared_ptr<AsmOperand> &get_dst() const { return dst; }
+  const std::vector<std::shared_ptr<AsmOperand>> &get_uses() const {
     return uses;
   }
 
@@ -108,7 +108,7 @@ public:
   std::string name;
   std::vector<std::unique_ptr<AsmInst>> instructions;
 
-  AsmInst *createInst(InstOpcode opc, std::shared_ptr<AsmOperand> dst,
+  AsmInst *create_inst(InstOpcode opc, std::shared_ptr<AsmOperand> dst,
                       std::vector<std::shared_ptr<AsmOperand>> uses) {
     auto inst = std::make_unique<AsmInst>(opc, std::move(dst), std::move(uses));
     instructions.push_back(std::move(inst));
@@ -120,9 +120,9 @@ class AsmFunction {
 public:
   std::string name;
   std::vector<std::unique_ptr<AsmBlock>> blocks;
-  size_t stackSize{0};
+  size_t stack_size{0};
 
-  AsmBlock *createBlock(const std::string &label) {
+  AsmBlock *create_block(const std::string &label) {
     auto block = std::make_unique<AsmBlock>(label);
     blocks.push_back(std::move(block));
     return blocks.back().get();

@@ -122,11 +122,11 @@ std::shared_ptr<BaseNode> Parser::parse_statement() {
 parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
   auto params = optional(parse_function_parameters());
 
-  auto return_type = tok(TokenType::ARROW).thenR(type_parser());
+  auto return_type = tok(TokenType::ARROW).then_r(type_parser());
 
   auto header =
       tok(TokenType::FN)
-          .thenR(parsec::identifier)
+          .then_r(parsec::identifier)
           .combine(params,
                    [](const auto &name, const auto &param_info) {
                      LOG_DEBUG("Parsing function: " + name);
@@ -183,17 +183,17 @@ parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
 parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
   using SD = StructDecl;
 
-  auto field = parsec::identifier.thenL(tok(TokenType::COLON))
+  auto field = parsec::identifier.then_l(tok(TokenType::COLON))
                    .combine(type_parser(), [](const auto &id, const auto &t) {
                      LOG_DEBUG("Parsed struct field: " + id);
                      return std::make_pair(id, t);
                    });
 
-  auto field_with_comma = tok(TokenType::COMMA).thenR(field);
+  auto field_with_comma = tok(TokenType::COMMA).then_r(field);
 
   auto fields =
       tok(TokenType::L_BRACE)
-          .thenR(field)
+          .then_r(field)
           .combine(many(field_with_comma),
                    [](const auto &f, const auto &fs) {
                      std::vector<std::pair<std::string, AstType>> all;
@@ -201,18 +201,18 @@ parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
                      all.insert(all.end(), fs.begin(), fs.end());
                      return all;
                    })
-          .thenL(optional(tok(TokenType::COMMA)))
-          .thenL(tok(TokenType::R_BRACE));
+          .then_l(optional(tok(TokenType::COMMA)))
+          .then_l(tok(TokenType::R_BRACE));
 
   auto tuple_fields =
       tok(TokenType::L_PAREN)
-          .thenR(many(type_parser().thenL(optional(tok(TokenType::COMMA)))))
-          .thenL(tok(TokenType::R_PAREN))
-          .thenL(tok(TokenType::SEMICOLON));
+          .then_r(many(type_parser().then_l(optional(tok(TokenType::COMMA)))))
+          .then_l(tok(TokenType::R_PAREN))
+          .then_l(tok(TokenType::SEMICOLON));
 
   auto parser =
       tok(TokenType::STRUCT)
-          .thenR(parsec::identifier)
+          .then_r(parsec::identifier)
           .combine(
               parsec::Parser<
                   std::variant<std::vector<std::pair<std::string, AstType>>,
@@ -359,20 +359,20 @@ Parser::parse_const_item() {
   // const name : Type ( = expr )? ;
   auto header =
       tok(TokenType::CONST)
-          .thenR(parsec::identifier)
-          .thenL(tok(TokenType::COLON))
+          .then_r(parsec::identifier)
+          .then_l(tok(TokenType::COLON))
           .combine(type_parser(), [](const auto &name, const auto &ty) {
             return std::make_pair(name, ty);
           });
 
-  auto init_opt = optional(tok(TokenType::ASSIGN).thenR(any_expression()));
+  auto init_opt = optional(tok(TokenType::ASSIGN).then_r(any_expression()));
 
   return header
       .combine(init_opt,
                [](auto h, auto init) {
                  return std::make_tuple(h.first, h.second, init);
                })
-      .thenL(tok(TokenType::SEMICOLON))
+      .then_l(tok(TokenType::SEMICOLON))
       .map([](auto t) {
         const std::string &name = std::get<0>(t);
         const AstType &ty = std::get<1>(t);
@@ -389,38 +389,38 @@ parsec::Parser<std::shared_ptr<ImplDecl>> Parser::parse_impl() {
   auto associated_item =
       (parse_function() >> to_base_item) | (parse_const_item() >> to_base_item);
 
-  auto inherentImpl =
+  auto inherent_impl =
       tok(TokenType::IMPL)
-          .thenR(type_parser())
-          .thenL(tok(TokenType::L_BRACE))
+          .then_r(type_parser())
+          .then_l(tok(TokenType::L_BRACE))
           .combine(many(associated_item),
                    [](const auto &tp, const auto &item) {
                      return std::make_shared<ImplDecl>(
                          ImplDecl::ImplType::Inherent, tp, item);
                    })
-          .thenL(tok(TokenType::R_BRACE));
+          .then_l(tok(TokenType::R_BRACE));
 
-  auto traitImpl =
+  auto trait_impl =
       tok(TokenType::IMPL)
-          .thenR(identifier)
-          .thenL(tok(TokenType::FOR))
+          .then_r(identifier)
+          .then_l(tok(TokenType::FOR))
           .combine(type_parser(),
-                   [](const auto &trait, const auto &forType) {
-                     return std::make_pair(trait, forType);
+                   [](const auto &trait, const auto &for_type) {
+                     return std::make_pair(trait, for_type);
                    })
-          .thenL(tok(TokenType::L_BRACE))
+          .then_l(tok(TokenType::L_BRACE))
           .combine(many(associated_item),
                    [](const auto &pair, const auto &items) {
                      return std::make_tuple(pair.first, pair.second, items);
                    })
-          .thenL(tok(TokenType::R_BRACE))
+          .then_l(tok(TokenType::R_BRACE))
           .map([](const auto &items) {
             return std::make_shared<ImplDecl>(
                 ImplDecl::ImplType::Trait, std::get<1>(items),
                 std::get<2>(items), std::get<0>(items));
           });
 
-  return inherentImpl | traitImpl;
+  return inherent_impl | trait_impl;
 }
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_return_expression() {
@@ -433,7 +433,7 @@ Parser::parse_return_expression() {
 
         auto ret_parse =
             tok(TokenType::RETURN)
-                .thenR(optional(any_expression()))
+                .then_r(optional(any_expression()))
                 .map([](auto val) {
                   LOG_DEBUG("Parsed return expression");
                   return std::make_shared<ReturnExpression>(std::move(val));
@@ -473,7 +473,7 @@ Parser::parse_block_expression() {
           return std::shared_ptr<BaseNode>(std::make_shared<EmptyStatement>());
         });
         auto let_stmt = parse_let_statement();
-        auto expr_stmt = expr.thenL(tok(TokenType::SEMICOLON)).map([](auto e) {
+        auto expr_stmt = expr.then_l(tok(TokenType::SEMICOLON)).map([](auto e) {
           return std::shared_ptr<BaseNode>(
               std::make_shared<ExpressionStatement>(e, true));
         });
@@ -620,7 +620,7 @@ Parser::parse_break_expression() {
         size_t saved = pos;
 
         auto break_parser = tok(TokenType::BREAK)
-                                .thenR(optional(any_expression()))
+                                .then_r(optional(any_expression()))
                                 .map([](auto t) {
                                   LOG_DEBUG("Parsed break expression");
                                   return std::make_shared<BreakExpression>(t);
@@ -678,8 +678,8 @@ Parser::parse_if_expression() {
         // Condition uses Pratt expressions
         LOG_DEBUG("Parsing if condition");
         auto cond = tok(TokenType::L_PAREN)
-                        .thenR(any_expression())
-                        .thenL(tok(TokenType::R_PAREN))
+                        .then_r(any_expression())
+                        .then_l(tok(TokenType::R_PAREN))
                         .parse(toks, pos);
         if (!cond) {
           pos = saved;
@@ -734,7 +734,7 @@ Parser::parse_loop_expression() {
         LOG_DEBUG("Attempting to parse loop expression at position " +
                   std::to_string(pos));
 
-        auto loop_parser = tok(TokenType::LOOP).thenR(parse_block_expression());
+        auto loop_parser = tok(TokenType::LOOP).then_r(parse_block_expression());
 
         auto body = loop_parser.parse(toks, pos);
         if (!body) {
@@ -759,9 +759,9 @@ Parser::parse_while_expression() {
 
         auto while_parser =
             tok(TokenType::WHILE)
-                .thenR(tok(TokenType::L_PAREN))
-                .thenR(any_expression())
-                .thenL(tok(TokenType::R_PAREN))
+                .then_r(tok(TokenType::L_PAREN))
+                .then_r(any_expression())
+                .then_l(tok(TokenType::R_PAREN))
                 .combine(parse_block_expression(),
                          [](const auto &cond, const auto &body) {
                            return std::make_shared<WhileExpression>(cond, body);
@@ -1031,7 +1031,7 @@ Parser::pattern_and_type_parser() {
   using namespace parsec;
 
   return pattern_parser_.pattern_no_top_alt().combine(
-      tok(rc::TokenType::COLON).thenR(type_parser()),
+      tok(rc::TokenType::COLON).then_r(type_parser()),
       [](const auto &id, const auto &t) {
         LOG_DEBUG("Parsed pattern with type");
         return std::make_pair(id, t);
@@ -1060,7 +1060,7 @@ Parser::parse_function_parameters() {
   auto parse_typed_self = [this]() -> parsec::Parser<SelfParam> {
     auto mut_parser = optional(tok(TokenType::MUT));
     auto self_parser = tok(TokenType::SELF);
-    auto colon_type = tok(TokenType::COLON).thenR(type_parser());
+    auto colon_type = tok(TokenType::COLON).then_r(type_parser());
 
     return mut_parser
         .combine(self_parser,
@@ -1092,14 +1092,14 @@ Parser::parse_function_parameters() {
   auto regular_params = argument_list_parser();
 
   return tok(TokenType::L_PAREN)
-      .thenR(self_param)
-      .thenL(optional(tok(TokenType::COMMA)))
+      .then_r(self_param)
+      .then_l(optional(tok(TokenType::COMMA)))
       .combine(regular_params,
                [](const auto &self, const auto &args) {
                  LOG_DEBUG("Parsed function parameters");
                  return std::make_pair(self, args);
                })
-      .thenL(tok(TokenType::R_PAREN));
+      .then_l(tok(TokenType::R_PAREN));
 }
 parsec::Parser<
     std::vector<std::pair<std::shared_ptr<BasePattern>, AstType>>>
@@ -1107,7 +1107,7 @@ Parser::argument_list_parser() {
   using namespace parsec;
   auto pattern_and_type = pattern_and_type_parser();
 
-  return many(pattern_and_type.thenL(optional(tok(TokenType::COMMA))))
+  return many(pattern_and_type.then_l(optional(tok(TokenType::COMMA))))
       .map([](auto args) {
         LOG_DEBUG("Parsed argument list with " + std::to_string(args.size()) +
                   " arguments");
@@ -1118,10 +1118,10 @@ parsec::Parser<std::vector<std::shared_ptr<Expression>>>
 Parser::expression_list_parser() {
   using namespace parsec;
   auto expr = any_expression();
-  auto expr_with_comma = expr.thenL(tok(TokenType::COMMA));
+  auto expr_with_comma = expr.then_l(tok(TokenType::COMMA));
 
   return tok(TokenType::L_PAREN)
-      .thenR(many(expr_with_comma))
+      .then_r(many(expr_with_comma))
       .combine(optional(expr),
                [](const auto &vec, const auto &last) {
                  std::vector<std::shared_ptr<Expression>> all = vec;
@@ -1129,7 +1129,7 @@ Parser::expression_list_parser() {
                    all.push_back(*last);
                  return all;
                })
-      .thenL(tok(TokenType::R_PAREN))
+      .then_l(tok(TokenType::R_PAREN))
       .map([](auto exprs) {
         LOG_DEBUG("Parsed expression list with " +
                   std::to_string(exprs.size()) + " expressions");
@@ -1145,10 +1145,10 @@ parsec::Parser<AstType> Parser::type_parser() {
 }
 parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
   using namespace parsec;
-  auto assignment = tok(TokenType::ASSIGN).thenR(any_expression());
+  auto assignment = tok(TokenType::ASSIGN).then_r(any_expression());
   return tok(TokenType::LET)
-      .thenR(pattern_parser_.pattern_no_top_alt())
-      .combine(tok(TokenType::COLON).thenR(type_parser()),
+      .then_r(pattern_parser_.pattern_no_top_alt())
+      .combine(tok(TokenType::COLON).then_r(type_parser()),
                [](const auto &id, const auto &t) {
                  auto ty = t;
                  return std::make_pair(id, ty);
@@ -1157,7 +1157,7 @@ parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
                [](const auto &id_ty, const auto &init) {
                  return std::make_tuple(id_ty.first, id_ty.second, init);
                })
-      .thenL(tok(TokenType::SEMICOLON))
+      .then_l(tok(TokenType::SEMICOLON))
       .map([](auto t) -> std::shared_ptr<BaseNode> {
         const auto &pattern = std::get<0>(t);
         const auto &type = std::get<1>(t);
@@ -1197,17 +1197,17 @@ Parser::parse_struct_expr_fields() {
   using namespace parsec;
 
   auto explicit_field =
-      parsec::identifier.thenL(tok(TokenType::COLON))
+      parsec::identifier.then_l(tok(TokenType::COLON))
           .combine(any_expression(), [](const std::string &name,
                                         std::shared_ptr<Expression> expr) {
             Field f{name, expr};
             return f;
           });
 
-  auto field_with_comma = tok(TokenType::COMMA).thenR(explicit_field);
+  auto field_with_comma = tok(TokenType::COMMA).then_r(explicit_field);
 
   return tok(TokenType::L_BRACE)
-      .thenR(explicit_field)
+      .then_r(explicit_field)
       .combine(many(field_with_comma),
                [](const Field &f, const auto &fs) {
                  std::vector<Field> all;
@@ -1215,8 +1215,8 @@ Parser::parse_struct_expr_fields() {
                  all.insert(all.end(), fs.begin(), fs.end());
                  return all;
                })
-      .thenL(optional(tok(TokenType::COMMA)))
-      .thenL(tok(TokenType::R_BRACE));
+      .then_l(optional(tok(TokenType::COMMA)))
+      .then_l(tok(TokenType::R_BRACE));
 }
 
 } // namespace rc

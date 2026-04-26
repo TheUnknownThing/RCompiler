@@ -3,13 +3,13 @@
 #include <memory>
 #include <unordered_map>
 
-#include "ast/nodes/topLevel.hpp"
-#include "semantic/analyzer/controlAnalyzer.hpp"
-#include "semantic/analyzer/dirtyWorkPass.hpp"
-#include "semantic/analyzer/firstPass.hpp"
-#include "semantic/analyzer/fourthPass.hpp"
-#include "semantic/analyzer/secondPass.hpp"
-#include "semantic/analyzer/thirdPass.hpp"
+#include "ast/nodes/top_level.hpp"
+#include "semantic/analyzer/control_analyzer.hpp"
+#include "semantic/analyzer/dirty_work_pass.hpp"
+#include "semantic/analyzer/first_pass.hpp"
+#include "semantic/analyzer/fourth_pass.hpp"
+#include "semantic/analyzer/second_pass.hpp"
+#include "semantic/analyzer/third_pass.hpp"
 #include "semantic/scope.hpp"
 
 namespace rc {

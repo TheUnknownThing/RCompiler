@@ -8,7 +8,7 @@
 #include <variant>
 #include <vector>
 
-#include "ast/nodes/topLevel.hpp"
+#include "ast/nodes/top_level.hpp"
 #include "semantic/error/exceptions.hpp"
 #include "semantic/types.hpp"
 
@@ -145,9 +145,9 @@ public:
   }
 
   ScopeNode *add_child_scope(std::string name, const BaseNode *owner_node) {
-    childNodes.push_back(
+    child_nodes.push_back(
         std::make_unique<ScopeNode>(std::move(name), this, owner_node));
-    return childNodes.back().get();
+    return child_nodes.back().get();
   }
 
   std::vector<CollectedItem> items() const {
@@ -188,8 +188,8 @@ public:
 
   std::vector<ScopeNode *> children() const {
     std::vector<ScopeNode *> out;
-    out.reserve(childNodes.size());
-    for (const auto &c : childNodes) {
+    out.reserve(child_nodes.size());
+    for (const auto &c : child_nodes) {
       out.push_back(c.get());
     }
     return out;
@@ -198,7 +198,7 @@ public:
   const ScopeNode *find_child_scope_by_owner(const BaseNode *owner_node) const {
     if (!owner_node)
       return nullptr;
-    for (const auto &c : childNodes) {
+    for (const auto &c : child_nodes) {
       if (c && c->owner == owner_node)
         return c.get();
     }
@@ -207,7 +207,7 @@ public:
   ScopeNode *find_child_scope_by_owner(const BaseNode *owner_node) {
     if (!owner_node)
       return nullptr;
-    for (const auto &c : childNodes) {
+    for (const auto &c : child_nodes) {
       if (c && c->owner == owner_node)
         return c.get();
     }
@@ -264,14 +264,14 @@ public:
 private:
   std::map<std::string, CollectedItem> value_items_;
   std::map<std::string, CollectedItem> type_items_;
-  std::vector<std::unique_ptr<ScopeNode>> childNodes;
+  std::vector<std::unique_ptr<ScopeNode>> child_nodes;
   std::vector<std::unique_ptr<BaseItem>> owned_items_;
 };
 
-ScopeNode *enterScope(ScopeNode *&current, const std::string &name,
+ScopeNode *enter_scope(ScopeNode *&current, const std::string &name,
                              const BaseNode *owner_node);
 
-void exitScope(ScopeNode *&current);
+void exit_scope(ScopeNode *&current);
 
 // printer
 void print_scope_tree(const ScopeNode &scope, int indent = 0);

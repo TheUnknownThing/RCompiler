@@ -5,21 +5,21 @@ namespace rc::opt {
 void DeadCodeElimVisitor::run(ir::Module &module) {
   for (const auto &function : module.functions()) {
     for (const auto &bb : function->blocks()) {
-      trimAfterTerminator(*bb);
+      trim_after_terminator(*bb);
     }
 
-    foldConstantConditionalBranches(*function);
+    fold_constant_conditional_branches(*function);
 
-    auto reachable = computeReachable(*function);
-    squashUnreachableBlocks(*function, reachable);
+    auto reachable = compute_reachable(*function);
+    squash_unreachable_blocks(*function, reachable);
 
-    rebuildPredecessors(*function);
-    removeUndefPhiIncomingBlocks(*function);
+    rebuild_predecessors(*function);
+    remove_undef_phi_incoming_blocks(*function);
   }
 }
-void DeadCodeElimVisitor::trimAfterTerminator(ir::BasicBlock &bb) {
+void DeadCodeElimVisitor::trim_after_terminator(ir::BasicBlock &bb) {
   auto &instrs = bb.instructions();
-  bool foundTerminator = false;
+  bool found_terminator = false;
 
   for (auto it = instrs.begin(); it != instrs.end();) {
     auto *inst = it->get();
@@ -28,17 +28,17 @@ void DeadCodeElimVisitor::trimAfterTerminator(ir::BasicBlock &bb) {
       continue;
     }
 
-    if (foundTerminator) {
+    if (found_terminator) {
       auto inst = std::static_pointer_cast<ir::Instruction>(*it);
-      inst->dropAllReferences();
+      inst->drop_all_references();
 
       auto *prev = inst->prev();
       auto *next = inst->next();
       if (prev) {
-        prev->setNext(next);
+        prev->set_next(next);
       }
       if (next) {
-        next->setPrev(prev);
+        next->set_prev(prev);
       }
       it = instrs.erase(it);
       continue;
@@ -47,20 +47,20 @@ void DeadCodeElimVisitor::trimAfterTerminator(ir::BasicBlock &bb) {
     if (dynamic_cast<ir::BranchInst *>(inst) ||
         dynamic_cast<ir::ReturnInst *>(inst) ||
         dynamic_cast<ir::UnreachableInst *>(inst)) {
-      foundTerminator = true;
+      found_terminator = true;
     }
 
     ++it;
   }
 }
 void
-DeadCodeElimVisitor::foldConstantConditionalBranches(ir::Function &function) {
-  for (const auto &bbPtr : function.blocks()) {
-    if (!bbPtr) {
+DeadCodeElimVisitor::fold_constant_conditional_branches(ir::Function &function) {
+  for (const auto &bb_ptr : function.blocks()) {
+    if (!bb_ptr) {
       continue;
     }
 
-    auto &bb = *bbPtr;
+    auto &bb = *bb_ptr;
     auto &instrs = bb.instructions();
     if (instrs.empty()) {
       continue;
@@ -71,7 +71,7 @@ DeadCodeElimVisitor::foldConstantConditionalBranches(ir::Function &function) {
       if (!br) {
         continue;
       }
-      if (!br->isConditional()) {
+      if (!br->is_conditional()) {
         break;
       }
 
@@ -80,39 +80,39 @@ DeadCodeElimVisitor::foldConstantConditionalBranches(ir::Function &function) {
         break;
       }
 
-      const bool takeTrue = (ci->value() != 0);
-      auto chosen = takeTrue ? br->dest() : br->altDest();
-      auto other = takeTrue ? br->altDest() : br->dest();
+      const bool take_true = (ci->value() != 0);
+      auto chosen = take_true ? br->dest() : br->alt_dest();
+      auto other = take_true ? br->alt_dest() : br->dest();
       if (!chosen) {
         break;
       }
 
       // Replace the conditional branch with an unconditional one.
-      auto oldInst = std::static_pointer_cast<ir::Instruction>(*it);
-      oldInst->dropAllReferences();
+      auto old_inst = std::static_pointer_cast<ir::Instruction>(*it);
+      old_inst->drop_all_references();
 
-      auto *prev = oldInst->prev();
-      auto *next = oldInst->next();
+      auto *prev = old_inst->prev();
+      auto *next = old_inst->next();
       if (prev) {
-        prev->setNext(next);
+        prev->set_next(next);
       }
       if (next) {
-        next->setPrev(prev);
+        next->set_prev(prev);
       }
 
       it = instrs.erase(it);
 
-      auto newBr = std::make_shared<ir::BranchInst>(&bb, chosen);
-      newBr->setPrev(prev);
-      newBr->setNext(next);
+      auto new_br = std::make_shared<ir::BranchInst>(&bb, chosen);
+      new_br->set_prev(prev);
+      new_br->set_next(next);
       if (prev) {
-        prev->setNext(newBr.get());
+        prev->set_next(new_br.get());
       }
       if (next) {
-        next->setPrev(newBr.get());
+        next->set_prev(new_br.get());
       }
 
-      instrs.insert(it, std::move(newBr));
+      instrs.insert(it, std::move(new_br));
 
       if (other) {
         for (const auto &inst2 : other->instructions()) {
@@ -123,7 +123,7 @@ DeadCodeElimVisitor::foldConstantConditionalBranches(ir::Function &function) {
           if (!phi) {
             break; // PHIs are always at the beginning
           }
-          phi->removeIncomingBlock(&bb);
+          phi->remove_incoming_block(&bb);
         }
       }
       break;
@@ -131,7 +131,7 @@ DeadCodeElimVisitor::foldConstantConditionalBranches(ir::Function &function) {
   }
 }
 std::unordered_set<ir::BasicBlock *>
-DeadCodeElimVisitor::computeReachable(ir::Function &function) {
+DeadCodeElimVisitor::compute_reachable(ir::Function &function) {
   std::unordered_set<ir::BasicBlock *> reachable;
   const auto &blocks = function.blocks();
   if (blocks.empty()) {
@@ -156,7 +156,7 @@ DeadCodeElimVisitor::computeReachable(ir::Function &function) {
 
   return reachable;
 }
-void DeadCodeElimVisitor::squashUnreachableBlocks(
+void DeadCodeElimVisitor::squash_unreachable_blocks(
     ir::Function &function,
     const std::unordered_set<ir::BasicBlock *> &reachable) {
   for (const auto &bb : function.blocks()) {
@@ -166,8 +166,8 @@ void DeadCodeElimVisitor::squashUnreachableBlocks(
 
     // This block will no longer branch anywhere; remove it from successor PHIs.
     auto succs = utils::detail::successors(*bb);
-    for (auto *succConst : succs) {
-      auto *succ = const_cast<ir::BasicBlock *>(succConst);
+    for (auto *succ_const : succs) {
+      auto *succ = const_cast<ir::BasicBlock *>(succ_const);
       for (const auto &inst2 : succ->instructions()) {
         if (!inst2) {
           break;
@@ -176,24 +176,24 @@ void DeadCodeElimVisitor::squashUnreachableBlocks(
         if (!phi) {
           break;
         }
-        phi->removeIncomingBlock(bb.get());
+        phi->remove_incoming_block(bb.get());
       }
     }
 
     auto &instrs = bb->instructions();
     for (auto &inst : instrs) {
       if (inst) {
-        std::static_pointer_cast<ir::Instruction>(inst)->dropAllReferences();
+        std::static_pointer_cast<ir::Instruction>(inst)->drop_all_references();
       }
     }
     instrs.clear();
     bb->append<ir::UnreachableInst>();
   }
 }
-void DeadCodeElimVisitor::rebuildPredecessors(ir::Function &function) {
+void DeadCodeElimVisitor::rebuild_predecessors(ir::Function &function) {
   // Clear existing predecessor lists.
   for (const auto &bb : function.blocks()) {
-    bb->clearPredecessors();
+    bb->clear_predecessors();
   }
 
   // Add predecessors based on branch terminators.
@@ -201,12 +201,12 @@ void DeadCodeElimVisitor::rebuildPredecessors(ir::Function &function) {
     auto succs = utils::detail::successors(*bb);
     for (auto *succ : succs) {
       auto *succ_nonconst = const_cast<ir::BasicBlock *>(succ);
-      succ_nonconst->addPredecessor(bb.get());
+      succ_nonconst->add_predecessor(bb.get());
     }
   }
 }
 void
-DeadCodeElimVisitor::removeUndefPhiIncomingBlocks(ir::Function &function) {
+DeadCodeElimVisitor::remove_undef_phi_incoming_blocks(ir::Function &function) {
   for (const auto &bb : function.blocks()) {
     std::unordered_set<ir::BasicBlock *> predecessors;
     for (auto *pred : bb->predecessors()) {
@@ -224,10 +224,10 @@ DeadCodeElimVisitor::removeUndefPhiIncomingBlocks(ir::Function &function) {
 
       auto &incomings = phi->incomings();
       for (auto it = incomings.begin(); it != incomings.end();) {
-        auto *incomingBlock = it->second;
-        if (!incomingBlock || !predecessors.count(incomingBlock)) {
+        auto *incoming_block = it->second;
+        if (!incoming_block || !predecessors.count(incoming_block)) {
           if (it->first) {
-            it->first->removeUse(phi);
+            it->first->remove_use(phi);
           }
           it = incomings.erase(it);
         } else {

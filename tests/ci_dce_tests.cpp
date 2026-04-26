@@ -2,8 +2,8 @@
 #include <sstream>
 #include <string>
 
-#include "ir/instructions/controlFlow.hpp"
-#include "ir/instructions/topLevel.hpp"
+#include "ir/instructions/control_flow.hpp"
+#include "ir/instructions/top_level.hpp"
 #include "opt/dce/dce.hpp"
 
 namespace {
@@ -36,19 +36,19 @@ rc::ir::UnreachableInst *get_unreachable(rc::ir::BasicBlock &bb) {
 
 void test_fold_true_branch() {
   rc::ir::Module m("m");
-  auto fnTy = std::make_shared<rc::ir::FunctionType>(
+  auto fn_ty = std::make_shared<rc::ir::FunctionType>(
       std::make_shared<rc::ir::VoidType>(), std::vector<rc::ir::TypePtr>{},
       false);
-  auto fn = m.createFunction("f", fnTy);
+  auto fn = m.create_function("f", fn_ty);
 
-  auto entry = fn->createBlock("entry");
-  auto thenBB = fn->createBlock("then");
-  auto elseBB = fn->createBlock("else");
+  auto entry = fn->create_block("entry");
+  auto then_bb = fn->create_block("then");
+  auto else_bb = fn->create_block("else");
 
-  entry->append<rc::ir::BranchInst>(rc::ir::ConstantInt::getI1(true), thenBB.get(),
-                                   elseBB.get());
-  thenBB->append<rc::ir::ReturnInst>();
-  elseBB->append<rc::ir::ReturnInst>();
+  entry->append<rc::ir::BranchInst>(rc::ir::ConstantInt::get_i1(true), then_bb.get(),
+                                   else_bb.get());
+  then_bb->append<rc::ir::ReturnInst>();
+  else_bb->append<rc::ir::ReturnInst>();
 
   rc::opt::DeadCodeElimVisitor dce;
   dce.run(m);
@@ -58,36 +58,36 @@ void test_fold_true_branch() {
     record_failure("[dce] missing branch in entry (true case)");
     return;
   }
-  if (br->isConditional()) {
+  if (br->is_conditional()) {
     record_failure("[dce] expected entry branch to be unconditional (true case)");
     return;
   }
-  if (br->dest() != thenBB.get()) {
+  if (br->dest() != then_bb.get()) {
     record_failure("[dce] expected entry branch to target 'then' (true case)");
     return;
   }
 
   // The else block should become unreachable once it is no longer a successor.
-  if (!get_unreachable(*elseBB)) {
+  if (!get_unreachable(*else_bb)) {
     record_failure("[dce] expected else block to be squashed to unreachable (true case)");
   }
 }
 
 void test_fold_false_branch() {
   rc::ir::Module m("m");
-  auto fnTy = std::make_shared<rc::ir::FunctionType>(
+  auto fn_ty = std::make_shared<rc::ir::FunctionType>(
       std::make_shared<rc::ir::VoidType>(), std::vector<rc::ir::TypePtr>{},
       false);
-  auto fn = m.createFunction("f", fnTy);
+  auto fn = m.create_function("f", fn_ty);
 
-  auto entry = fn->createBlock("entry");
-  auto thenBB = fn->createBlock("then");
-  auto elseBB = fn->createBlock("else");
+  auto entry = fn->create_block("entry");
+  auto then_bb = fn->create_block("then");
+  auto else_bb = fn->create_block("else");
 
-  entry->append<rc::ir::BranchInst>(rc::ir::ConstantInt::getI1(false), thenBB.get(),
-                                   elseBB.get());
-  thenBB->append<rc::ir::ReturnInst>();
-  elseBB->append<rc::ir::ReturnInst>();
+  entry->append<rc::ir::BranchInst>(rc::ir::ConstantInt::get_i1(false), then_bb.get(),
+                                   else_bb.get());
+  then_bb->append<rc::ir::ReturnInst>();
+  else_bb->append<rc::ir::ReturnInst>();
 
   rc::opt::DeadCodeElimVisitor dce;
   dce.run(m);
@@ -97,16 +97,16 @@ void test_fold_false_branch() {
     record_failure("[dce] missing branch in entry (false case)");
     return;
   }
-  if (br->isConditional()) {
+  if (br->is_conditional()) {
     record_failure("[dce] expected entry branch to be unconditional (false case)");
     return;
   }
-  if (br->dest() != elseBB.get()) {
+  if (br->dest() != else_bb.get()) {
     record_failure("[dce] expected entry branch to target 'else' (false case)");
     return;
   }
 
-  if (!get_unreachable(*thenBB)) {
+  if (!get_unreachable(*then_bb)) {
     record_failure("[dce] expected then block to be squashed to unreachable (false case)");
   }
 }

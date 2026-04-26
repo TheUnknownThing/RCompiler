@@ -8,7 +8,7 @@
 #include "ast/nodes/expr.hpp"
 #include "ast/nodes/pattern.hpp"
 #include "ast/nodes/stmt.hpp"
-#include "ast/nodes/topLevel.hpp"
+#include "ast/nodes/top_level.hpp"
 #include "ast/types.hpp"
 #include "lexer/lexer.hpp"
 
@@ -28,7 +28,7 @@
 namespace rc {
 
 // Color constants for pretty printing
-namespace Colors {
+namespace colors {
 inline constexpr const char *RESET = "\033[0m";
 inline constexpr const char *DIM = "\033[2m";
 
@@ -45,7 +45,7 @@ inline constexpr const char *KEYWORD = "\033[1;37m";    // Bold White
 inline constexpr const char *BRACE = "\033[37m";     // White
 inline constexpr const char *BRACKET = "\033[37m";   // White
 inline constexpr const char *SEPARATOR = "\033[90m"; // Dark Gray
-} // namespace Colors
+} // namespace colors
 
 class PrettyPrintVisitor : public BaseVisitor {
 public:
@@ -70,36 +70,36 @@ public:
 
   // Expression visitors
   inline void visit(NameExpression &node) override {
-    print_inline(node_color("NameExpr") + colorize("(", Colors::BRACE) +
-                 identifier_color(node.name) + colorize(")", Colors::BRACE));
+    print_inline(node_color("NameExpr") + colorize("(", colors::BRACE) +
+                 identifier_color(node.name) + colorize(")", colors::BRACE));
   }
 
   inline void visit(LiteralExpression &node) override {
-    print_inline(node_color("LiteralExpr") + colorize("(", Colors::BRACE) +
-                 literal_color(node.value) + colorize(", ", Colors::SEPARATOR) +
-                 format_type(node.type) + colorize(")", Colors::BRACE));
+    print_inline(node_color("LiteralExpr") + colorize("(", colors::BRACE) +
+                 literal_color(node.value) + colorize(", ", colors::SEPARATOR) +
+                 format_type(node.type) + colorize(")", colors::BRACE));
   }
 
   inline void visit(PrefixExpression &node) override {
-    print_inline(node_color("PrefixExpr") + colorize("(", Colors::BRACE));
-    print_inline(format_token(node.op) + colorize(", ", Colors::SEPARATOR));
+    print_inline(node_color("PrefixExpr") + colorize("(", colors::BRACE));
+    print_inline(format_token(node.op) + colorize(", ", colors::SEPARATOR));
     RC_SAFE_ACCEPT(node.right);
-    print_inline(colorize(")", Colors::BRACE));
+    print_inline(colorize(")", colors::BRACE));
   }
 
   inline void visit(BinaryExpression &node) override {
-    print_inline(node_color("BinaryExpr") + colorize("(", Colors::BRACE));
+    print_inline(node_color("BinaryExpr") + colorize("(", colors::BRACE));
     RC_SAFE_ACCEPT(node.left);
-    print_inline(colorize(", ", Colors::SEPARATOR) + format_token(node.op) +
-                 colorize(", ", Colors::SEPARATOR));
+    print_inline(colorize(", ", colors::SEPARATOR) + format_token(node.op) +
+                 colorize(", ", colors::SEPARATOR));
     RC_SAFE_ACCEPT(node.right);
-    print_inline(colorize(")", Colors::BRACE));
+    print_inline(colorize(")", colors::BRACE));
   }
 
   inline void visit(GroupExpression &node) override {
-    print_inline(node_color("GroupExpr") + colorize("(", Colors::BRACE));
+    print_inline(node_color("GroupExpr") + colorize("(", colors::BRACE));
     RC_SAFE_ACCEPT(node.inner);
-    print_inline(colorize(")", Colors::BRACE));
+    print_inline(colorize(")", colors::BRACE));
   }
   inline void visit(IfExpression &node) override {
     print_node_start("IfExpr");
@@ -132,17 +132,17 @@ public:
   }
 
   inline void visit(CallExpression &node) override {
-    print_inline(node_color("CallExpr") + colorize("(", Colors::BRACE));
+    print_inline(node_color("CallExpr") + colorize("(", colors::BRACE));
     RC_SAFE_ACCEPT(node.function_name);
-    print_inline(colorize(", [", Colors::BRACKET));
+    print_inline(colorize(", [", colors::BRACKET));
     for (size_t i = 0; i < node.arguments.size(); ++i) {
       RC_SAFE_ACCEPT(node.arguments[i]);
       if (i < node.arguments.size() - 1) {
-        print_inline(colorize(", ", Colors::SEPARATOR));
+        print_inline(colorize(", ", colors::SEPARATOR));
       }
     }
-    print_inline(colorize("])", Colors::BRACKET) +
-                 colorize(")", Colors::BRACE));
+    print_inline(colorize("])", colors::BRACKET) +
+                 colorize(")", colors::BRACE));
   }
 
   inline void visit(MethodCallExpression &node) override {
@@ -179,7 +179,7 @@ public:
         if (stmt) {
           stmt->accept(*this);
         } else {
-          print_inline(colorize("<null>", Colors::DIM));
+          print_inline(colorize("<null>", colors::DIM));
         }
         in_list_context_ = false;
         print_newline();
@@ -352,29 +352,29 @@ public:
   }
 
   inline void visit(LetStatement &node) override {
-    print_inline(node_color("LetStmt") + colorize(" { ", Colors::BRACE));
-    print_inline(field_color("pattern") + colorize(": ", Colors::SEPARATOR));
+    print_inline(node_color("LetStmt") + colorize(" { ", colors::BRACE));
+    print_inline(field_color("pattern") + colorize(": ", colors::SEPARATOR));
     if (node.pattern) {
       RC_SAFE_ACCEPT(node.pattern);
     } else {
-      print_inline(colorize("<none>", Colors::DIM));
+      print_inline(colorize("<none>", colors::DIM));
     }
-    print_inline(colorize(", ", Colors::SEPARATOR) + field_color("type") +
-                 colorize(": ", Colors::SEPARATOR) + format_type(node.type));
-    print_inline(colorize(", ", Colors::SEPARATOR) + field_color("expr") +
-                 colorize(": ", Colors::SEPARATOR));
+    print_inline(colorize(", ", colors::SEPARATOR) + field_color("type") +
+                 colorize(": ", colors::SEPARATOR) + format_type(node.type));
+    print_inline(colorize(", ", colors::SEPARATOR) + field_color("expr") +
+                 colorize(": ", colors::SEPARATOR));
     RC_SAFE_ACCEPT(node.expr);
-    print_inline(colorize(" }", Colors::BRACE));
+    print_inline(colorize(" }", colors::BRACE));
   }
 
   inline void visit(ExpressionStatement &node) override {
-    print_inline(node_color("ExprStmt") + colorize(" { ", Colors::BRACE));
-    print_inline(field_color("expr") + colorize(": ", Colors::SEPARATOR));
+    print_inline(node_color("ExprStmt") + colorize(" { ", colors::BRACE));
+    print_inline(field_color("expr") + colorize(": ", colors::SEPARATOR));
     RC_SAFE_ACCEPT(node.expression);
-    print_inline(colorize(", ", Colors::SEPARATOR) + field_color("semicolon") +
-                 colorize(": ", Colors::SEPARATOR) +
+    print_inline(colorize(", ", colors::SEPARATOR) + field_color("semicolon") +
+                 colorize(": ", colors::SEPARATOR) +
                  literal_color(node.has_semicolon ? "true" : "false"));
-    print_inline(colorize(" }", Colors::BRACE));
+    print_inline(colorize(" }", colors::BRACE));
   }
 
   inline void visit(EmptyStatement &node) override {
@@ -434,26 +434,26 @@ public:
       print_list_start("params");
       if (node.self_param) {
         print_indent();
-        print_inline(colorize("(", Colors::BRACE));
+        print_inline(colorize("(", colors::BRACE));
         print_inline(node.self_param->is_reference ? "&" : "");
         print_inline(node.self_param->is_mutable ? "mut" : "");
-        print_inline(colorize(" self", Colors::KEYWORD));
-        print_inline(colorize(")", Colors::BRACE));
+        print_inline(colorize(" self", colors::KEYWORD));
+        print_inline(colorize(")", colors::BRACE));
         print_newline();
       }
       for (const auto &param : node.params.value()) {
         print_indent();
-        print_inline(colorize("(", Colors::BRACE));
+        print_inline(colorize("(", colors::BRACE));
         in_list_context_ = true;
         RC_SAFE_ACCEPT(param.first);
         in_list_context_ = false;
-        print_inline(colorize(" : ", Colors::SEPARATOR) +
-                     format_type(param.second) + colorize(")", Colors::BRACE));
+        print_inline(colorize(" : ", colors::SEPARATOR) +
+                     format_type(param.second) + colorize(")", colors::BRACE));
         print_newline();
       }
       print_list_end();
     } else {
-      print_field("params", colorize("None", Colors::DIM));
+      print_field("params", colorize("None", colors::DIM));
     }
 
     print_field("return_type", format_type(node.return_type));
@@ -463,7 +463,7 @@ public:
       RC_SAFE_ACCEPT(node.body.value());
       print_field_end();
     } else {
-      print_field("body", colorize("None", Colors::DIM));
+      print_field("body", colorize("None", colors::DIM));
     }
 
     print_node_end();
@@ -613,7 +613,7 @@ public:
       if (child) {
         child->accept(*this);
       } else {
-        print_inline(colorize("<null>", Colors::DIM));
+        print_inline(colorize("<null>", colors::DIM));
       }
       in_list_context_ = false; // Reset context after visiting child
       print_newline();
@@ -658,7 +658,7 @@ private:
     if (!in_list_context_) {
       print_indent();
     }
-    output_ << node_color(node_name) << colorize(" {", Colors::BRACE)
+    output_ << node_color(node_name) << colorize(" {", colors::BRACE)
             << std::endl;
     increase_indent();
   }
@@ -668,26 +668,26 @@ private:
     if (!in_list_context_) {
       print_indent();
     }
-    output_ << colorize("}", Colors::BRACE);
+    output_ << colorize("}", colors::BRACE);
   }
 
   inline void print_field(const std::string &field_name,
                           const std::string &value) {
     print_indent();
-    output_ << field_color(field_name) << colorize(": ", Colors::SEPARATOR)
+    output_ << field_color(field_name) << colorize(": ", colors::SEPARATOR)
             << value << std::endl;
   }
 
   inline void print_field_start(const std::string &field_name) {
     print_indent();
-    output_ << field_color(field_name) << colorize(": ", Colors::SEPARATOR);
+    output_ << field_color(field_name) << colorize(": ", colors::SEPARATOR);
   }
 
   inline void print_field_end() { output_ << std::endl; }
 
   inline void print_list_start(const std::string &list_name) {
     print_indent();
-    output_ << field_color(list_name) << colorize(": [", Colors::BRACKET)
+    output_ << field_color(list_name) << colorize(": [", colors::BRACKET)
             << std::endl;
     increase_indent();
   }
@@ -695,7 +695,7 @@ private:
   inline void print_list_end() {
     decrease_indent();
     print_indent();
-    output_ << colorize("]", Colors::BRACKET) << std::endl;
+    output_ << colorize("]", colors::BRACKET) << std::endl;
   }
 
   // Color helper methods
@@ -703,31 +703,31 @@ private:
                               const char *color) const {
     if (!use_colors_)
       return text;
-    return std::string(color) + text + Colors::RESET;
+    return std::string(color) + text + colors::RESET;
   }
 
   inline std::string node_color(const std::string &text) const {
-    return colorize(text, Colors::NODE_NAME);
+    return colorize(text, colors::NODE_NAME);
   }
 
   inline std::string field_color(const std::string &text) const {
-    return colorize(text, Colors::FIELD_NAME);
+    return colorize(text, colors::FIELD_NAME);
   }
 
   inline std::string type_color(const std::string &text) const {
-    return colorize(text, Colors::TYPE_NAME);
+    return colorize(text, colors::TYPE_NAME);
   }
 
   inline std::string literal_color(const std::string &text) const {
-    return colorize(text, Colors::LITERAL);
+    return colorize(text, colors::LITERAL);
   }
 
   inline std::string operator_color(const std::string &text) const {
-    return colorize(text, Colors::OPERATOR);
+    return colorize(text, colors::OPERATOR);
   }
 
   inline std::string identifier_color(const std::string &text) const {
-    return colorize(text, Colors::IDENTIFIER);
+    return colorize(text, colors::IDENTIFIER);
   }
 
   // Helper methods
@@ -737,7 +737,7 @@ private:
 
   inline std::string format_token(const Token &token) {
     // Format token based on its type and lexeme
-    std::string result = toString(token.type);
+    std::string result = to_string(token.type);
     if (!token.lexeme.empty() && token.lexeme != result) {
       result += "(" + token.lexeme + ")";
     }

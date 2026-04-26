@@ -2,7 +2,7 @@
 
 namespace rc {
 
-const char *toString(TokenType type) {
+const char *to_string(TokenType type) {
   switch (type) {
 #define X(name, str)                                                           \
   case TokenType::name:                                                        \
@@ -14,11 +14,11 @@ const char *toString(TokenType type) {
   }
 }
 std::ostream &operator<<(std::ostream &os, const TokenType &type) {
-  os << toString(type);
+  os << to_string(type);
   return os;
 }
 const std::unordered_map<std::string_view, TokenType>
-    keywordToTokenType = {
+    keyword_to_token_type = {
         // Strict keywords
         {"as", TokenType::AS},
         {"break", TokenType::BREAK},
@@ -76,7 +76,7 @@ const std::unordered_map<std::string_view, TokenType>
         {"gen", TokenType::GEN},
 };
 const std::unordered_map<std::string_view, TokenType>
-    operatorToTokenType = {
+    operator_to_token_type = {
         {"+", TokenType::PLUS},
         {"-", TokenType::MINUS},
         {"*", TokenType::STAR},
@@ -112,7 +112,7 @@ const std::unordered_map<std::string_view, TokenType>
         {"^=", TokenType::CARET_EQ},
 };
 const std::unordered_map<std::string_view, TokenType>
-    punctuationToTokenType = {{"::", TokenType::COLON_COLON},
+    punctuation_to_token_type = {{"::", TokenType::COLON_COLON},
                               {"..", TokenType::DOT_DOT},
                               {"(", TokenType::L_PAREN},
                               {")", TokenType::R_PAREN},
@@ -127,21 +127,21 @@ const std::unordered_map<std::string_view, TokenType>
                               {"@", TokenType::AT}};
 Lexer::Lexer(const std::string &source) : source(source) {}
 std::vector<Token> Lexer::tokenize() {
-  firstPass();
-  checkForKeywords();
+  first_pass();
+  check_for_keywords();
   return tokens;
 }
-bool Lexer::checkWordBoundary(char c) {
+bool Lexer::check_word_boundary(char c) {
   if (std::isalnum(c) || c == '_') {
     return true;
   }
   return false;
 }
-bool Lexer::isPunctuation(char c) {
+bool Lexer::is_punctuation(char c) {
   return c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']' ||
          c == ',' || c == '.' || c == ':' || c == ';' || c == '@';
 }
-void Lexer::firstPass() {
+void Lexer::first_pass() {
   auto push = [&](TokenType t, std::size_t beg, std::size_t end) {
     tokens.push_back({t, source.substr(beg, end - beg)});
   };
@@ -160,22 +160,22 @@ void Lexer::firstPass() {
     // raw string
     if (i + 1 < n && (c == 'r' || (i + 2 < n && (c == 'b' || c == 'c') &&
                                    source[i + 1] == 'r'))) {
-      TokenType tokenType = TokenType::STRING_LITERAL;
-      size_t prefixLen = 1;
+      TokenType token_type = TokenType::STRING_LITERAL;
+      size_t prefix_len = 1;
 
       if (c == 'b') {
-        tokenType = TokenType::BYTE_STRING_LITERAL;
-        prefixLen = 2;
+        token_type = TokenType::BYTE_STRING_LITERAL;
+        prefix_len = 2;
       } else if (c == 'c') {
-        tokenType = TokenType::C_STRING_LITERAL;
-        prefixLen = 2;
+        token_type = TokenType::C_STRING_LITERAL;
+        prefix_len = 2;
       }
 
-      size_t hashCount = 0;
-      size_t pos = i + prefixLen;
+      size_t hash_count = 0;
+      size_t pos = i + prefix_len;
 
       while (pos < n && source[pos] == '#') {
-        ++hashCount;
+        ++hash_count;
         ++pos;
       }
 
@@ -185,17 +185,17 @@ void Lexer::firstPass() {
 
         while (i < n) {
           if (source[i] == '"') {
-            bool closingMatch = true;
-            for (size_t j = 0; j < hashCount; ++j) {
+            bool closing_match = true;
+            for (size_t j = 0; j < hash_count; ++j) {
               if (i + 1 + j >= n || source[i + 1 + j] != '#') {
-                closingMatch = false;
+                closing_match = false;
                 break;
               }
             }
 
-            if (closingMatch) {
-              i = i + 1 + hashCount;
-              push(tokenType, beg, i);
+            if (closing_match) {
+              i = i + 1 + hash_count;
+              push(token_type, beg, i);
               break;
             }
           }
@@ -282,7 +282,7 @@ void Lexer::firstPass() {
     // integer literal
     if (std::isdigit(static_cast<unsigned char>(c))) {
       std::size_t beg = i++;
-      while (i < n && checkWordBoundary(source[i]))
+      while (i < n && check_word_boundary(source[i]))
         ++i;
       push(TokenType::INTEGER_LITERAL, beg, i);
       continue;
@@ -291,26 +291,26 @@ void Lexer::firstPass() {
     // identifier or keyword
     if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
       std::size_t beg = i++;
-      while (i < n && checkWordBoundary(source[i]))
+      while (i < n && check_word_boundary(source[i]))
         ++i;
       push(TokenType::NON_KEYWORD_IDENTIFIER, beg, i);
       continue;
     }
 
     // punctuation
-    if (isPunctuation(c)) {
-      auto it = punctuationToTokenType.find(std::string_view(&source[i], 1));
+    if (is_punctuation(c)) {
+      auto it = punctuation_to_token_type.find(std::string_view(&source[i], 1));
       // check for two-character punctuation
-      if (i + 1 < n && isPunctuation(source[i + 1])) {
+      if (i + 1 < n && is_punctuation(source[i + 1])) {
         std::string_view punct(&source[i], 2);
-        auto it2 = punctuationToTokenType.find(punct);
-        if (it2 != punctuationToTokenType.end()) {
+        auto it2 = punctuation_to_token_type.find(punct);
+        if (it2 != punctuation_to_token_type.end()) {
           push(it2->second, i, i + 2);
           i += 2;
           continue;
         }
       }
-      push(it != punctuationToTokenType.end() ? it->second : TokenType::UNKNOWN,
+      push(it != punctuation_to_token_type.end() ? it->second : TokenType::UNKNOWN,
            i, i + 1);
       ++i;
       continue;
@@ -322,8 +322,8 @@ void Lexer::firstPass() {
       if (i + len > n)
         continue;
       std::string_view op(&source[i], static_cast<size_t>(len));
-      auto it = operatorToTokenType.find(op);
-      if (it != operatorToTokenType.end()) {
+      auto it = operator_to_token_type.find(op);
+      if (it != operator_to_token_type.end()) {
         push(it->second, i, i + len);
         i += len;
         matched = true;
@@ -338,11 +338,11 @@ void Lexer::firstPass() {
   }
   push(TokenType::TOK_EOF, n, n);
 }
-void Lexer::checkForKeywords() {
+void Lexer::check_for_keywords() {
   for (auto &tok : tokens) {
     if (tok.type == TokenType::NON_KEYWORD_IDENTIFIER) {
-      auto it = keywordToTokenType.find(tok.lexeme);
-      if (it != keywordToTokenType.end())
+      auto it = keyword_to_token_type.find(tok.lexeme);
+      if (it != keyword_to_token_type.end())
         tok.type = it->second;
     }
   }

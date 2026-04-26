@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "topLevel.hpp"
+#include "top_level.hpp"
 #include "type.hpp"
 #include "visitor.hpp"
 
@@ -44,8 +44,8 @@ public:
           "ICmpInst operands must have matching bit width");
     }
 
-    addOperand(lhs_);
-    addOperand(rhs_);
+    add_operand(lhs_);
+    add_operand(rhs_);
   }
 
   ICmpPred pred() const { return pred_; }
@@ -54,29 +54,29 @@ public:
 
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
-  void replaceOperand(Value *oldOp, Value *newOp) override {
+  void replace_operand(Value *old_op, Value *new_op) override {
     for (auto &op : operands) {
-      if (op == oldOp) {
-        oldOp->removeUse(this);
-        op = newOp;
-        newOp->addUse(this);
+      if (op == old_op) {
+        old_op->remove_use(this);
+        op = new_op;
+        new_op->add_use(this);
       }
     }
 
-    if (lhs_.get() == oldOp) {
-      lhs_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    if (lhs_.get() == old_op) {
+      lhs_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
     }
-    if (rhs_.get() == oldOp) {
-      rhs_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    if (rhs_.get() == old_op) {
+      rhs_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
     }
   }
 
   std::shared_ptr<Instruction>
-  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+  clone_inst(BasicBlock *new_parent, const ValueRemapMap &value_map,
             const BlockRemapMap & /*blockMap*/) const override {
-    return std::make_shared<ICmpInst>(newParent, pred_,
-                                      remapValue(lhs_, valueMap),
-                                      remapValue(rhs_, valueMap), name());
+    return std::make_shared<ICmpInst>(new_parent, pred_,
+                                      remap_value(lhs_, value_map),
+                                      remap_value(rhs_, value_map), name());
   }
 
 private:
@@ -88,19 +88,19 @@ private:
 class CallInst : public Instruction {
 public:
   CallInst(BasicBlock *parent, std::shared_ptr<Value> callee,
-           std::vector<std::shared_ptr<Value>> args, TypePtr retTy,
+           std::vector<std::shared_ptr<Value>> args, TypePtr ret_ty,
            std::string name = {})
-      : Instruction(parent, std::move(retTy), std::move(name)),
+      : Instruction(parent, std::move(ret_ty), std::move(name)),
         callee_(std::move(callee)), args_(std::move(args)) {
 
     if (!callee_) {
       throw std::invalid_argument("CallInst requires a callee");
     }
-    addOperand(callee_);
-    addOperands(args_);
+    add_operand(callee_);
+    add_operands(args_);
   }
 
-  Function *calleeFunction() const {
+  Function *callee_function() const {
     if (!callee_) {
       return nullptr;
     }
@@ -121,35 +121,35 @@ public:
 
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
-  void replaceOperand(Value *oldOp, Value *newOp) override {
+  void replace_operand(Value *old_op, Value *new_op) override {
     for (auto &op : operands) {
-      if (op == oldOp) {
-        oldOp->removeUse(this);
-        op = newOp;
-        newOp->addUse(this);
+      if (op == old_op) {
+        old_op->remove_use(this);
+        op = new_op;
+        new_op->add_use(this);
       }
     }
 
-    if (callee_.get() == oldOp) {
-      callee_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    if (callee_.get() == old_op) {
+      callee_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
     }
     for (auto &arg : args_) {
-      if (arg.get() == oldOp) {
-        arg = std::static_pointer_cast<Value>(newOp->shared_from_this());
+      if (arg.get() == old_op) {
+        arg = std::static_pointer_cast<Value>(new_op->shared_from_this());
       }
     }
   }
 
   std::shared_ptr<Instruction>
-  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+  clone_inst(BasicBlock *new_parent, const ValueRemapMap &value_map,
             const BlockRemapMap & /*blockMap*/) const override {
-    std::vector<std::shared_ptr<Value>> newArgs;
-    newArgs.reserve(args_.size());
+    std::vector<std::shared_ptr<Value>> new_args;
+    new_args.reserve(args_.size());
     for (const auto &a : args_) {
-      newArgs.push_back(remapValue(a, valueMap));
+      new_args.push_back(remap_value(a, value_map));
     }
-    return std::make_shared<CallInst>(newParent, remapValue(callee_, valueMap),
-                                      std::move(newArgs), type(), name());
+    return std::make_shared<CallInst>(new_parent, remap_value(callee_, value_map),
+                                      std::move(new_args), type(), name());
   }
 
 private:
@@ -169,7 +169,7 @@ public:
     // Register uses for all incoming values
     for (auto &inc : incomings_) {
       if (inc.first) {
-        inc.first->addUse(this);
+        inc.first->add_use(this);
       }
     }
   }
@@ -178,47 +178,47 @@ public:
 
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
-  void addIncoming(std::shared_ptr<Value> v, BasicBlock *bb) {
+  void add_incoming(std::shared_ptr<Value> v, BasicBlock *bb) {
     if (v) {
-      v->addUse(this);
+      v->add_use(this);
     }
     incomings_.emplace_back(std::move(v), std::move(bb));
   }
 
-  void replaceOperand(Value *oldOp, Value *newOp) override {
+  void replace_operand(Value *old_op, Value *new_op) override {
     for (auto &op : operands) {
-      if (op == oldOp) {
-        oldOp->removeUse(this);
-        op = newOp;
-        newOp->addUse(this);
+      if (op == old_op) {
+        old_op->remove_use(this);
+        op = new_op;
+        new_op->add_use(this);
       }
     }
 
     for (auto &inc : incomings_) {
-      if (inc.first.get() == oldOp) {
-        oldOp->removeUse(this);
-        newOp->addUse(this);
-        inc.first = std::static_pointer_cast<Value>(newOp->shared_from_this());
+      if (inc.first.get() == old_op) {
+        old_op->remove_use(this);
+        new_op->add_use(this);
+        inc.first = std::static_pointer_cast<Value>(new_op->shared_from_this());
       }
     }
   }
 
-  void replaceIncomingBlock(const BasicBlock *oldBB, BasicBlock *newBB) {
+  void replace_incoming_block(const BasicBlock *old_bb, BasicBlock *new_bb) {
     for (auto &inc : incomings_) {
-      if (inc.second == oldBB) {
-        inc.second = newBB;
+      if (inc.second == old_bb) {
+        inc.second = new_bb;
       }
     }
   }
 
-  void removeIncomingBlock(const BasicBlock *bb) {
+  void remove_incoming_block(const BasicBlock *bb) {
     if (!bb) {
       return;
     }
     for (auto it = incomings_.begin(); it != incomings_.end();) {
       if (it->second == bb) {
         if (it->first) {
-          it->first->removeUse(this);
+          it->first->remove_use(this);
         }
         it = incomings_.erase(it);
       } else {
@@ -227,17 +227,17 @@ public:
     }
   }
 
-  void dropAllReferences() override {
+  void drop_all_references() override {
     for (auto *op : operands) {
       if (op) {
-        op->removeUse(this);
+        op->remove_use(this);
       }
     }
     operands.clear();
 
     for (auto &inc : incomings_) {
       if (inc.first) {
-        inc.first->removeUse(this);
+        inc.first->remove_use(this);
       }
     }
     incomings_.clear();
@@ -246,15 +246,15 @@ public:
   std::vector<Incoming> &incomings() { return incomings_; }
 
   std::shared_ptr<Instruction>
-  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
-            const BlockRemapMap &blockMap) const override {
+  clone_inst(BasicBlock *new_parent, const ValueRemapMap &value_map,
+            const BlockRemapMap &block_map) const override {
     std::vector<Incoming> incomings;
     incomings.reserve(incomings_.size());
     for (const auto &inc : incomings_) {
-      incomings.emplace_back(remapValue(inc.first, valueMap),
-                             remapBlock(inc.second, blockMap));
+      incomings.emplace_back(remap_value(inc.first, value_map),
+                             remap_block(inc.second, block_map));
     }
-    return std::make_shared<PhiInst>(newParent, type(), std::move(incomings),
+    return std::make_shared<PhiInst>(new_parent, type(), std::move(incomings),
                                      name());
   }
 
@@ -265,11 +265,11 @@ private:
 class SelectInst : public Instruction {
 public:
   SelectInst(BasicBlock *parent, std::shared_ptr<Value> cond,
-             std::shared_ptr<Value> ifTrue, std::shared_ptr<Value> ifFalse,
+             std::shared_ptr<Value> if_true, std::shared_ptr<Value> if_false,
              TypePtr ty, std::string name = {})
       : Instruction(parent, std::move(ty), std::move(name)),
-        cond_(std::move(cond)), ifTrue_(std::move(ifTrue)),
-        ifFalse_(std::move(ifFalse)) {
+        cond_(std::move(cond)), if_true_(std::move(if_true)),
+        if_false_(std::move(if_false)) {
     if (!cond_) {
       throw std::invalid_argument("SelectInst requires a condition");
     }
@@ -278,88 +278,88 @@ public:
       throw std::invalid_argument("SelectInst condition must be i1");
     }
 
-    addOperand(cond_);
-    addOperand(ifTrue_);
-    addOperand(ifFalse_);
+    add_operand(cond_);
+    add_operand(if_true_);
+    add_operand(if_false_);
   }
 
   const std::shared_ptr<Value> &cond() const { return cond_; }
-  const std::shared_ptr<Value> &ifTrue() const { return ifTrue_; }
-  const std::shared_ptr<Value> &ifFalse() const { return ifFalse_; }
+  const std::shared_ptr<Value> &if_true() const { return if_true_; }
+  const std::shared_ptr<Value> &if_false() const { return if_false_; }
 
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
-  void replaceOperand(Value *oldOp, Value *newOp) override {
+  void replace_operand(Value *old_op, Value *new_op) override {
     for (auto &op : operands) {
-      if (op == oldOp) {
-        oldOp->removeUse(this);
-        op = newOp;
-        newOp->addUse(this);
+      if (op == old_op) {
+        old_op->remove_use(this);
+        op = new_op;
+        new_op->add_use(this);
       }
     }
 
-    if (cond_.get() == oldOp) {
-      cond_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    if (cond_.get() == old_op) {
+      cond_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
     }
-    if (ifTrue_.get() == oldOp) {
-      ifTrue_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    if (if_true_.get() == old_op) {
+      if_true_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
     }
-    if (ifFalse_.get() == oldOp) {
-      ifFalse_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    if (if_false_.get() == old_op) {
+      if_false_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
     }
   }
 
   std::shared_ptr<Instruction>
-  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+  clone_inst(BasicBlock *new_parent, const ValueRemapMap &value_map,
             const BlockRemapMap & /*blockMap*/) const override {
     return std::make_shared<SelectInst>(
-        newParent, remapValue(cond_, valueMap), remapValue(ifTrue_, valueMap),
-        remapValue(ifFalse_, valueMap), type(), name());
+        new_parent, remap_value(cond_, value_map), remap_value(if_true_, value_map),
+        remap_value(if_false_, value_map), type(), name());
   }
 
 private:
   std::shared_ptr<Value> cond_;
-  std::shared_ptr<Value> ifTrue_;
-  std::shared_ptr<Value> ifFalse_;
+  std::shared_ptr<Value> if_true_;
+  std::shared_ptr<Value> if_false_;
 };
 
 class ZExtInst : public Instruction {
 public:
-  ZExtInst(BasicBlock *parent, std::shared_ptr<Value> src, TypePtr destTy,
+  ZExtInst(BasicBlock *parent, std::shared_ptr<Value> src, TypePtr dest_ty,
            std::string name = {})
-      : Instruction(parent, std::move(destTy), std::move(name)),
+      : Instruction(parent, std::move(dest_ty), std::move(name)),
         src_(std::move(src)) {
     if (!src_) {
       throw std::invalid_argument("ZExtInst source cannot be null");
     }
 
-    addOperand(src_);
+    add_operand(src_);
   }
 
   const std::shared_ptr<Value> &source() const { return src_; }
 
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
-  void replaceOperand(Value *oldOp, Value *newOp) override {
+  void replace_operand(Value *old_op, Value *new_op) override {
     for (auto &op : operands) {
-      if (op == oldOp) {
-        oldOp->removeUse(this);
-        op = newOp;
-        newOp->addUse(this);
+      if (op == old_op) {
+        old_op->remove_use(this);
+        op = new_op;
+        new_op->add_use(this);
       }
     }
-    if (src_.get() == oldOp) {
-      src_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    if (src_.get() == old_op) {
+      src_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
     }
   }
 
-  TypePtr destType() const { return type(); }
+  TypePtr dest_type() const { return type(); }
 
   std::shared_ptr<Instruction>
-  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+  clone_inst(BasicBlock *new_parent, const ValueRemapMap &value_map,
             const BlockRemapMap & /*blockMap*/) const override {
-    return std::make_shared<ZExtInst>(newParent, remapValue(src_, valueMap),
-                                      destType(), name());
+    return std::make_shared<ZExtInst>(new_parent, remap_value(src_, value_map),
+                                      dest_type(), name());
   }
 
 private:
@@ -368,49 +368,49 @@ private:
 
 class SExtInst : public Instruction {
 public:
-  SExtInst(BasicBlock *parent, std::shared_ptr<Value> src, TypePtr destTy,
+  SExtInst(BasicBlock *parent, std::shared_ptr<Value> src, TypePtr dest_ty,
            std::string name = {})
-      : Instruction(parent, std::move(destTy), std::move(name)),
+      : Instruction(parent, std::move(dest_ty), std::move(name)),
         src_(std::move(src)) {
     if (!src_) {
       throw std::invalid_argument("SExtInst source cannot be null");
     }
 
-    addOperand(src_);
+    add_operand(src_);
   }
 
   const std::shared_ptr<Value> &source() const { return src_; }
 
-  size_t srcBits() const {
-    auto srcInt = std::dynamic_pointer_cast<const IntegerType>(src_->type());
-    if (!srcInt) {
+  size_t src_bits() const {
+    auto src_int = std::dynamic_pointer_cast<const IntegerType>(src_->type());
+    if (!src_int) {
       throw std::invalid_argument("SExtInst source type must be integer");
     }
-    return srcInt->bits();
+    return src_int->bits();
   }
 
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
-  void replaceOperand(Value *oldOp, Value *newOp) override {
+  void replace_operand(Value *old_op, Value *new_op) override {
     for (auto &op : operands) {
-      if (op == oldOp) {
-        oldOp->removeUse(this);
-        op = newOp;
-        newOp->addUse(this);
+      if (op == old_op) {
+        old_op->remove_use(this);
+        op = new_op;
+        new_op->add_use(this);
       }
     }
-    if (src_.get() == oldOp) {
-      src_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    if (src_.get() == old_op) {
+      src_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
     }
   }
 
-  TypePtr destType() const { return type(); }
+  TypePtr dest_type() const { return type(); }
 
   std::shared_ptr<Instruction>
-  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+  clone_inst(BasicBlock *new_parent, const ValueRemapMap &value_map,
             const BlockRemapMap & /*blockMap*/) const override {
-    return std::make_shared<SExtInst>(newParent, remapValue(src_, valueMap),
-                                      destType(), name());
+    return std::make_shared<SExtInst>(new_parent, remap_value(src_, value_map),
+                                      dest_type(), name());
   }
 
 private:
@@ -419,63 +419,63 @@ private:
 
 class TruncInst : public Instruction {
 public:
-  TruncInst(BasicBlock *parent, std::shared_ptr<Value> src, TypePtr destTy,
+  TruncInst(BasicBlock *parent, std::shared_ptr<Value> src, TypePtr dest_ty,
             std::string name = {})
-      : Instruction(parent, std::move(destTy), std::move(name)),
+      : Instruction(parent, std::move(dest_ty), std::move(name)),
         src_(std::move(src)) {
     if (!src_) {
       throw std::invalid_argument("TruncInst source cannot be null");
     }
 
-    addOperand(src_);
+    add_operand(src_);
   }
 
   const std::shared_ptr<Value> &source() const { return src_; }
 
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
-  TypePtr destType() const { return type(); }
+  TypePtr dest_type() const { return type(); }
 
-  size_t destBits() const {
-    auto destInt = std::dynamic_pointer_cast<const IntegerType>(type());
-    if (!destInt) {
+  size_t dest_bits() const {
+    auto dest_int = std::dynamic_pointer_cast<const IntegerType>(type());
+    if (!dest_int) {
       throw std::invalid_argument("TruncInst destination type is not integer");
     }
-    return destInt->bits();
+    return dest_int->bits();
   }
 
-  size_t shiftBits() const {
-    auto srcInt = std::dynamic_pointer_cast<const IntegerType>(src_->type());
-    auto destInt = std::dynamic_pointer_cast<const IntegerType>(type());
-    if (!srcInt || !destInt) {
+  size_t shift_bits() const {
+    auto src_int = std::dynamic_pointer_cast<const IntegerType>(src_->type());
+    auto dest_int = std::dynamic_pointer_cast<const IntegerType>(type());
+    if (!src_int || !dest_int) {
       throw std::invalid_argument(
           "TruncInst source and destination types must be integer");
     }
-    if (srcInt->bits() <= destInt->bits()) {
+    if (src_int->bits() <= dest_int->bits()) {
       throw std::invalid_argument(
           "TruncInst source type must be larger than destination type");
     }
-    return srcInt->bits() - destInt->bits();
+    return src_int->bits() - dest_int->bits();
   }
 
-  void replaceOperand(Value *oldOp, Value *newOp) override {
+  void replace_operand(Value *old_op, Value *new_op) override {
     for (auto &op : operands) {
-      if (op == oldOp) {
-        oldOp->removeUse(this);
-        op = newOp;
-        newOp->addUse(this);
+      if (op == old_op) {
+        old_op->remove_use(this);
+        op = new_op;
+        new_op->add_use(this);
       }
     }
-    if (src_.get() == oldOp) {
-      src_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    if (src_.get() == old_op) {
+      src_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
     }
   }
 
   std::shared_ptr<Instruction>
-  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+  clone_inst(BasicBlock *new_parent, const ValueRemapMap &value_map,
             const BlockRemapMap & /*blockMap*/) const override {
-    return std::make_shared<TruncInst>(newParent, remapValue(src_, valueMap),
-                                       destType(), name());
+    return std::make_shared<TruncInst>(new_parent, remap_value(src_, value_map),
+                                       dest_type(), name());
   }
 
 private:
@@ -493,7 +493,7 @@ public:
       throw std::invalid_argument(
           "MoveInst source and destination cannot be null");
     }
-    addOperand(src_);
+    add_operand(src_);
   }
 
   const std::shared_ptr<Value> &source() const { return src_; }
@@ -501,24 +501,24 @@ public:
 
   void accept(InstructionVisitor &v) const override { v.visit(*this); }
 
-  void replaceOperand(Value *oldOp, Value *newOp) override {
+  void replace_operand(Value *old_op, Value *new_op) override {
     for (auto &op : operands) {
-      if (op == oldOp) {
-        oldOp->removeUse(this);
-        op = newOp;
-        newOp->addUse(this);
+      if (op == old_op) {
+        old_op->remove_use(this);
+        op = new_op;
+        new_op->add_use(this);
       }
     }
-    if (src_.get() == oldOp) {
-      src_ = std::static_pointer_cast<Value>(newOp->shared_from_this());
+    if (src_.get() == old_op) {
+      src_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
     }
   }
 
   std::shared_ptr<Instruction>
-  cloneInst(BasicBlock *newParent, const ValueRemapMap &valueMap,
+  clone_inst(BasicBlock *new_parent, const ValueRemapMap &value_map,
             const BlockRemapMap & /*blockMap*/) const override {
-    return std::make_shared<MoveInst>(newParent, remapValue(src_, valueMap),
-                                      remapValue(dest_, valueMap), name());
+    return std::make_shared<MoveInst>(new_parent, remap_value(src_, value_map),
+                                      remap_value(dest_, value_map), name());
   }
 
 private:

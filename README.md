@@ -7,15 +7,27 @@ A C++ implementation of a compiler for a subset of the Rust programming language
 ```
 RCompiler/
 ├── src/
-│   ├── main.cpp
-├── include/
+│   ├── ast/
+│   ├── backend/
+│   ├── ir/
 │   ├── lexer/
-│   ├── parser/
+│   ├── opt/
+│   ├── preprocessor/
+│   ├── semantic/
+│   ├── utils/
+│   └── main.cpp
+├── include/
+│   ├── ast/
+│   ├── backend/
+│   ├── common/
+│   ├── ir/
+│   ├── lexer/
+│   ├── opt/
+│   ├── preprocessor/
 │   ├── semantic/
 │   └── utils/
 ├── tests/
-│   ├── unit/
-│   └── integration/
+│   └── ci_*.cpp
 ├── CMakeLists.txt
 ├── README.md
 └── whitelist.md

@@ -1,8 +1,8 @@
 #include "utils/logger.hpp"
 
-namespace Logger {
+namespace logger {
 
-const char *getLevelString(Level level) {
+const char *get_level_string(Level level) {
   switch (level) {
   case Level::ERROR:
     return "ERROR";
@@ -16,21 +16,21 @@ const char *getLevelString(Level level) {
     return "NONE ";
   }
 }
-const char *getLevelColor(Level level) {
+const char *get_level_color(Level level) {
   switch (level) {
   case Level::ERROR:
-    return Color::RED;
+    return color::RED;
   case Level::WARN:
-    return Color::YELLOW;
+    return color::YELLOW;
   case Level::INFO:
-    return Color::GREEN;
+    return color::GREEN;
   case Level::DEBUG:
-    return Color::BLUE;
+    return color::BLUE;
   default:
-    return Color::RESET;
+    return color::RESET;
   }
 }
-std::string getTimestamp() {
+std::string get_timestamp() {
   auto now = std::chrono::system_clock::now();
   auto time_t = std::chrono::system_clock::to_time_t(now);
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -43,10 +43,10 @@ std::string getTimestamp() {
   return ss.str();
 }
 void log(Level level, std::string_view message) {
-  if (static_cast<int>(level) <= static_cast<int>(getCurrentLevel())) {
-    std::cerr << Color::GRAY << "[" << getTimestamp() << "] "
-              << getLevelColor(level) << "[" << getLevelString(level) << "] "
-              << Color::RESET << message << std::endl;
+  if (static_cast<int>(level) <= static_cast<int>(get_current_level())) {
+    std::cerr << color::GRAY << "[" << get_timestamp() << "] "
+              << get_level_color(level) << "[" << get_level_string(level) << "] "
+              << color::RESET << message << std::endl;
   }
 }
 void error(std::string_view message) { log(Level::ERROR, message); }
@@ -54,4 +54,4 @@ void warn(std::string_view message) { log(Level::WARN, message); }
 void info(std::string_view message) { log(Level::INFO, message); }
 void debug(std::string_view message) { log(Level::DEBUG, message); }
 
-} // namespace Logger
+} // namespace logger

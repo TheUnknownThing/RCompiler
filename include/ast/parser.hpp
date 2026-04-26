@@ -12,12 +12,12 @@
 #include "utils/parsec.hpp"
 #include "utils/pratt.hpp"
 
-#include "parsers/patternParser.hpp"
+#include "parsers/pattern_parser.hpp"
 
 #include "nodes/base.hpp"
 #include "nodes/expr.hpp"
 #include "nodes/stmt.hpp"
-#include "nodes/topLevel.hpp"
+#include "nodes/top_level.hpp"
 
 namespace rc {
 

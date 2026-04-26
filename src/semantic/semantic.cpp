@@ -30,7 +30,7 @@ void SemanticAnalyzer::analyze(const std::shared_ptr<RootNode> &root) {
 
   prelude_scope_owner_ = std::move(prelude_owner);
   root_scope_ = first.root_scope;
-  expr_cache_ = fourth.getExprCache();
+  expr_cache_ = fourth.get_expr_cache();
 }
 
 } // namespace rc

@@ -2,14 +2,14 @@
 
 namespace rc::opt::utils {
 
-void replaceAllUsesWith(ir::Value &from, ir::Value *to) {
+void replace_all_uses_with(ir::Value &from, ir::Value *to) {
   if (!to || &from == to) {
     return;
   }
 
   std::vector<ir::Instruction *> users;
-  users.reserve(from.getUses().size());
-  for (auto *u : from.getUses()) {
+  users.reserve(from.get_uses().size());
+  for (auto *u : from.get_uses()) {
     users.push_back(u);
   }
 
@@ -17,17 +17,17 @@ void replaceAllUsesWith(ir::Value &from, ir::Value *to) {
     if (!user) {
       continue;
     }
-    user->replaceOperand(&from, to);
+    user->replace_operand(&from, to);
   }
 }
-void replaceAllUsesWith(ir::Value *from, ir::Value *to) {
+void replace_all_uses_with(ir::Value *from, ir::Value *to) {
   if (!from) {
     return;
   }
-  replaceAllUsesWith(*from, to);
+  replace_all_uses_with(*from, to);
 }
 std::shared_ptr<ir::Instruction>
-findSharedInstruction(ir::BasicBlock &bb, ir::Instruction *inst) {
+find_shared_instruction(ir::BasicBlock &bb, ir::Instruction *inst) {
   if (!inst) {
     return nullptr;
   }
@@ -38,15 +38,15 @@ findSharedInstruction(ir::BasicBlock &bb, ir::Instruction *inst) {
   }
   return nullptr;
 }
-bool eraseInstruction(ir::BasicBlock &bb, ir::Instruction *inst) {
-  auto sp = findSharedInstruction(bb, inst);
+bool erase_instruction(ir::BasicBlock &bb, ir::Instruction *inst) {
+  auto sp = find_shared_instruction(bb, inst);
   if (!sp) {
     return false;
   }
-  bb.eraseInstruction(sp);
+  bb.erase_instruction(sp);
   return true;
 }
-std::shared_ptr<ir::ConstantInt> asConstInt(ir::Value *v) {
+std::shared_ptr<ir::ConstantInt> as_const_int(ir::Value *v) {
   if (!v) {
     return nullptr;
   }
@@ -55,11 +55,11 @@ std::shared_ptr<ir::ConstantInt> asConstInt(ir::Value *v) {
   }
   return nullptr;
 }
-bool isConstInt(ir::Value *v, std::uint64_t val) {
-  auto ci = asConstInt(v);
+bool is_const_int(ir::Value *v, std::uint64_t val) {
+  auto ci = as_const_int(v);
   return ci && ci->value() == val;
 }
-std::optional<unsigned> intBits(const ir::TypePtr &ty) {
+std::optional<unsigned> int_bits(const ir::TypePtr &ty) {
   auto it = std::dynamic_pointer_cast<const ir::IntegerType>(ty);
   if (!it) {
     return std::nullopt;

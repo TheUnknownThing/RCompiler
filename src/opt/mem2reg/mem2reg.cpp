@@ -6,59 +6,59 @@ void Mem2RegVisitor::run(ir::Module &module) {
   for (const auto &function : module.functions()) {
     dominators_.clear();
     idom_.clear();
-    dominanceFrontiers_.clear();
-    renameStacks_.clear();
-    phiNodes_.clear();
-    toRemove_.clear();
-    undefValues_.clear();
-    promotableAllocas_.clear();
+    dominance_frontiers_.clear();
+    rename_stacks_.clear();
+    phi_nodes_.clear();
+    to_remove_.clear();
+    undef_values_.clear();
+    promotable_allocas_.clear();
 
-    removeUnusedAllocas(*function);
-    replaceUseWithValue(*function);
+    remove_unused_allocas(*function);
+    replace_use_with_value(*function);
 
-    findDominators(*function);
-    findIDom(*function);
-    findDomFrontiers(*function);
+    find_dominators(*function);
+    find_i_dom(*function);
+    find_dom_frontiers(*function);
     mem2reg(*function);
-    removeDeadInstructions(*function);
+    remove_dead_instructions(*function);
   }
 }
-void Mem2RegVisitor::removeUnusedAllocas(ir::Function &function) {
+void Mem2RegVisitor::remove_unused_allocas(ir::Function &function) {
   for (const auto &bb : function.blocks()) {
     for (const auto &inst : bb->instructions()) {
       if (auto *alloca = dynamic_cast<ir::AllocaInst *>(inst.get())) {
-        if (alloca->getUses().empty()) {
-          toRemove_.insert(alloca);
+        if (alloca->get_uses().empty()) {
+          to_remove_.insert(alloca);
         }
       }
     }
   }
 }
-void Mem2RegVisitor::replaceUseWithValue(ir::Function &function) {
+void Mem2RegVisitor::replace_use_with_value(ir::Function &function) {
   // if an alloca is only used by 1 store and > 1 load, we can replace loads with the stored value
-  std::unordered_map<ir::AllocaInst *, ir::Value *> allocaStoreValues;
-  std::unordered_map<ir::AllocaInst *, std::vector<ir::LoadInst *>> allocaLoadInsts;
-  std::unordered_map<ir::AllocaInst *, size_t> allocaStoreCounts;
+  std::unordered_map<ir::AllocaInst *, ir::Value *> alloca_store_values;
+  std::unordered_map<ir::AllocaInst *, std::vector<ir::LoadInst *>> alloca_load_insts;
+  std::unordered_map<ir::AllocaInst *, size_t> alloca_store_counts;
 
   for (const auto &bb : function.blocks()) {
     for (const auto &inst : bb->instructions()) {
       if (auto *store = dynamic_cast<ir::StoreInst *>(inst.get())) {
         if (auto *alloca = dynamic_cast<ir::AllocaInst *>(store->pointer().get())) {
-          allocaStoreCounts[alloca]++;
-          allocaStoreValues[alloca] = store->value().get();
+          alloca_store_counts[alloca]++;
+          alloca_store_values[alloca] = store->value().get();
         }
       } else if (auto *load = dynamic_cast<ir::LoadInst *>(inst.get())) {
         if (auto *alloca = dynamic_cast<ir::AllocaInst *>(load->pointer().get())) {
-          allocaLoadInsts[alloca].push_back(load);
+          alloca_load_insts[alloca].push_back(load);
         }
       }
     }
   }
 
-  for (const auto &[alloca, storeCount] : allocaStoreCounts) {
-    if (storeCount == 1 && allocaLoadInsts.count(alloca) > 0) {
-      bool canReplace = true;
-      for (auto *user : alloca->getUses()) {
+  for (const auto &[alloca, store_count] : alloca_store_counts) {
+    if (store_count == 1 && alloca_load_insts.count(alloca) > 0) {
+      bool can_replace = true;
+      for (auto *user : alloca->get_uses()) {
         if (dynamic_cast<ir::StoreInst *>(user)) {
           continue;
         }
@@ -66,33 +66,33 @@ void Mem2RegVisitor::replaceUseWithValue(ir::Function &function) {
           continue;
         }
         // getelementptr or other use - cannot replace
-        canReplace = false;
+        can_replace = false;
         break;
       }
-      if (!canReplace) {
+      if (!can_replace) {
         continue;
       }
 
-      ir::Value *storedValue = allocaStoreValues[alloca];
-      for (auto *loadInst : allocaLoadInsts[alloca]) {
-        utils::replaceAllUsesWith(*loadInst, storedValue);
-        toRemove_.insert(loadInst);
+      ir::Value *stored_value = alloca_store_values[alloca];
+      for (auto *load_inst : alloca_load_insts[alloca]) {
+        utils::replace_all_uses_with(*load_inst, stored_value);
+        to_remove_.insert(load_inst);
       }
       // Also remove the store instruction
       for (const auto &bb : function.blocks()) {
         for (const auto &inst : bb->instructions()) {
           if (auto *store = dynamic_cast<ir::StoreInst *>(inst.get())) {
             if (store->pointer().get() == alloca) {
-              toRemove_.insert(store);
+              to_remove_.insert(store);
             }
           }
         }
       }
-      toRemove_.insert(alloca);
+      to_remove_.insert(alloca);
     }
   }
 }
-void Mem2RegVisitor::findDominators(ir::Function &function) {
+void Mem2RegVisitor::find_dominators(ir::Function &function) {
   const auto &blocks = function.blocks();
   if (blocks.empty()) {
     return;
@@ -139,7 +139,7 @@ void Mem2RegVisitor::findDominators(ir::Function &function) {
     }
   }
 }
-void Mem2RegVisitor::findIDom(ir::Function &function) {
+void Mem2RegVisitor::find_i_dom(ir::Function &function) {
   const auto &blocks = function.blocks();
   if (blocks.empty()) {
     return;
@@ -171,7 +171,7 @@ void Mem2RegVisitor::findIDom(ir::Function &function) {
     idom_[bb.get()] = idom;
   }
 }
-void Mem2RegVisitor::findDomFrontiers(ir::Function &function) {
+void Mem2RegVisitor::find_dom_frontiers(ir::Function &function) {
   const auto &blocks = function.blocks();
   if (blocks.empty()) {
     return;
@@ -186,7 +186,7 @@ void Mem2RegVisitor::findDomFrontiers(ir::Function &function) {
     for (const auto &p : preds) {
       for (const auto &elem : dominators_[p]) {
         if (dominators_[bb.get()].count(elem) == 0) {
-          dominanceFrontiers_[elem].insert(bb.get());
+          dominance_frontiers_[elem].insert(bb.get());
         }
       }
     }
@@ -199,7 +199,7 @@ void Mem2RegVisitor::mem2reg(ir::Function &function) {
   }
 
   std::unordered_map<ir::AllocaInst *, std::unordered_set<ir::BasicBlock *>>
-      defBlocks;
+      def_blocks;
   std::vector<ir::AllocaInst *> allocas;
 
   for (const auto &bb : blocks) {
@@ -212,7 +212,7 @@ void Mem2RegVisitor::mem2reg(ir::Function &function) {
       if (auto *store = dynamic_cast<ir::StoreInst *>(inst.get())) {
         if (auto *alloca =
                 dynamic_cast<ir::AllocaInst *>(store->pointer().get())) {
-          defBlocks[alloca].insert(bb.get());
+          def_blocks[alloca].insert(bb.get());
         }
       }
     }
@@ -222,7 +222,7 @@ void Mem2RegVisitor::mem2reg(ir::Function &function) {
   // We may pass a ptr to another function, so we need to be careful.
   for (auto *alloca : allocas) {
     bool promotable = true;
-    for (auto *user : alloca->getUses()) {
+    for (auto *user : alloca->get_uses()) {
       if (auto *load = dynamic_cast<ir::LoadInst *>(user)) {
         if (load->pointer().get() == alloca) {
           continue;
@@ -239,81 +239,81 @@ void Mem2RegVisitor::mem2reg(ir::Function &function) {
     }
 
     if (promotable) {
-      promotableAllocas_.insert(alloca);
+      promotable_allocas_.insert(alloca);
     }
   }
 
   for (auto *alloca : allocas) {
-    if (!promotableAllocas_.count(alloca)) {
+    if (!promotable_allocas_.count(alloca)) {
       continue;
     }
-    const auto &defs = defBlocks[alloca];
-    for (auto *defBB : defs) {
-      placePhiNodes(*defBB, alloca);
+    const auto &defs = def_blocks[alloca];
+    for (auto *def_bb : defs) {
+      place_phi_nodes(*def_bb, alloca);
     }
   }
 
   rename(*blocks.front());
 }
-void Mem2RegVisitor::placePhiNodes(ir::BasicBlock &bb,
+void Mem2RegVisitor::place_phi_nodes(ir::BasicBlock &bb,
                                           ir::AllocaInst *alloca) {
 
   // place it at bb's dominance frontiers
-  const auto &frontiers = dominanceFrontiers_[&bb];
+  const auto &frontiers = dominance_frontiers_[&bb];
   for (auto *df_bb : frontiers) {
-    if (phiNodes_[df_bb].count(alloca) || df_bb == &bb) {
+    if (phi_nodes_[df_bb].count(alloca) || df_bb == &bb) {
       continue; // already placed
     }
 
-    auto phi = df_bb->prepend<ir::PhiInst>(alloca->allocatedType());
-    phiNodes_[df_bb][alloca] = phi.get();
+    auto phi = df_bb->prepend<ir::PhiInst>(alloca->allocated_type());
+    phi_nodes_[df_bb][alloca] = phi.get();
 
-    placePhiNodes(*df_bb, alloca);
+    place_phi_nodes(*df_bb, alloca);
   }
 }
 void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
-  std::vector<const ir::AllocaInst *> pushedAllocas;
+  std::vector<const ir::AllocaInst *> pushed_allocas;
 
-  const auto &phi_bb = phiNodes_[&bb];
+  const auto &phi_bb = phi_nodes_[&bb];
   for (const auto &[alloca, phi] : phi_bb) {
-    renameStacks_[alloca].push_back(phi);
-    pushedAllocas.push_back(alloca);
+    rename_stacks_[alloca].push_back(phi);
+    pushed_allocas.push_back(alloca);
   }
 
   for (const auto &inst : bb.instructions()) {
     if (auto *store = dynamic_cast<ir::StoreInst *>(inst.get())) {
       if (auto *alloca =
               dynamic_cast<ir::AllocaInst *>(store->pointer().get())) {
-        if (!promotableAllocas_.count(alloca)) {
+        if (!promotable_allocas_.count(alloca)) {
           continue;
         }
-        auto &stack = renameStacks_[alloca];
+        auto &stack = rename_stacks_[alloca];
         stack.push_back(store->value().get());
-        pushedAllocas.push_back(alloca);
+        pushed_allocas.push_back(alloca);
 
         LOG_DEBUG("[Mem2Reg] Replacing store to alloca " + alloca->name() +
                   " with value " + store->value()->name());
 
-        toRemove_.insert(inst.get());
+        to_remove_.insert(inst.get());
       }
     } else if (auto *load = dynamic_cast<ir::LoadInst *>(inst.get())) {
       if (auto *alloca =
               dynamic_cast<ir::AllocaInst *>(load->pointer().get())) {
-        if (!promotableAllocas_.count(alloca)) {
+        if (!promotable_allocas_.count(alloca)) {
           continue;
         }
-        auto &stack = renameStacks_[alloca];
+        auto &stack = rename_stacks_[alloca];
         if (stack.empty()) {
           // No reaching definition - use undef value
           auto undef =
-              std::make_shared<ir::UndefValue>(alloca->allocatedType());
-          undefValues_.push_back(undef); // Keep alive
-          utils::replaceAllUsesWith(*load, undef.get());
+              std::make_shared<ir::UndefValue>(alloca->allocated_type());
+          undef_values_.push_back(undef); // Keep alive
+          utils::replace_all_uses_with(*load, undef.get());
         } else {
-          utils::replaceAllUsesWith(*load, stack.back());
+          utils::replace_all_uses_with(*load, stack.back());
         }
 
-        toRemove_.insert(inst.get());
+        to_remove_.insert(inst.get());
       }
     }
   }
@@ -321,16 +321,16 @@ void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
   // rename in successor phi nodes
   const auto &succs = utils::detail::successors(bb);
   for (auto *succ_bb : succs) {
-    const auto &phi_succ_bb = phiNodes_[succ_bb];
+    const auto &phi_succ_bb = phi_nodes_[succ_bb];
     for (const auto &[alloca, phi] : phi_succ_bb) {
-      auto &stack = renameStacks_[alloca];
+      auto &stack = rename_stacks_[alloca];
       if (stack.empty()) {
         // No reaching definition - use undef value
-        auto undef = std::make_shared<ir::UndefValue>(alloca->allocatedType());
-        undefValues_.push_back(undef); // Keep alive
-        phi->addIncoming(undef, &bb);
+        auto undef = std::make_shared<ir::UndefValue>(alloca->allocated_type());
+        undef_values_.push_back(undef); // Keep alive
+        phi->add_incoming(undef, &bb);
       } else {
-        phi->addIncoming(stack.back()->shared_from_this(),
+        phi->add_incoming(stack.back()->shared_from_this(),
                          &bb);
       }
     }
@@ -344,30 +344,30 @@ void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
   }
 
   // pop
-  for (auto it = pushedAllocas.rbegin(); it != pushedAllocas.rend(); ++it) {
-    auto &stack = renameStacks_[*it];
+  for (auto it = pushed_allocas.rbegin(); it != pushed_allocas.rend(); ++it) {
+    auto &stack = rename_stacks_[*it];
     if (!stack.empty()) {
       stack.pop_back();
     }
   }
 }
-void Mem2RegVisitor::removeDeadInstructions(ir::Function &function) {
+void Mem2RegVisitor::remove_dead_instructions(ir::Function &function) {
   for (const auto &bb : function.blocks()) {
     auto &instrs = bb->instructions();
     // NOTE: upon removing the instructions, we also need to adjust its next &
     // prev ptr.
     for (auto it = instrs.begin(); it != instrs.end();) {
-      if (toRemove_.count(it->get())) {
+      if (to_remove_.count(it->get())) {
         auto inst = std::static_pointer_cast<ir::Instruction>(*it);
-        inst->dropAllReferences();
+        inst->drop_all_references();
 
         auto *prev = inst->prev();
         auto *next = inst->next();
         if (prev) {
-          prev->setNext(next);
+          prev->set_next(next);
         }
         if (next) {
-          next->setPrev(prev);
+          next->set_prev(prev);
         }
         it = instrs.erase(it);
       } else {

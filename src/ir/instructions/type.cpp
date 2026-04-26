@@ -2,23 +2,23 @@
 
 namespace rc::ir {
 
-std::shared_ptr<Value> remapValue(const std::shared_ptr<Value> &v,
-                                         const ValueRemapMap &valueMap) {
+std::shared_ptr<Value> remap_value(const std::shared_ptr<Value> &v,
+                                         const ValueRemapMap &value_map) {
   if (!v) {
     return nullptr;
   }
-  auto it = valueMap.find(v.get());
-  if (it != valueMap.end()) {
+  auto it = value_map.find(v.get());
+  if (it != value_map.end()) {
     return it->second;
   }
   return v;
 }
-BasicBlock *remapBlock(BasicBlock *bb, const BlockRemapMap &blockMap) {
+BasicBlock *remap_block(BasicBlock *bb, const BlockRemapMap &block_map) {
   if (!bb) {
     return nullptr;
   }
-  auto it = blockMap.find(bb);
-  if (it != blockMap.end()) {
+  auto it = block_map.find(bb);
+  if (it != block_map.end()) {
     return it->second;
   }
   return bb;

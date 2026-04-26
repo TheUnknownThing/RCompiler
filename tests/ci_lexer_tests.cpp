@@ -54,7 +54,7 @@ void run_case(const fs::path &source_path, const fs::path &expected_path) {
     }
 
     for (std::size_t i = 0; i < tokens.size(); ++i) {
-      const auto actual_type = rc::toString(tokens[i].type);
+      const auto actual_type = rc::to_string(tokens[i].type);
       if (actual_type != expected_tokens[i]) {
         std::ostringstream oss;
         oss << "[lexer] Token mismatch for " << source_path.filename()

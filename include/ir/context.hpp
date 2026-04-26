@@ -16,16 +16,16 @@ namespace rc::ir {
 class Context {
 public:
   explicit Context(
-      const std::unordered_map<const BaseNode *, SemType> &exprCache)
-      : exprCache_(exprCache) {}
+      const std::unordered_map<const BaseNode *, SemType> &expr_cache)
+      : expr_cache_(expr_cache) {}
 
-  SemType lookupType(const BaseNode *node) const;
+  SemType lookup_type(const BaseNode *node) const;
 
-  TypePtr resolveType(const SemType &type) const;
+  TypePtr resolve_type(const SemType &type) const;
 
 private:
   const std::unordered_map<const BaseNode *, SemType>
-      &exprCache_; // from semantic
+      &expr_cache_; // from semantic
 };
 
 

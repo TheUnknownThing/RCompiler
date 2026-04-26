@@ -9,21 +9,21 @@
 #include <string_view>
 #include <type_traits>
 
-namespace Logger {
+namespace logger {
 
 enum class Level { NONE = 0, ERROR = 1, WARN = 2, INFO = 3, DEBUG = 4 };
 
 // ANSI color codes
-namespace Color {
+namespace color {
 constexpr const char *RESET = "\033[0m";
 constexpr const char *RED = "\033[31m";
 constexpr const char *YELLOW = "\033[33m";
 constexpr const char *GREEN = "\033[32m";
 constexpr const char *BLUE = "\033[34m";
 constexpr const char *GRAY = "\033[90m";
-} // namespace Color
+} // namespace color
 
-constexpr Level getCurrentLevel() {
+constexpr Level get_current_level() {
 #ifdef LOGGING_LEVEL_NONE
   return Level::NONE;
 #elif defined(LOGGING_LEVEL_ERROR)
@@ -39,11 +39,11 @@ constexpr Level getCurrentLevel() {
 #endif
 }
 
-const char *getLevelString(Level level);
+const char *get_level_string(Level level);
 
-const char *getLevelColor(Level level);
+const char *get_level_color(Level level);
 
-std::string getTimestamp();
+std::string get_timestamp();
 
 void log(Level level, std::string_view message);
 
@@ -79,11 +79,11 @@ inline void debug(T message) {
   log(Level::DEBUG, std::to_string(message));
 }
 
-} // namespace Logger
+} // namespace logger
 
-#define LOG_ERROR(msg) Logger::error(msg)
-#define LOG_WARN(msg) Logger::warn(msg)
-#define LOG_INFO(msg) Logger::info(msg)
-#define LOG_DEBUG(msg) Logger::debug(msg)
+#define LOG_ERROR(msg) logger::error(msg)
+#define LOG_WARN(msg) logger::warn(msg)
+#define LOG_INFO(msg) logger::info(msg)
+#define LOG_DEBUG(msg) logger::debug(msg)
 
 #endif // LOGGER_HPP

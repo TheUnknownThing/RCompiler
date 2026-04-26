@@ -10,43 +10,43 @@ RegAlloc::allocate(const std::vector<std::unique_ptr<AsmFunction>> &functions) {
     }
 
     LOG_DEBUG("[RegAlloc] Begin function: " + function->name);
-    size_t nextVirtualRegId = maxVirtualRegisterId(*function) + 1;
-    constexpr size_t kMaxRewriteIterations = 32;
-    const char *strategyEnv = std::getenv("RC_REGALLOC");
-    const bool useLinearScan =
-        strategyEnv && std::string(strategyEnv) == "linear";
+    size_t next_virtual_reg_id = max_virtual_register_id(*function) + 1;
+    constexpr size_t k_max_rewrite_iterations = 32;
+    const char *strategy_env = std::getenv("RC_REGALLOC");
+    const bool use_linear_scan =
+        strategy_env && std::string(strategy_env) == "linear";
 
     bool finished = false;
-    for (size_t iteration = 0; iteration < kMaxRewriteIterations; ++iteration) {
-      clearSpillFlags(*function);
+    for (size_t iteration = 0; iteration < k_max_rewrite_iterations; ++iteration) {
+      clear_spill_flags(*function);
 
-      auto intervals = buildIntervals(*function);
+      auto intervals = build_intervals(*function);
       if (intervals.empty()) {
         finished = true;
         break;
       }
 
-      if (useLinearScan) {
-        linearScan(*function, intervals);
+      if (use_linear_scan) {
+        linear_scan(*function, intervals);
       } else {
-        graphColor(*function, intervals);
+        graph_color(*function, intervals);
       }
 
-      bool hasSpills = false;
+      bool has_spills = false;
       for (const auto &interval : intervals) {
         if (interval.spilled) {
-          hasSpills = true;
+          has_spills = true;
           break;
         }
       }
 
-      if (!hasSpills) {
-        assignPhysicalRegisters(*function, intervals);
+      if (!has_spills) {
+        assign_physical_registers(*function, intervals);
         finished = true;
         break;
       }
 
-      if (!rewriteSpills(*function, intervals, nextVirtualRegId)) {
+      if (!rewrite_spills(*function, intervals, next_virtual_reg_id)) {
         throw std::runtime_error("RegAlloc: spill rewrite failed to make "
                                  "progress for function " +
                                  function->name);
@@ -58,11 +58,11 @@ RegAlloc::allocate(const std::vector<std::unique_ptr<AsmFunction>> &functions) {
                                function->name);
     }
 
-    function->stackSize = alignTo(function->stackSize, 16);
+    function->stack_size = align_to(function->stack_size, 16);
     LOG_DEBUG("[RegAlloc] End function: " + function->name);
   }
 }
-size_t RegAlloc::alignTo(size_t value, size_t align) const {
+size_t RegAlloc::align_to(size_t value, size_t align) const {
   if (align <= 1) {
     return value;
   }
@@ -70,8 +70,8 @@ size_t RegAlloc::alignTo(size_t value, size_t align) const {
   return rem == 0 ? value : (value + (align - rem));
 }
 size_t
-RegAlloc::maxVirtualRegisterId(const AsmFunction &function) const {
-  size_t maxId = 0;
+RegAlloc::max_virtual_register_id(const AsmFunction &function) const {
+  size_t max_id = 0;
   for (const auto &block : function.blocks) {
     if (!block) {
       continue;
@@ -82,24 +82,24 @@ RegAlloc::maxVirtualRegisterId(const AsmFunction &function) const {
       }
 
       size_t id = 0;
-      if (isVirtualRegisterOperand(inst->getDst(), &id)) {
-        maxId = std::max(maxId, id);
+      if (is_virtual_register_operand(inst->get_dst(), &id)) {
+        max_id = std::max(max_id, id);
       }
-      for (const auto &use : inst->getUses()) {
-        if (isVirtualRegisterOperand(use, &id)) {
-          maxId = std::max(maxId, id);
+      for (const auto &use : inst->get_uses()) {
+        if (is_virtual_register_operand(use, &id)) {
+          max_id = std::max(max_id, id);
         }
       }
     }
   }
-  return maxId;
+  return max_id;
 }
 std::vector<std::vector<size_t>>
-RegAlloc::computeSuccessors(const AsmFunction &function) const {
-  std::unordered_map<std::string, size_t> blockIndexByName;
+RegAlloc::compute_successors(const AsmFunction &function) const {
+  std::unordered_map<std::string, size_t> block_index_by_name;
   for (size_t i = 0; i < function.blocks.size(); ++i) {
     if (function.blocks[i]) {
-      blockIndexByName[function.blocks[i]->name] = i;
+      block_index_by_name[function.blocks[i]->name] = i;
     }
   }
 
@@ -118,16 +118,16 @@ RegAlloc::computeSuccessors(const AsmFunction &function) const {
       continue;
     }
 
-    const auto opcode = terminator->getOpcode();
-    const auto &uses = terminator->getUses();
+    const auto opcode = terminator->get_opcode();
+    const auto &uses = terminator->get_uses();
 
     if (opcode == InstOpcode::J) {
-      size_t labelPos = blockLabelIndex(uses, opcode);
-      if (labelPos < uses.size()) {
-        auto label = std::dynamic_pointer_cast<Symbol>(uses[labelPos]);
+      size_t label_pos = block_label_index(uses, opcode);
+      if (label_pos < uses.size()) {
+        auto label = std::dynamic_pointer_cast<Symbol>(uses[label_pos]);
         auto it =
-            label ? blockIndexByName.find(label->name) : blockIndexByName.end();
-        if (it != blockIndexByName.end()) {
+            label ? block_index_by_name.find(label->name) : block_index_by_name.end();
+        if (it != block_index_by_name.end()) {
           successors[i].push_back(it->second);
         }
       }
@@ -138,19 +138,19 @@ RegAlloc::computeSuccessors(const AsmFunction &function) const {
         opcode == InstOpcode::BEQ || opcode == InstOpcode::BNE ||
         opcode == InstOpcode::BLT || opcode == InstOpcode::BGE ||
         opcode == InstOpcode::BLTU || opcode == InstOpcode::BGEU) {
-      size_t firstLabel = blockLabelIndex(uses, opcode);
-      for (size_t pos = firstLabel; pos < uses.size(); ++pos) {
+      size_t first_label = block_label_index(uses, opcode);
+      for (size_t pos = first_label; pos < uses.size(); ++pos) {
         auto label = std::dynamic_pointer_cast<Symbol>(uses[pos]);
         auto it =
-            label ? blockIndexByName.find(label->name) : blockIndexByName.end();
-        if (it != blockIndexByName.end()) {
+            label ? block_index_by_name.find(label->name) : block_index_by_name.end();
+        if (it != block_index_by_name.end()) {
           successors[i].push_back(it->second);
         }
       }
       continue;
     }
 
-    if (!isTerminator(*terminator) && i + 1 < function.blocks.size()) {
+    if (!is_terminator(*terminator) && i + 1 < function.blocks.size()) {
       successors[i].push_back(i + 1);
     }
   }
@@ -158,7 +158,7 @@ RegAlloc::computeSuccessors(const AsmFunction &function) const {
   return successors;
 }
 std::unordered_map<int, RegAlloc::FixedRegisterSpan>
-RegAlloc::computeFixedRegisterSpans(const AsmFunction &function) const {
+RegAlloc::compute_fixed_register_spans(const AsmFunction &function) const {
   std::unordered_map<int, FixedRegisterSpan> spans;
   size_t position = 0;
 
@@ -172,12 +172,12 @@ RegAlloc::computeFixedRegisterSpans(const AsmFunction &function) const {
       }
 
       auto record = [&](const std::shared_ptr<AsmOperand> &operand) {
-        int regId = -1;
-        if (!isPhysicalRegisterOperand(operand, &regId)) {
+        int reg_id = -1;
+        if (!is_physical_register_operand(operand, &reg_id)) {
           return;
         }
 
-        auto &span = spans[regId];
+        auto &span = spans[reg_id];
         if (!span.valid) {
           span.start = position;
           span.end = position;
@@ -189,8 +189,8 @@ RegAlloc::computeFixedRegisterSpans(const AsmFunction &function) const {
         span.end = std::max(span.end, position);
       };
 
-      record(inst->getDst());
-      for (const auto &use : inst->getUses()) {
+      record(inst->get_dst());
+      for (const auto &use : inst->get_uses()) {
         record(use);
       }
       ++position;
@@ -200,18 +200,18 @@ RegAlloc::computeFixedRegisterSpans(const AsmFunction &function) const {
   return spans;
 }
 std::vector<RegAlloc::LiveInterval>
-RegAlloc::buildIntervals(const AsmFunction &function) const {
+RegAlloc::build_intervals(const AsmFunction &function) const {
   std::vector<BlockLiveness> blocks(function.blocks.size());
-  size_t nextPosition = 0;
+  size_t next_position = 0;
 
-  for (size_t blockIndex = 0; blockIndex < function.blocks.size();
-       ++blockIndex) {
-    const auto &block = function.blocks[blockIndex];
-    auto &info = blocks[blockIndex];
-    info.startPos = nextPosition;
+  for (size_t block_index = 0; block_index < function.blocks.size();
+       ++block_index) {
+    const auto &block = function.blocks[block_index];
+    auto &info = blocks[block_index];
+    info.start_pos = next_position;
 
     if (!block || block->instructions.empty()) {
-      info.endPos = nextPosition;
+      info.end_pos = next_position;
       continue;
     }
 
@@ -220,71 +220,71 @@ RegAlloc::buildIntervals(const AsmFunction &function) const {
         continue;
       }
 
-      size_t regId = 0;
-      for (const auto &use : inst->getUses()) {
-        if (!isVirtualRegisterOperand(use, &regId)) {
+      size_t reg_id = 0;
+      for (const auto &use : inst->get_uses()) {
+        if (!is_virtual_register_operand(use, &reg_id)) {
           continue;
         }
-        if (info.def.find(regId) == info.def.end()) {
-          info.use.insert(regId);
+        if (info.def.find(reg_id) == info.def.end()) {
+          info.use.insert(reg_id);
         }
       }
 
-      if (isVirtualRegisterOperand(inst->getDst(), &regId)) {
-        info.def.insert(regId);
+      if (is_virtual_register_operand(inst->get_dst(), &reg_id)) {
+        info.def.insert(reg_id);
       }
 
-      ++nextPosition;
+      ++next_position;
     }
 
-    info.endPos =
-        nextPosition == info.startPos ? info.startPos : nextPosition - 1;
+    info.end_pos =
+        next_position == info.start_pos ? info.start_pos : next_position - 1;
   }
 
-  const auto successors = computeSuccessors(function);
+  const auto successors = compute_successors(function);
   bool changed = true;
   while (changed) {
     changed = false;
     for (size_t i = function.blocks.size(); i-- > 0;) {
-      std::unordered_set<size_t> newLiveOut;
+      std::unordered_set<size_t> new_live_out;
       for (size_t succ : successors[i]) {
-        newLiveOut.insert(blocks[succ].liveIn.begin(),
-                          blocks[succ].liveIn.end());
+        new_live_out.insert(blocks[succ].live_in.begin(),
+                          blocks[succ].live_in.end());
       }
 
-      std::unordered_set<size_t> newLiveIn = blocks[i].use;
-      for (size_t regId : newLiveOut) {
-        if (blocks[i].def.find(regId) == blocks[i].def.end()) {
-          newLiveIn.insert(regId);
+      std::unordered_set<size_t> new_live_in = blocks[i].use;
+      for (size_t reg_id : new_live_out) {
+        if (blocks[i].def.find(reg_id) == blocks[i].def.end()) {
+          new_live_in.insert(reg_id);
         }
       }
 
-      if (newLiveOut != blocks[i].liveOut || newLiveIn != blocks[i].liveIn) {
-        blocks[i].liveOut = std::move(newLiveOut);
-        blocks[i].liveIn = std::move(newLiveIn);
+      if (new_live_out != blocks[i].live_out || new_live_in != blocks[i].live_in) {
+        blocks[i].live_out = std::move(new_live_out);
+        blocks[i].live_in = std::move(new_live_in);
         changed = true;
       }
     }
   }
 
-  std::unordered_map<size_t, LiveInterval> intervalMap;
-  std::vector<size_t> callPositions;
+  std::unordered_map<size_t, LiveInterval> interval_map;
+  std::vector<size_t> call_positions;
   size_t position = 0;
 
-  for (size_t blockIndex = 0; blockIndex < function.blocks.size();
-       ++blockIndex) {
-    const auto &block = function.blocks[blockIndex];
-    const auto &info = blocks[blockIndex];
+  for (size_t block_index = 0; block_index < function.blocks.size();
+       ++block_index) {
+    const auto &block = function.blocks[block_index];
+    const auto &info = blocks[block_index];
 
     if (!block || block->instructions.empty()) {
       continue;
     }
 
-    for (size_t regId : info.liveIn) {
-      extendInterval(intervalMap, regId, info.startPos, info.endPos);
+    for (size_t reg_id : info.live_in) {
+      extend_interval(interval_map, reg_id, info.start_pos, info.end_pos);
     }
-    for (size_t regId : info.liveOut) {
-      extendInterval(intervalMap, regId, info.startPos, info.endPos);
+    for (size_t reg_id : info.live_out) {
+      extend_interval(interval_map, reg_id, info.start_pos, info.end_pos);
     }
 
     for (const auto &inst : block->instructions) {
@@ -292,18 +292,18 @@ RegAlloc::buildIntervals(const AsmFunction &function) const {
         continue;
       }
 
-      if (isCall(*inst)) {
-        callPositions.push_back(position);
+      if (is_call(*inst)) {
+        call_positions.push_back(position);
       }
 
-      size_t regId = 0;
-      for (const auto &use : inst->getUses()) {
-        if (isVirtualRegisterOperand(use, &regId)) {
-          extendInterval(intervalMap, regId, position, position);
+      size_t reg_id = 0;
+      for (const auto &use : inst->get_uses()) {
+        if (is_virtual_register_operand(use, &reg_id)) {
+          extend_interval(interval_map, reg_id, position, position);
         }
       }
-      if (isVirtualRegisterOperand(inst->getDst(), &regId)) {
-        extendInterval(intervalMap, regId, position, position);
+      if (is_virtual_register_operand(inst->get_dst(), &reg_id)) {
+        extend_interval(interval_map, reg_id, position, position);
       }
 
       ++position;
@@ -311,11 +311,11 @@ RegAlloc::buildIntervals(const AsmFunction &function) const {
   }
 
   std::vector<LiveInterval> intervals;
-  intervals.reserve(intervalMap.size());
-  for (auto &[_, interval] : intervalMap) {
-    for (size_t callPos : callPositions) {
-      if (interval.start < callPos && callPos < interval.end) {
-        interval.crossesCall = true;
+  intervals.reserve(interval_map.size());
+  for (auto &[_, interval] : interval_map) {
+    for (size_t call_pos : call_positions) {
+      if (interval.start < call_pos && call_pos < interval.end) {
+        interval.crosses_call = true;
         break;
       }
     }
@@ -330,31 +330,31 @@ RegAlloc::buildIntervals(const AsmFunction &function) const {
               if (lhs.end != rhs.end) {
                 return lhs.end < rhs.end;
               }
-              return lhs.vregId < rhs.vregId;
+              return lhs.vreg_id < rhs.vreg_id;
             });
 
   return intervals;
 }
-void RegAlloc::linearScan(AsmFunction &function,
+void RegAlloc::linear_scan(AsmFunction &function,
                                  std::vector<LiveInterval> &intervals) const {
-  std::unordered_set<size_t> spilledIds;
+  std::unordered_set<size_t> spilled_ids;
   std::vector<LiveInterval *> active;
-  const auto fixedRegSpans = computeFixedRegisterSpans(function);
-  auto sortActive = [&]() {
+  const auto fixed_reg_spans = compute_fixed_register_spans(function);
+  auto sort_active = [&]() {
     std::sort(active.begin(), active.end(),
               [](const LiveInterval *lhs, const LiveInterval *rhs) {
                 if (lhs->end != rhs->end) {
                   return lhs->end < rhs->end;
                 }
-                return lhs->vregId < rhs->vregId;
+                return lhs->vreg_id < rhs->vreg_id;
               });
   };
 
-  auto allocateSpill = [&](LiveInterval &interval) {
+  auto allocate_spill = [&](LiveInterval &interval) {
     interval.spilled = true;
-    interval.assignedPhysReg = -1;
-    interval.spillSlot = createSpillSlot(function);
-    spilledIds.insert(interval.vregId);
+    interval.assigned_phys_reg = -1;
+    interval.spill_slot = create_spill_slot(function);
+    spilled_ids.insert(interval.vreg_id);
   };
 
   for (auto &interval : intervals) {
@@ -363,16 +363,16 @@ void RegAlloc::linearScan(AsmFunction &function,
                                   return other->end < interval.start;
                                 }),
                  active.end());
-    sortActive();
+    sort_active();
 
-    const auto &candidates = candidateRegisters(interval.crossesCall);
+    const auto &candidates = candidate_registers(interval.crosses_call);
     std::vector<int> available;
     available.reserve(candidates.size());
 
-    for (int physReg : candidates) {
+    for (int phys_reg : candidates) {
       bool occupied = false;
       for (const auto *live : active) {
-        if (live->assignedPhysReg == physReg) {
+        if (live->assigned_phys_reg == phys_reg) {
           occupied = true;
           break;
         }
@@ -381,99 +381,99 @@ void RegAlloc::linearScan(AsmFunction &function,
         continue;
       }
 
-      auto fixedIt = fixedRegSpans.find(physReg);
-      if (fixedIt != fixedRegSpans.end() &&
-          overlapsFixedRegister(fixedIt->second, interval.start, interval.end)) {
+      auto fixed_it = fixed_reg_spans.find(phys_reg);
+      if (fixed_it != fixed_reg_spans.end() &&
+          overlaps_fixed_register(fixed_it->second, interval.start, interval.end)) {
         continue;
       }
 
-      available.push_back(physReg);
+      available.push_back(phys_reg);
     }
 
     if (available.empty()) {
       LiveInterval *spill = nullptr;
-      auto spillIt = active.end();
+      auto spill_it = active.end();
       for (auto it = active.begin(); it != active.end(); ++it) {
         if (std::find(candidates.begin(), candidates.end(),
-                      (*it)->assignedPhysReg) == candidates.end()) {
+                      (*it)->assigned_phys_reg) == candidates.end()) {
           continue;
         }
 
         if (!spill || spill->end < (*it)->end ||
-            (spill->end == (*it)->end && spill->vregId < (*it)->vregId)) {
+            (spill->end == (*it)->end && spill->vreg_id < (*it)->vreg_id)) {
           spill = *it;
-          spillIt = it;
+          spill_it = it;
         }
       }
 
-      if (!spill || spillIt == active.end()) {
-        allocateSpill(interval);
+      if (!spill || spill_it == active.end()) {
+        allocate_spill(interval);
         continue;
       }
 
       if (spill->end > interval.end) {
-        interval.assignedPhysReg = spill->assignedPhysReg;
-        spill->assignedPhysReg = -1;
-        spill->spillSlot = createSpillSlot(function);
+        interval.assigned_phys_reg = spill->assigned_phys_reg;
+        spill->assigned_phys_reg = -1;
+        spill->spill_slot = create_spill_slot(function);
         spill->spilled = true;
-        spilledIds.insert(spill->vregId);
-        *spillIt = &interval;
-        sortActive();
+        spilled_ids.insert(spill->vreg_id);
+        *spill_it = &interval;
+        sort_active();
       } else {
-        allocateSpill(interval);
+        allocate_spill(interval);
       }
       continue;
     }
 
-    interval.assignedPhysReg = available.front();
+    interval.assigned_phys_reg = available.front();
     active.push_back(&interval);
-    sortActive();
+    sort_active();
   }
 
-  markSpilledRegisters(function, spilledIds);
+  mark_spilled_registers(function, spilled_ids);
 }
-void RegAlloc::graphColor(AsmFunction &function,
+void RegAlloc::graph_color(AsmFunction &function,
                                  std::vector<LiveInterval> &intervals) const {
-  std::unordered_set<size_t> spilledIds;
-  const auto fixedRegSpans = computeFixedRegisterSpans(function);
+  std::unordered_set<size_t> spilled_ids;
+  const auto fixed_reg_spans = compute_fixed_register_spans(function);
   const size_t n = intervals.size();
-  const size_t originalStackSize = function.stackSize;
-  constexpr size_t kGraphColorIntervalLimit = 1024;
-  if (n > kGraphColorIntervalLimit) {
+  const size_t original_stack_size = function.stack_size;
+  constexpr size_t k_graph_color_interval_limit = 1024;
+  if (n > k_graph_color_interval_limit) {
     LOG_DEBUG("[RegAlloc] Falling back to linear scan for large function: " +
               function.name);
-    linearScan(function, intervals);
+    linear_scan(function, intervals);
     return;
   }
 
-  std::unordered_map<size_t, size_t> indexByVreg;
-  indexByVreg.reserve(n);
+  std::unordered_map<size_t, size_t> index_by_vreg;
+  index_by_vreg.reserve(n);
   for (size_t i = 0; i < n; ++i) {
-    indexByVreg[intervals[i].vregId] = i;
+    index_by_vreg[intervals[i].vreg_id] = i;
   }
 
   std::vector<std::vector<size_t>> graph(n);
-  std::vector<std::unordered_set<size_t>> edgeSets(n);
+  std::vector<std::unordered_set<size_t>> edge_sets(n);
 
-  auto addEdge = [&](size_t lhsReg, size_t rhsReg) {
-    if (lhsReg == rhsReg) {
+  auto add_edge = [&](size_t lhs_reg, size_t rhs_reg) {
+    if (lhs_reg == rhs_reg) {
       return;
     }
-    auto lhsIt = indexByVreg.find(lhsReg);
-    auto rhsIt = indexByVreg.find(rhsReg);
-    if (lhsIt == indexByVreg.end() || rhsIt == indexByVreg.end()) {
+    auto lhs_it = index_by_vreg.find(lhs_reg);
+    auto rhs_it = index_by_vreg.find(rhs_reg);
+    if (lhs_it == index_by_vreg.end() || rhs_it == index_by_vreg.end()) {
       return;
     }
-    size_t lhs = lhsIt->second;
-    size_t rhs = rhsIt->second;
-    edgeSets[lhs].insert(rhs);
-    edgeSets[rhs].insert(lhs);
+    size_t lhs = lhs_it->second;
+    size_t rhs = rhs_it->second;
+    edge_sets[lhs].insert(rhs);
+    edge_sets[rhs].insert(lhs);
   };
 
   std::vector<BlockLiveness> blocks(function.blocks.size());
-  for (size_t blockIndex = 0; blockIndex < function.blocks.size();
-       ++blockIndex) {
-    const auto &block = function.blocks[blockIndex];
+  for (size_t block_index = 0; block_index < function.blocks.size();
+       ++block_index) {
+    const auto &block = function.blocks[block_index];
     if (!block) {
       continue;
     }
@@ -483,107 +483,107 @@ void RegAlloc::graphColor(AsmFunction &function,
         continue;
       }
 
-      size_t regId = 0;
-      for (const auto &use : inst->getUses()) {
-        if (!isVirtualRegisterOperand(use, &regId)) {
+      size_t reg_id = 0;
+      for (const auto &use : inst->get_uses()) {
+        if (!is_virtual_register_operand(use, &reg_id)) {
           continue;
         }
-        if (blocks[blockIndex].def.find(regId) ==
-            blocks[blockIndex].def.end()) {
-          blocks[blockIndex].use.insert(regId);
+        if (blocks[block_index].def.find(reg_id) ==
+            blocks[block_index].def.end()) {
+          blocks[block_index].use.insert(reg_id);
         }
       }
 
-      if (isVirtualRegisterOperand(inst->getDst(), &regId)) {
-        blocks[blockIndex].def.insert(regId);
+      if (is_virtual_register_operand(inst->get_dst(), &reg_id)) {
+        blocks[block_index].def.insert(reg_id);
       }
     }
   }
 
-  const auto successors = computeSuccessors(function);
+  const auto successors = compute_successors(function);
   bool changed = true;
   while (changed) {
     changed = false;
     for (size_t i = function.blocks.size(); i-- > 0;) {
-      std::unordered_set<size_t> newLiveOut;
+      std::unordered_set<size_t> new_live_out;
       for (size_t succ : successors[i]) {
-        newLiveOut.insert(blocks[succ].liveIn.begin(),
-                          blocks[succ].liveIn.end());
+        new_live_out.insert(blocks[succ].live_in.begin(),
+                          blocks[succ].live_in.end());
       }
 
-      std::unordered_set<size_t> newLiveIn = blocks[i].use;
-      for (size_t regId : newLiveOut) {
-        if (blocks[i].def.find(regId) == blocks[i].def.end()) {
-          newLiveIn.insert(regId);
+      std::unordered_set<size_t> new_live_in = blocks[i].use;
+      for (size_t reg_id : new_live_out) {
+        if (blocks[i].def.find(reg_id) == blocks[i].def.end()) {
+          new_live_in.insert(reg_id);
         }
       }
 
-      if (newLiveOut != blocks[i].liveOut || newLiveIn != blocks[i].liveIn) {
-        blocks[i].liveOut = std::move(newLiveOut);
-        blocks[i].liveIn = std::move(newLiveIn);
+      if (new_live_out != blocks[i].live_out || new_live_in != blocks[i].live_in) {
+        blocks[i].live_out = std::move(new_live_out);
+        blocks[i].live_in = std::move(new_live_in);
         changed = true;
       }
     }
   }
 
-  for (size_t blockIndex = 0; blockIndex < function.blocks.size();
-       ++blockIndex) {
-    const auto &block = function.blocks[blockIndex];
+  for (size_t block_index = 0; block_index < function.blocks.size();
+       ++block_index) {
+    const auto &block = function.blocks[block_index];
     if (!block) {
       continue;
     }
 
-    auto live = blocks[blockIndex].liveOut;
-    for (auto instIt = block->instructions.rbegin();
-         instIt != block->instructions.rend(); ++instIt) {
-      const auto &inst = *instIt;
+    auto live = blocks[block_index].live_out;
+    for (auto inst_it = block->instructions.rbegin();
+         inst_it != block->instructions.rend(); ++inst_it) {
+      const auto &inst = *inst_it;
       if (!inst) {
         continue;
       }
 
-      std::vector<size_t> useRegs;
-      size_t regId = 0;
-      for (const auto &use : inst->getUses()) {
-        if (isVirtualRegisterOperand(use, &regId)) {
-          useRegs.push_back(regId);
+      std::vector<size_t> use_regs;
+      size_t reg_id = 0;
+      for (const auto &use : inst->get_uses()) {
+        if (is_virtual_register_operand(use, &reg_id)) {
+          use_regs.push_back(reg_id);
         }
       }
-      for (size_t i = 0; i < useRegs.size(); ++i) {
-        for (size_t j = i + 1; j < useRegs.size(); ++j) {
-          addEdge(useRegs[i], useRegs[j]);
+      for (size_t i = 0; i < use_regs.size(); ++i) {
+        for (size_t j = i + 1; j < use_regs.size(); ++j) {
+          add_edge(use_regs[i], use_regs[j]);
         }
       }
 
-      size_t dstId = 0;
-      if (isVirtualRegisterOperand(inst->getDst(), &dstId)) {
-        for (size_t liveReg : live) {
-          addEdge(dstId, liveReg);
+      size_t dst_id = 0;
+      if (is_virtual_register_operand(inst->get_dst(), &dst_id)) {
+        for (size_t live_reg : live) {
+          add_edge(dst_id, live_reg);
         }
-        live.erase(dstId);
+        live.erase(dst_id);
       }
 
-      for (size_t useReg : useRegs) {
-        live.insert(useReg);
+      for (size_t use_reg : use_regs) {
+        live.insert(use_reg);
       }
     }
   }
 
   for (size_t i = 0; i < n; ++i) {
-    graph[i].assign(edgeSets[i].begin(), edgeSets[i].end());
+    graph[i].assign(edge_sets[i].begin(), edge_sets[i].end());
   }
 
-  auto availableColors = [&](const LiveInterval &interval) {
+  auto available_colors = [&](const LiveInterval &interval) {
     std::vector<int> colors;
-    const auto &candidates = candidateRegisters(interval.crossesCall);
+    const auto &candidates = candidate_registers(interval.crosses_call);
     colors.reserve(candidates.size());
-    for (int physReg : candidates) {
-      auto fixedIt = fixedRegSpans.find(physReg);
-      if (fixedIt != fixedRegSpans.end() &&
-          overlapsFixedRegister(fixedIt->second, interval.start,
+    for (int phys_reg : candidates) {
+      auto fixed_it = fixed_reg_spans.find(phys_reg);
+      if (fixed_it != fixed_reg_spans.end() &&
+          overlaps_fixed_register(fixed_it->second, interval.start,
                                 interval.end)) {
         continue;
       }
-      colors.push_back(physReg);
+      colors.push_back(phys_reg);
     }
     return colors;
   };
@@ -591,7 +591,7 @@ void RegAlloc::graphColor(AsmFunction &function,
   std::vector<std::vector<int>> colors(n);
   std::vector<size_t> order(n);
   for (size_t i = 0; i < n; ++i) {
-    colors[i] = availableColors(intervals[i]);
+    colors[i] = available_colors(intervals[i]);
     order[i] = i;
   }
   std::sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) {
@@ -601,12 +601,12 @@ void RegAlloc::graphColor(AsmFunction &function,
     if (graph[lhs].size() != graph[rhs].size()) {
       return graph[lhs].size() > graph[rhs].size();
     }
-    const auto lhsLen = intervals[lhs].end - intervals[lhs].start;
-    const auto rhsLen = intervals[rhs].end - intervals[rhs].start;
-    if (lhsLen != rhsLen) {
-      return lhsLen > rhsLen;
+    const auto lhs_len = intervals[lhs].end - intervals[lhs].start;
+    const auto rhs_len = intervals[rhs].end - intervals[rhs].start;
+    if (lhs_len != rhs_len) {
+      return lhs_len > rhs_len;
     }
-    return intervals[lhs].vregId < intervals[rhs].vregId;
+    return intervals[lhs].vreg_id < intervals[rhs].vreg_id;
   });
 
   std::vector<int> assigned(n, -1);
@@ -628,42 +628,42 @@ void RegAlloc::graphColor(AsmFunction &function,
 
     if (color < 0) {
       intervals[index].spilled = true;
-      intervals[index].assignedPhysReg = -1;
-      intervals[index].spillSlot = createSpillSlot(function);
-      spilledIds.insert(intervals[index].vregId);
+      intervals[index].assigned_phys_reg = -1;
+      intervals[index].spill_slot = create_spill_slot(function);
+      spilled_ids.insert(intervals[index].vreg_id);
       continue;
     }
 
     assigned[index] = color;
-    intervals[index].assignedPhysReg = color;
+    intervals[index].assigned_phys_reg = color;
     intervals[index].spilled = false;
-    intervals[index].spillSlot = nullptr;
+    intervals[index].spill_slot = nullptr;
   }
 
-  if (!spilledIds.empty()) {
-    function.stackSize = originalStackSize;
+  if (!spilled_ids.empty()) {
+    function.stack_size = original_stack_size;
     for (auto &interval : intervals) {
-      interval.assignedPhysReg = -1;
+      interval.assigned_phys_reg = -1;
       interval.spilled = false;
-      interval.spillSlot = nullptr;
+      interval.spill_slot = nullptr;
     }
-    linearScan(function, intervals);
+    linear_scan(function, intervals);
     return;
   }
 
-  markSpilledRegisters(function, spilledIds);
+  mark_spilled_registers(function, spilled_ids);
 }
-bool RegAlloc::rewriteSpills(AsmFunction &function,
+bool RegAlloc::rewrite_spills(AsmFunction &function,
                                     const std::vector<LiveInterval> &intervals,
-                                    size_t &nextVirtualRegId) const {
-  std::unordered_map<size_t, std::shared_ptr<StackSlot>> spilledSlots;
+                                    size_t &next_virtual_reg_id) const {
+  std::unordered_map<size_t, std::shared_ptr<StackSlot>> spilled_slots;
   for (const auto &interval : intervals) {
-    if (interval.spilled && interval.spillSlot) {
-      spilledSlots[interval.vregId] = interval.spillSlot;
+    if (interval.spilled && interval.spill_slot) {
+      spilled_slots[interval.vreg_id] = interval.spill_slot;
     }
   }
 
-  if (spilledSlots.empty()) {
+  if (spilled_slots.empty()) {
     return false;
   }
 
@@ -681,52 +681,52 @@ bool RegAlloc::rewriteSpills(AsmFunction &function,
         continue;
       }
 
-      std::vector<std::shared_ptr<AsmOperand>> newUses = inst->getUses();
+      std::vector<std::shared_ptr<AsmOperand>> new_uses = inst->get_uses();
       std::vector<std::unique_ptr<AsmInst>> before;
       std::vector<std::unique_ptr<AsmInst>> after;
-      std::unordered_map<size_t, std::shared_ptr<Register>> loadedTemps;
+      std::unordered_map<size_t, std::shared_ptr<Register>> loaded_temps;
 
-      auto loadSpilledUse = [&](size_t regId,
+      auto load_spilled_use = [&](size_t reg_id,
                                 const std::shared_ptr<StackSlot> &slot)
           -> std::shared_ptr<Register> {
-        auto found = loadedTemps.find(regId);
-        if (found != loadedTemps.end()) {
+        auto found = loaded_temps.find(reg_id);
+        if (found != loaded_temps.end()) {
           return found->second;
         }
 
-        auto temp = createVirtualRegister(nextVirtualRegId++);
+        auto temp = create_virtual_register(next_virtual_reg_id++);
         before.push_back(std::make_unique<AsmInst>(
             InstOpcode::LW, temp,
             std::vector<std::shared_ptr<AsmOperand>>{slot}));
-        loadedTemps.emplace(regId, temp);
+        loaded_temps.emplace(reg_id, temp);
         return temp;
       };
 
-      for (size_t i = 0; i < newUses.size(); ++i) {
-        size_t regId = 0;
-        if (!isVirtualRegisterOperand(newUses[i], &regId)) {
+      for (size_t i = 0; i < new_uses.size(); ++i) {
+        size_t reg_id = 0;
+        if (!is_virtual_register_operand(new_uses[i], &reg_id)) {
           continue;
         }
 
-        auto spillIt = spilledSlots.find(regId);
-        if (spillIt == spilledSlots.end()) {
+        auto spill_it = spilled_slots.find(reg_id);
+        if (spill_it == spilled_slots.end()) {
           continue;
         }
 
-        newUses[i] = loadSpilledUse(regId, spillIt->second);
+        new_uses[i] = load_spilled_use(reg_id, spill_it->second);
         changed = true;
       }
 
-      auto newDst = inst->getDst();
-      size_t dstId = 0;
-      if (isVirtualRegisterOperand(newDst, &dstId)) {
-        auto spillIt = spilledSlots.find(dstId);
-        if (spillIt != spilledSlots.end()) {
-          auto tempDst = createVirtualRegister(nextVirtualRegId++);
-          newDst = tempDst;
+      auto new_dst = inst->get_dst();
+      size_t dst_id = 0;
+      if (is_virtual_register_operand(new_dst, &dst_id)) {
+        auto spill_it = spilled_slots.find(dst_id);
+        if (spill_it != spilled_slots.end()) {
+          auto temp_dst = create_virtual_register(next_virtual_reg_id++);
+          new_dst = temp_dst;
           after.push_back(std::make_unique<AsmInst>(
               InstOpcode::SW, std::vector<std::shared_ptr<AsmOperand>>{
-                                  tempDst, spillIt->second}));
+                                  temp_dst, spill_it->second}));
           changed = true;
         }
       }
@@ -734,7 +734,7 @@ bool RegAlloc::rewriteSpills(AsmFunction &function,
       for (auto &pre : before) {
         rewritten.push_back(std::move(pre));
       }
-      rewritten.push_back(cloneInst(*inst, newDst, newUses));
+      rewritten.push_back(clone_inst(*inst, new_dst, new_uses));
       for (auto &post : after) {
         rewritten.push_back(std::move(post));
       }
@@ -745,38 +745,38 @@ bool RegAlloc::rewriteSpills(AsmFunction &function,
 
   return changed;
 }
-void RegAlloc::assignPhysicalRegisters(
+void RegAlloc::assign_physical_registers(
     AsmFunction &function, const std::vector<LiveInterval> &intervals) const {
   std::unordered_map<size_t, int> assignment;
   for (const auto &interval : intervals) {
-    if (interval.spilled || interval.assignedPhysReg < 0) {
+    if (interval.spilled || interval.assigned_phys_reg < 0) {
       throw std::runtime_error("RegAlloc: virtual register left without a "
                                "physical assignment");
     }
-    assignment[interval.vregId] = interval.assignedPhysReg;
+    assignment[interval.vreg_id] = interval.assigned_phys_reg;
   }
 
-  std::unordered_map<int, std::shared_ptr<Register>> physicalRegs;
+  std::unordered_map<int, std::shared_ptr<Register>> physical_regs;
   auto materialize = [&](const std::shared_ptr<AsmOperand> &operand)
       -> std::shared_ptr<AsmOperand> {
-    size_t regId = 0;
-    if (!isVirtualRegisterOperand(operand, &regId)) {
+    size_t reg_id = 0;
+    if (!is_virtual_register_operand(operand, &reg_id)) {
       return operand;
     }
 
-    auto it = assignment.find(regId);
+    auto it = assignment.find(reg_id);
     if (it == assignment.end()) {
       throw std::runtime_error("RegAlloc: missing assignment for v" +
-                               std::to_string(regId));
+                               std::to_string(reg_id));
     }
 
-    auto cacheIt = physicalRegs.find(it->second);
-    if (cacheIt != physicalRegs.end()) {
-      return cacheIt->second;
+    auto cache_it = physical_regs.find(it->second);
+    if (cache_it != physical_regs.end()) {
+      return cache_it->second;
     }
 
-    auto reg = createPhysicalRegister(static_cast<size_t>(it->second));
-    physicalRegs.emplace(it->second, reg);
+    auto reg = create_physical_register(static_cast<size_t>(it->second));
+    physical_regs.emplace(it->second, reg);
     return reg;
   };
 
@@ -793,17 +793,17 @@ void RegAlloc::assignPhysicalRegisters(
       }
 
       std::vector<std::shared_ptr<AsmOperand>> uses;
-      uses.reserve(inst->getUses().size());
-      for (const auto &use : inst->getUses()) {
+      uses.reserve(inst->get_uses().size());
+      for (const auto &use : inst->get_uses()) {
         uses.push_back(materialize(use));
       }
-      rewritten.push_back(cloneInst(*inst, materialize(inst->getDst()), uses));
+      rewritten.push_back(clone_inst(*inst, materialize(inst->get_dst()), uses));
     }
     block->instructions = std::move(rewritten);
   }
 }
 std::shared_ptr<Register>
-RegAlloc::createVirtualRegister(size_t id) const {
+RegAlloc::create_virtual_register(size_t id) const {
   auto reg = std::make_shared<Register>();
   reg->id = id;
   reg->is_virtual = true;
@@ -811,7 +811,7 @@ RegAlloc::createVirtualRegister(size_t id) const {
   return reg;
 }
 std::shared_ptr<Register>
-RegAlloc::createPhysicalRegister(size_t id) const {
+RegAlloc::create_physical_register(size_t id) const {
   auto reg = std::make_shared<Register>();
   reg->id = id;
   reg->is_virtual = false;
@@ -819,13 +819,13 @@ RegAlloc::createPhysicalRegister(size_t id) const {
   return reg;
 }
 std::shared_ptr<StackSlot>
-RegAlloc::createSpillSlot(AsmFunction &function) const {
-  size_t offset = alignTo(function.stackSize, kSpillSlotSize);
-  auto slot = std::make_shared<StackSlot>(offset, kSpillSlotSize);
-  function.stackSize = offset + kSpillSlotSize;
+RegAlloc::create_spill_slot(AsmFunction &function) const {
+  size_t offset = align_to(function.stack_size, k_spill_slot_size);
+  auto slot = std::make_shared<StackSlot>(offset, k_spill_slot_size);
+  function.stack_size = offset + k_spill_slot_size;
   return slot;
 }
-void RegAlloc::clearSpillFlags(AsmFunction &function) const {
+void RegAlloc::clear_spill_flags(AsmFunction &function) const {
   for (auto &block : function.blocks) {
     if (!block) {
       continue;
@@ -835,12 +835,12 @@ void RegAlloc::clearSpillFlags(AsmFunction &function) const {
         continue;
       }
 
-      if (auto dst = std::dynamic_pointer_cast<Register>(inst->getDst());
+      if (auto dst = std::dynamic_pointer_cast<Register>(inst->get_dst());
           dst && dst->is_virtual) {
         dst->spilled = false;
       }
 
-      for (const auto &use : inst->getUses()) {
+      for (const auto &use : inst->get_uses()) {
         auto reg = std::dynamic_pointer_cast<Register>(use);
         if (reg && reg->is_virtual) {
           reg->spilled = false;
@@ -849,7 +849,7 @@ void RegAlloc::clearSpillFlags(AsmFunction &function) const {
     }
   }
 }
-void RegAlloc::markSpilledRegisters(
+void RegAlloc::mark_spilled_registers(
     AsmFunction &function, const std::unordered_set<size_t> &spilled) const {
   if (spilled.empty()) {
     return;
@@ -870,15 +870,15 @@ void RegAlloc::markSpilledRegisters(
       if (!inst) {
         continue;
       }
-      mark(inst->getDst());
-      for (const auto &use : inst->getUses()) {
+      mark(inst->get_dst());
+      for (const auto &use : inst->get_uses()) {
         mark(use);
       }
     }
   }
 }
 bool
-RegAlloc::isVirtualRegisterOperand(const std::shared_ptr<AsmOperand> &operand,
+RegAlloc::is_virtual_register_operand(const std::shared_ptr<AsmOperand> &operand,
                                    size_t *id) const {
   auto reg = std::dynamic_pointer_cast<Register>(operand);
   if (!reg || !reg->is_virtual) {
@@ -890,7 +890,7 @@ RegAlloc::isVirtualRegisterOperand(const std::shared_ptr<AsmOperand> &operand,
   return true;
 }
 bool
-RegAlloc::isPhysicalRegisterOperand(const std::shared_ptr<AsmOperand> &operand,
+RegAlloc::is_physical_register_operand(const std::shared_ptr<AsmOperand> &operand,
                                     int *id) const {
   auto reg = std::dynamic_pointer_cast<Register>(operand);
   if (!reg || reg->is_virtual) {
@@ -901,11 +901,11 @@ RegAlloc::isPhysicalRegisterOperand(const std::shared_ptr<AsmOperand> &operand,
   }
   return true;
 }
-bool RegAlloc::isCall(const AsmInst &inst) const {
-  return inst.getOpcode() == InstOpcode::CALL;
+bool RegAlloc::is_call(const AsmInst &inst) const {
+  return inst.get_opcode() == InstOpcode::CALL;
 }
-bool RegAlloc::isTerminator(const AsmInst &inst) const {
-  switch (inst.getOpcode()) {
+bool RegAlloc::is_terminator(const AsmInst &inst) const {
+  switch (inst.get_opcode()) {
   case InstOpcode::RET:
   case InstOpcode::J:
   case InstOpcode::BEQZ:
@@ -922,20 +922,20 @@ bool RegAlloc::isTerminator(const AsmInst &inst) const {
   }
 }
 const std::vector<int> &
-RegAlloc::candidateRegisters(bool crossesCall) const {
-  static const std::vector<int> kCrossCallCandidates(kCalleeSavedRegs.begin(),
-                                                     kCalleeSavedRegs.end());
-  static const std::vector<int> kGeneralCandidates = []() {
+RegAlloc::candidate_registers(bool crosses_call) const {
+  static const std::vector<int> k_cross_call_candidates(k_callee_saved_regs.begin(),
+                                                     k_callee_saved_regs.end());
+  static const std::vector<int> k_general_candidates = []() {
     std::vector<int> regs;
-    regs.reserve(kCallerSavedRegs.size() + kCalleeSavedRegs.size());
-    regs.insert(regs.end(), kCallerSavedRegs.begin(), kCallerSavedRegs.end());
-    regs.insert(regs.end(), kCalleeSavedRegs.begin(), kCalleeSavedRegs.end());
+    regs.reserve(k_caller_saved_regs.size() + k_callee_saved_regs.size());
+    regs.insert(regs.end(), k_caller_saved_regs.begin(), k_caller_saved_regs.end());
+    regs.insert(regs.end(), k_callee_saved_regs.begin(), k_callee_saved_regs.end());
     return regs;
   }();
 
-  return crossesCall ? kCrossCallCandidates : kGeneralCandidates;
+  return crosses_call ? k_cross_call_candidates : k_general_candidates;
 }
-bool RegAlloc::overlapsFixedRegister(const FixedRegisterSpan &span,
+bool RegAlloc::overlaps_fixed_register(const FixedRegisterSpan &span,
                                             size_t start, size_t end) const {
   if (!span.valid) {
     return false;
@@ -943,7 +943,7 @@ bool RegAlloc::overlapsFixedRegister(const FixedRegisterSpan &span,
   return !(end < span.start || span.end < start);
 }
 size_t
-RegAlloc::blockLabelIndex(const std::vector<std::shared_ptr<AsmOperand>> &uses,
+RegAlloc::block_label_index(const std::vector<std::shared_ptr<AsmOperand>> &uses,
                           InstOpcode opcode) const {
   (void)uses;
   switch (opcode) {
@@ -962,11 +962,11 @@ RegAlloc::blockLabelIndex(const std::vector<std::shared_ptr<AsmOperand>> &uses,
   }
 }
 void
-RegAlloc::extendInterval(std::unordered_map<size_t, LiveInterval> &intervals,
-                         size_t vregId, size_t start, size_t end) const {
-  auto &interval = intervals[vregId];
-  if (interval.vregId == 0) {
-    interval.vregId = vregId;
+RegAlloc::extend_interval(std::unordered_map<size_t, LiveInterval> &intervals,
+                         size_t vreg_id, size_t start, size_t end) const {
+  auto &interval = intervals[vreg_id];
+  if (interval.vreg_id == 0) {
+    interval.vreg_id = vreg_id;
     interval.start = start;
     interval.end = end;
     return;
@@ -975,13 +975,13 @@ RegAlloc::extendInterval(std::unordered_map<size_t, LiveInterval> &intervals,
   interval.start = std::min(interval.start, start);
   interval.end = std::max(interval.end, end);
 }
-std::unique_ptr<AsmInst> RegAlloc::cloneInst(
+std::unique_ptr<AsmInst> RegAlloc::clone_inst(
     const AsmInst &inst, const std::shared_ptr<AsmOperand> &dst,
     const std::vector<std::shared_ptr<AsmOperand>> &uses) const {
   if (dst) {
-    return std::make_unique<AsmInst>(inst.getOpcode(), dst, uses);
+    return std::make_unique<AsmInst>(inst.get_opcode(), dst, uses);
   }
-  return std::make_unique<AsmInst>(inst.getOpcode(), uses);
+  return std::make_unique<AsmInst>(inst.get_opcode(), uses);
 }
 
 } // namespace rc::backend

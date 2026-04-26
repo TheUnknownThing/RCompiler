@@ -1,10 +1,10 @@
 #pragma once
 
 #include "ir/instructions/binary.hpp"
-#include "ir/instructions/controlFlow.hpp"
+#include "ir/instructions/control_flow.hpp"
 #include "ir/instructions/memory.hpp"
 #include "ir/instructions/misc.hpp"
-#include "ir/instructions/topLevel.hpp"
+#include "ir/instructions/top_level.hpp"
 #include "ir/instructions/type.hpp"
 
 #include <memory>
@@ -18,41 +18,41 @@ public:
   ConstantContext() = default;
   ~ConstantContext() = default;
 
-  std::shared_ptr<ir::ConstantInt> getIntConstant(int value,
-                                                  bool isSigned = true) {
-    auto it = intConstants.find(value);
-    if (it != intConstants.end()) {
+  std::shared_ptr<ir::ConstantInt> get_int_constant(int value,
+                                                  bool is_signed = true) {
+    auto it = int_constants.find(value);
+    if (it != int_constants.end()) {
       return it->second;
     } else {
-      auto constInt =
-          ir::ConstantInt::getI32(static_cast<std::uint32_t>(value), isSigned);
-      intConstants[value] = constInt;
-      return constInt;
+      auto const_int =
+          ir::ConstantInt::get_i32(static_cast<std::uint32_t>(value), is_signed);
+      int_constants[value] = const_int;
+      return const_int;
     }
   }
 
-  std::shared_ptr<ir::ConstantInt> getBoolConstant(bool value) {
-    return getIntConstant(value ? 1 : 0, true);
+  std::shared_ptr<ir::ConstantInt> get_bool_constant(bool value) {
+    return get_int_constant(value ? 1 : 0, true);
   }
 
   std::shared_ptr<ir::ConstantPtr>
-  getPtrToConstElement(const std::shared_ptr<ir::Constant> &element) {
-    auto ptrType = std::make_shared<ir::PointerType>(element->type());
-    auto basePtr = std::make_shared<ir::ConstantPtr>(ptrType, element);
-    auto it = ptrConstants.find(basePtr);
-    if (it != ptrConstants.end()) {
+  get_ptr_to_const_element(const std::shared_ptr<ir::Constant> &element) {
+    auto ptr_type = std::make_shared<ir::PointerType>(element->type());
+    auto base_ptr = std::make_shared<ir::ConstantPtr>(ptr_type, element);
+    auto it = ptr_constants.find(base_ptr);
+    if (it != ptr_constants.end()) {
       return it->second;
     } else {
-      ptrConstants[basePtr] = basePtr;
-      return basePtr;
+      ptr_constants[base_ptr] = base_ptr;
+      return base_ptr;
     }
   }
 
 private:
-  std::unordered_map<int, std::shared_ptr<ir::ConstantInt>> intConstants;
+  std::unordered_map<int, std::shared_ptr<ir::ConstantInt>> int_constants;
   std::unordered_map<std::shared_ptr<ir::Constant>,
                      std::shared_ptr<ir::ConstantPtr>>
-      ptrConstants;
+      ptr_constants;
 };
 
 } // namespace rc::opt

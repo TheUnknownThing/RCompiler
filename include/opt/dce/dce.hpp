@@ -1,10 +1,10 @@
 #pragma once
 
-#include "ir/instructions/controlFlow.hpp"
+#include "ir/instructions/control_flow.hpp"
 #include "ir/instructions/misc.hpp"
-#include "ir/instructions/topLevel.hpp"
+#include "ir/instructions/top_level.hpp"
 
-#include "opt/utils/cfgPrettyPrint.hpp"
+#include "opt/utils/cfg_pretty_print.hpp"
 
 #include <unordered_set>
 #include <vector>
@@ -16,14 +16,14 @@ public:
   void run(ir::Module &module);
 
 private:
-  void trimAfterTerminator(ir::BasicBlock &bb);
-  void foldConstantConditionalBranches(ir::Function &function);
-  std::unordered_set<ir::BasicBlock *> computeReachable(ir::Function &function);
-  void squashUnreachableBlocks(
+  void trim_after_terminator(ir::BasicBlock &bb);
+  void fold_constant_conditional_branches(ir::Function &function);
+  std::unordered_set<ir::BasicBlock *> compute_reachable(ir::Function &function);
+  void squash_unreachable_blocks(
       ir::Function &function,
       const std::unordered_set<ir::BasicBlock *> &reachable);
-  void rebuildPredecessors(ir::Function &function);
-  void removeUndefPhiIncomingBlocks(ir::Function &function);
+  void rebuild_predecessors(ir::Function &function);
+  void remove_undef_phi_incoming_blocks(ir::Function &function);
 };
 
 
