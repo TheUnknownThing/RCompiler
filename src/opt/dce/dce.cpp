@@ -15,6 +15,7 @@ void DeadCodeElimVisitor::run(ir::Module &module) {
 
     rebuild_predecessors(*function);
     remove_undef_phi_incoming_blocks(*function);
+    aggressive_dead_code_elimination(*function);
   }
 }
 
@@ -55,8 +56,8 @@ void DeadCodeElimVisitor::trim_after_terminator(ir::BasicBlock &bb) {
   }
 }
 
-void
-DeadCodeElimVisitor::fold_constant_conditional_branches(ir::Function &function) {
+void DeadCodeElimVisitor::fold_constant_conditional_branches(
+    ir::Function &function) {
   for (const auto &bb_ptr : function.blocks()) {
     if (!bb_ptr) {
       continue;
@@ -211,8 +212,8 @@ void DeadCodeElimVisitor::rebuild_predecessors(ir::Function &function) {
   }
 }
 
-void
-DeadCodeElimVisitor::remove_undef_phi_incoming_blocks(ir::Function &function) {
+void DeadCodeElimVisitor::remove_undef_phi_incoming_blocks(
+    ir::Function &function) {
   for (const auto &bb : function.blocks()) {
     std::unordered_set<ir::BasicBlock *> predecessors;
     for (auto *pred : bb->predecessors()) {
@@ -241,6 +242,98 @@ DeadCodeElimVisitor::remove_undef_phi_incoming_blocks(ir::Function &function) {
         }
       }
     }
+  }
+}
+
+void DeadCodeElimVisitor::aggressive_dead_code_elimination(
+    ir::Function &function) {
+  std::unordered_set<ir::Instruction *> live;
+  std::vector<ir::Instruction *> worklist;
+
+  for (const auto &bb : function.blocks()) {
+    if (!bb) {
+      continue;
+    }
+    for (const auto &inst : bb->instructions()) {
+      if (inst && is_live_root(*inst)) {
+        mark_live(inst.get(), live, worklist);
+      }
+    }
+  }
+
+  while (!worklist.empty()) {
+    auto *inst = worklist.back();
+    worklist.pop_back();
+    if (!inst) {
+      continue;
+    }
+
+    for (auto *operand : inst->get_operands()) {
+      if (auto *operand_inst = dynamic_cast<ir::Instruction *>(operand)) {
+        mark_live(operand_inst, live, worklist);
+      }
+    }
+
+    if (auto *phi = dynamic_cast<ir::PhiInst *>(inst)) {
+      for (const auto &incoming : phi->incomings()) {
+        if (auto *incoming_inst =
+                dynamic_cast<ir::Instruction *>(incoming.first.get())) {
+          mark_live(incoming_inst, live, worklist);
+        }
+      }
+    }
+  }
+
+  for (const auto &bb : function.blocks()) {
+    if (!bb) {
+      continue;
+    }
+
+    auto &instrs = bb->instructions();
+    for (auto it = instrs.begin(); it != instrs.end();) {
+      auto *inst = it->get();
+      if (!inst || live.count(inst)) {
+        ++it;
+        continue;
+      }
+
+      auto doomed = *it;
+      doomed->drop_all_references();
+
+      auto *prev = doomed->prev();
+      auto *next = doomed->next();
+      if (prev) {
+        prev->set_next(next);
+      }
+      if (next) {
+        next->set_prev(prev);
+      }
+
+      it = instrs.erase(it);
+    }
+  }
+}
+
+bool DeadCodeElimVisitor::is_live_root(const ir::Instruction &inst) const {
+  if (inst.is_terminator()) {
+    return true;
+  }
+  if (dynamic_cast<const ir::StoreInst *>(&inst) ||
+      dynamic_cast<const ir::CallInst *>(&inst) ||
+      dynamic_cast<const ir::MoveInst *>(&inst)) {
+    return true;
+  }
+  return false;
+}
+
+void DeadCodeElimVisitor::mark_live(
+    ir::Instruction *inst, std::unordered_set<ir::Instruction *> &live,
+    std::vector<ir::Instruction *> &worklist) const {
+  if (!inst) {
+    return;
+  }
+  if (live.insert(inst).second) {
+    worklist.push_back(inst);
   }
 }
 

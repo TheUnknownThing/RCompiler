@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ir/instructions/control_flow.hpp"
+#include "ir/instructions/memory.hpp"
 #include "ir/instructions/misc.hpp"
 #include "ir/instructions/top_level.hpp"
 
@@ -22,6 +23,10 @@ private:
   void squash_unreachable_blocks(
       ir::Function &function,
       const std::unordered_set<ir::BasicBlock *> &reachable);
+  void aggressive_dead_code_elimination(ir::Function &function);
+  bool is_live_root(const ir::Instruction &inst) const;
+  void mark_live(ir::Instruction *inst, std::unordered_set<ir::Instruction *> &live,
+                 std::vector<ir::Instruction *> &worklist) const;
   void rebuild_predecessors(ir::Function &function);
   void remove_undef_phi_incoming_blocks(ir::Function &function);
 };

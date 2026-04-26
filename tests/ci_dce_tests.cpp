@@ -2,7 +2,9 @@
 #include <sstream>
 #include <string>
 
+#include "ir/instructions/binary.hpp"
 #include "ir/instructions/control_flow.hpp"
+#include "ir/instructions/memory.hpp"
 #include "ir/instructions/top_level.hpp"
 #include "opt/dce/dce.hpp"
 
@@ -32,6 +34,16 @@ rc::ir::UnreachableInst *get_unreachable(rc::ir::BasicBlock &bb) {
     }
   }
   return nullptr;
+}
+
+std::size_t count_binary_ops(rc::ir::BasicBlock &bb) {
+  std::size_t count = 0;
+  for (auto &inst : bb.instructions()) {
+    if (dynamic_cast<rc::ir::BinaryOpInst *>(inst.get())) {
+      ++count;
+    }
+  }
+  return count;
 }
 
 void test_fold_true_branch() {
@@ -111,12 +123,61 @@ void test_fold_false_branch() {
   }
 }
 
+void test_adce_removes_dead_chain() {
+  rc::ir::Module m("m");
+  auto fn_ty = std::make_shared<rc::ir::FunctionType>(
+      std::make_shared<rc::ir::VoidType>(), std::vector<rc::ir::TypePtr>{},
+      false);
+  auto fn = m.create_function("f", fn_ty);
+  auto entry = fn->create_block("entry");
+
+  auto add = entry->append<rc::ir::BinaryOpInst>(
+      rc::ir::BinaryOpKind::ADD, rc::ir::ConstantInt::get_i32(1),
+      rc::ir::ConstantInt::get_i32(2), rc::ir::IntegerType::i32());
+  entry->append<rc::ir::BinaryOpInst>(rc::ir::BinaryOpKind::MUL, add,
+                                      rc::ir::ConstantInt::get_i32(8),
+                                      rc::ir::IntegerType::i32());
+  entry->append<rc::ir::ReturnInst>();
+
+  rc::opt::DeadCodeElimVisitor dce;
+  dce.run(m);
+
+  if (count_binary_ops(*entry) != 0) {
+    record_failure("[dce] expected ADCE to remove unused arithmetic chain");
+  }
+}
+
+void test_adce_keeps_store_dependency() {
+  rc::ir::Module m("m");
+  auto fn_ty = std::make_shared<rc::ir::FunctionType>(
+      std::make_shared<rc::ir::VoidType>(), std::vector<rc::ir::TypePtr>{},
+      false);
+  auto fn = m.create_function("f", fn_ty);
+  auto entry = fn->create_block("entry");
+
+  auto slot = entry->append<rc::ir::AllocaInst>(rc::ir::IntegerType::i32());
+  auto add = entry->append<rc::ir::BinaryOpInst>(
+      rc::ir::BinaryOpKind::ADD, rc::ir::ConstantInt::get_i32(40),
+      rc::ir::ConstantInt::get_i32(2), rc::ir::IntegerType::i32());
+  entry->append<rc::ir::StoreInst>(add, slot);
+  entry->append<rc::ir::ReturnInst>();
+
+  rc::opt::DeadCodeElimVisitor dce;
+  dce.run(m);
+
+  if (count_binary_ops(*entry) != 1) {
+    record_failure("[dce] expected ADCE to keep arithmetic used by a store");
+  }
+}
+
 } // namespace
 
 int main() {
   try {
     test_fold_true_branch();
     test_fold_false_branch();
+    test_adce_removes_dead_chain();
+    test_adce_keeps_store_dependency();
   } catch (const std::exception &ex) {
     record_failure(std::string("[dce] unexpected exception: ") + ex.what());
   }
