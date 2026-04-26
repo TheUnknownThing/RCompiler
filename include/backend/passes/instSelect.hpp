@@ -14,6 +14,7 @@
 
 #include "utils/logger.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <sstream>
@@ -65,6 +66,7 @@ private:
 
   AsmBlock *currentBlock_{nullptr};
   size_t stackOffset_ = 0;
+  const ir::BasicBlock *entryIrBlock_{nullptr};
 
   std::string describe(const ir::Value *value) const;
   std::shared_ptr<AsmOperand>
@@ -101,8 +103,7 @@ private:
 
   std::string getUniqueFunctionName(const ir::Function *function) {
     if (functionNames_.count(function) == 0) {
-      functionNames_[function] =
-          function->name() + "." + std::to_string(uniqueNameID_++);
+      functionNames_[function] = function->name();
     }
     return functionNames_[function];
   }
@@ -112,14 +113,21 @@ private:
   std::shared_ptr<Register> createPhysicalRegister(int id);
   std::shared_ptr<Immediate> createImmediate(int32_t value);
   std::shared_ptr<StackSlot> createStackSlot(const ir::TypePtr &type);
+  std::shared_ptr<StackSlot> createIncomingArgSlot(size_t argIndex);
   std::shared_ptr<Symbol> createLabelOperand(const ir::BasicBlock *block);
   std::shared_ptr<Symbol> createFunctionOperand(const ir::Function *function);
   Immediate *asImmediate(const std::shared_ptr<AsmOperand> &op);
   std::shared_ptr<AsmOperand> getReg(const std::shared_ptr<AsmOperand> &op);
+  std::shared_ptr<AsmOperand>
+  prepareCallArgument(const std::shared_ptr<ir::Value> &arg,
+                      const ir::CallInst &call);
 };
 
 inline void InstructionSelection::generate(const ir::Module &module) {
   for (const auto &function : module.functions()) {
+    if (function->isExternal()) {
+      continue;
+    }
     visit(*function);
   }
 }
@@ -132,20 +140,22 @@ inline void InstructionSelection::visit(const ir::Function &function) {
   asmFunction->name = getUniqueFunctionName(&function);
   functions_.push_back(std::move(asmFunction));
 
-  // add arguments to valueOperandMap_
-  if (function.args().size() > 0) {
-    for (size_t i = 0; i <= 7 && i < function.args().size(); ++i) {
-      valueOperandMap_[function.args()[i].get()] =
-          createPhysicalRegister(10 + i);
-    }
-    for (size_t i = 8; i < function.args().size(); ++i) {
-      valueOperandMap_[function.args()[i].get()] =
-          createStackSlot(function.args()[i]->type());
-    }
-  }
-
   stackOffset_ = 0;
   if (!function.blocks().empty()) {
+    entryIrBlock_ = function.blocks().front().get();
+    for (size_t i = 0; i < function.args().size(); ++i) {
+      valueOperandMap_[function.args()[i].get()] = createVirtualRegister();
+    }
+    for (const auto &basicBlock : function.blocks()) {
+      for (const auto &inst : basicBlock->instructions()) {
+        auto allocaInst = dynamic_cast<const ir::AllocaInst *>(inst.get());
+        if (!allocaInst || valueOperandMap_.count(allocaInst) != 0) {
+          continue;
+        }
+        valueOperandMap_[allocaInst] =
+            createStackSlot(allocaInst->allocatedType());
+      }
+    }
     for (const auto &basicBlock : function.blocks()) {
       visit(*basicBlock);
     }
@@ -153,6 +163,7 @@ inline void InstructionSelection::visit(const ir::Function &function) {
   LOG_DEBUG("[ISel] End function: " + function.name());
   functions_.back()->stackSize = alignTo(stackOffset_, 16);
   currentFunction_ = nullptr;
+  entryIrBlock_ = nullptr;
 }
 
 inline void InstructionSelection::visit(const ir::BasicBlock &basicBlock) {
@@ -164,6 +175,45 @@ inline void InstructionSelection::visit(const ir::BasicBlock &basicBlock) {
 
   auto asmBlock = asmFunction->createBlock(label);
   currentBlock_ = asmBlock;
+  if (&basicBlock == entryIrBlock_ && currentFunction_) {
+    std::vector<std::shared_ptr<StackSlot>> registerArgSlots;
+    const size_t registerArgCount = std::min<size_t>(8, currentFunction_->args().size());
+    registerArgSlots.reserve(registerArgCount);
+    for (size_t i = 0; i < registerArgCount; ++i) {
+      auto slot = std::make_shared<StackSlot>(alignTo(stackOffset_, 4), 4);
+      stackOffset_ = slot->offset + slot->size;
+      registerArgSlots.push_back(slot);
+      currentBlock_->createInst(InstOpcode::SW, nullptr,
+                                {createPhysicalRegister(10 + i), slot});
+    }
+
+    for (size_t i = 0; i < currentFunction_->args().size(); ++i) {
+      auto dst = std::dynamic_pointer_cast<Register>(
+          valueOperandMap_[currentFunction_->args()[i].get()]);
+      if (!dst) {
+        throw std::runtime_error("function argument not mapped to register");
+      }
+
+      if (i < 8) {
+        currentBlock_->createInst(InstOpcode::LW, dst, {registerArgSlots[i]});
+        continue;
+      }
+
+      auto slot = createIncomingArgSlot(i);
+      size_t argSize = computeTypeByteSize(currentFunction_->args()[i]->type());
+      if (argSize == 1) {
+        currentBlock_->createInst(InstOpcode::LB, dst, {slot});
+      } else if (argSize == 2) {
+        currentBlock_->createInst(InstOpcode::LH, dst, {slot});
+      } else if (argSize == 4) {
+        currentBlock_->createInst(InstOpcode::LW, dst, {slot});
+      } else {
+        throw std::runtime_error("unsupported incoming argument size: " +
+                                 std::to_string(argSize));
+      }
+    }
+  }
+
   for (const auto &inst : basicBlock.instructions()) {
     if (!inst) {
       throw std::runtime_error(
@@ -201,6 +251,13 @@ inline void InstructionSelection::visit(const ir::BinaryOpInst &binOp) {
     }
     if (!rhsImm && lhsImm && lhsImm->is_valid_12()) {
       currentBlock_->createInst(InstOpcode::ADDI, dst, {rhs, lhs});
+      break;
+    }
+    if (lhsImm && rhsImm) {
+      currentBlock_->createInst(
+          InstOpcode::LI, dst,
+          {createImmediate(static_cast<int32_t>(lhsImm->value +
+                                                rhsImm->value))});
       break;
     }
     currentBlock_->createInst(InstOpcode::ADD, dst, {getReg(lhs), getReg(rhs)});
@@ -312,6 +369,9 @@ inline void InstructionSelection::visit(const ir::BinaryOpInst &binOp) {
 }
 
 inline void InstructionSelection::visit(const ir::AllocaInst &alloca) {
+  if (valueOperandMap_.count(&alloca) != 0) {
+    return;
+  }
   auto slot = createStackSlot(alloca.allocatedType());
   valueOperandMap_[&alloca] = slot;
 }
@@ -498,6 +558,8 @@ inline void InstructionSelection::visit(const ir::GetElementPtrInst &gep) {
         fieldOffset = alignTo(fieldOffset, fieldLayout.align);
         fieldOffset += fieldLayout.size;
       }
+      auto targetLayout = computeTypeLayout(structTy->fields()[idxValue]);
+      fieldOffset = alignTo(fieldOffset, targetLayout.align);
 
       staticOffset += static_cast<int64_t>(fieldOffset);
       currentType = structTy->fields()[idxValue];
@@ -514,8 +576,20 @@ inline void InstructionSelection::visit(const ir::GetElementPtrInst &gep) {
 
   auto slot = std::dynamic_pointer_cast<StackSlot>(base);
   if (slot && !dynamicOffset && staticOffset >= 0) {
-    auto newSlot = std::make_shared<StackSlot>(
-        slot->offset + static_cast<size_t>(staticOffset), resultSize);
+    auto offset = slot->offset + static_cast<size_t>(staticOffset);
+    auto existingIt = valueOperandMap_.find(&gep);
+    if (existingIt != valueOperandMap_.end() && existingIt->second) {
+      auto existingReg = std::dynamic_pointer_cast<Register>(existingIt->second);
+      if (!existingReg) {
+        throw std::runtime_error("GEP result mapped to non-register");
+      }
+      auto sp = createPhysicalRegister(2);
+      emitAddImmediate(existingReg, sp, static_cast<int64_t>(offset));
+      return;
+    }
+
+    auto newSlot =
+        std::make_shared<StackSlot>(offset, resultSize, slot->kind);
     valueOperandMap_[&gep] = newSlot;
     return;
   }
@@ -535,6 +609,18 @@ inline void InstructionSelection::visit(const ir::GetElementPtrInst &gep) {
     currentBlock_->createInst(InstOpcode::ADD, withDynamic,
                               {addressReg, getReg(dynamicOffset)});
     addressReg = withDynamic;
+  }
+
+  auto existingIt = valueOperandMap_.find(&gep);
+  if (existingIt != valueOperandMap_.end() && existingIt->second) {
+    auto existingReg = std::dynamic_pointer_cast<Register>(existingIt->second);
+    if (!existingReg) {
+      throw std::runtime_error("GEP result mapped to non-register");
+    }
+    if (existingReg != addressReg) {
+      currentBlock_->createInst(InstOpcode::MV, existingReg, {addressReg});
+    }
+    return;
   }
 
   valueOperandMap_[&gep] = addressReg;
@@ -672,7 +758,7 @@ inline void InstructionSelection::visit(const ir::ICmpInst &icmp) {
     // rd = (rs1 ^ rs2) != 0
     currentBlock_->createInst(InstOpcode::XOR, dst, {getReg(lhs), getReg(rhs)});
     currentBlock_->createInst(InstOpcode::SLTU, dst,
-                              {createImmediate(0), getReg(dst)});
+                              {createPhysicalRegister(0), getReg(dst)});
     break;
   case ir::ICmpPred::UGT:
     currentBlock_->createInst(InstOpcode::SLTU, dst,
@@ -716,29 +802,55 @@ inline void InstructionSelection::visit(const ir::ICmpInst &icmp) {
 }
 
 inline void InstructionSelection::visit(const ir::CallInst &call) {
-  if (call.type()->isVoid()) {
-    std::vector<std::shared_ptr<AsmOperand>> args;
-    for (const auto &arg : call.args()) {
-      args.push_back(resolveOperandOrImmediate(
-          arg, "call argument not materialized", &call));
-    }
+  std::vector<std::shared_ptr<AsmOperand>> args;
+  args.reserve(call.args().size());
+  for (const auto &arg : call.args()) {
+    args.push_back(prepareCallArgument(arg, call));
+  }
 
-    std::vector<std::shared_ptr<AsmOperand>> operands;
-    operands.push_back(createFunctionOperand(call.calleeFunction()));
-    operands.insert(operands.end(), args.begin(), args.end());
-    currentBlock_->createInst(InstOpcode::CALL, nullptr, operands);
-  } else {
-    auto dst = getOrCreateResultRegister(&call);
-    std::vector<std::shared_ptr<AsmOperand>> args;
-    for (const auto &arg : call.args()) {
-      args.push_back(resolveOperandOrImmediate(
-          arg, "call argument not materialized", &call));
-    }
+  std::vector<std::shared_ptr<Register>> argTemps;
+  argTemps.reserve(args.size());
+  for (const auto &arg : args) {
+    auto temp = createVirtualRegister();
+    currentBlock_->createInst(InstOpcode::MV, temp, {getReg(arg)});
+    argTemps.push_back(temp);
+  }
 
-    std::vector<std::shared_ptr<AsmOperand>> operands;
-    operands.push_back(createFunctionOperand(call.calleeFunction()));
-    operands.insert(operands.end(), args.begin(), args.end());
-    currentBlock_->createInst(InstOpcode::CALL, dst, operands);
+  const size_t stackArgCount = args.size() > 8 ? args.size() - 8 : 0;
+  const size_t stackArgBytes = alignTo(stackArgCount * 4, 16);
+  auto sp = createPhysicalRegister(2);
+
+  std::shared_ptr<Register> outgoingSp;
+  if (stackArgBytes != 0) {
+    outgoingSp = createVirtualRegister();
+    emitAddImmediate(outgoingSp, sp, -static_cast<int64_t>(stackArgBytes));
+    for (size_t i = 8; i < argTemps.size(); ++i) {
+      currentBlock_->createInst(
+          InstOpcode::SW, nullptr,
+          {argTemps[i], outgoingSp,
+           createImmediate(static_cast<int32_t>((i - 8) * 4))});
+    }
+  }
+
+  for (size_t i = 0; i < argTemps.size() && i < 8; ++i) {
+    currentBlock_->createInst(InstOpcode::MV, createPhysicalRegister(10 + i),
+                              {argTemps[i]});
+  }
+
+  if (stackArgBytes != 0) {
+    currentBlock_->createInst(InstOpcode::MV, sp, {outgoingSp});
+  }
+
+  currentBlock_->createInst(InstOpcode::CALL, nullptr,
+                            {createFunctionOperand(call.calleeFunction())});
+
+  if (stackArgBytes != 0) {
+    emitAddImmediate(sp, sp, static_cast<int64_t>(stackArgBytes));
+  }
+
+  if (!call.type()->isVoid()) {
+    currentBlock_->createInst(InstOpcode::MV, getOrCreateResultRegister(&call),
+                              {createPhysicalRegister(10)});
   }
 }
 
@@ -754,8 +866,16 @@ inline void InstructionSelection::visit(const ir::ZExtInst &zextInst) {
   auto dst = getOrCreateResultRegister(&zextInst);
   auto src = resolveOperandOrImmediate(zextInst.source(),
                                        "operand for ZExtInst", &zextInst);
-  currentBlock_->createInst(InstOpcode::ANDI, dst,
-                            {getReg(src), createImmediate(0xFFFFFFFF)});
+  auto srcInt =
+      std::dynamic_pointer_cast<const ir::IntegerType>(zextInst.source()->type());
+  if (!srcInt || srcInt->bits() >= 32) {
+    currentBlock_->createInst(InstOpcode::MV, dst, {getReg(src)});
+    return;
+  }
+  currentBlock_->createInst(
+      InstOpcode::ANDI, dst,
+      {getReg(src), createImmediate(static_cast<int32_t>(
+                        (uint32_t{1} << srcInt->bits()) - 1))});
 }
 
 inline void InstructionSelection::visit(const ir::SExtInst &sextInst) {
@@ -813,6 +933,7 @@ inline std::shared_ptr<AsmOperand>
 InstructionSelection::resolveOperandOrImmediate(
     const std::shared_ptr<ir::Value> &value, const char *reason,
     const ir::Instruction *inst) {
+  (void)inst;
   if (!value) {
     throw std::runtime_error(std::string(reason) + ": null value");
   }
@@ -890,6 +1011,15 @@ InstructionSelection::createStackSlot(const ir::TypePtr &type) {
   return slot;
 }
 
+inline std::shared_ptr<StackSlot>
+InstructionSelection::createIncomingArgSlot(size_t argIndex) {
+  if (argIndex < 8) {
+    throw std::runtime_error("register argument requested as stack argument");
+  }
+  return std::make_shared<StackSlot>((argIndex - 8) * 4, 4,
+                                     StackSlotKind::INCOMING_ARG);
+}
+
 inline std::shared_ptr<Symbol>
 InstructionSelection::createLabelOperand(const ir::BasicBlock *block) {
   return std::make_shared<Symbol>(getUniqueLabel(block), false);
@@ -965,11 +1095,26 @@ InstructionSelection::asImmediate(const std::shared_ptr<AsmOperand> &op) {
 inline std::shared_ptr<AsmOperand>
 InstructionSelection::getReg(const std::shared_ptr<AsmOperand> &op) {
   if (!asImmediate(op)) {
+    if (std::dynamic_pointer_cast<StackSlot>(op)) {
+      return materializeAddress(op, nullptr, "stack slot address");
+    }
     return op;
   }
   auto immReg = createVirtualRegister();
   currentBlock_->createInst(InstOpcode::LI, immReg, {op});
   return immReg;
+}
+
+inline std::shared_ptr<AsmOperand> InstructionSelection::prepareCallArgument(
+    const std::shared_ptr<ir::Value> &arg, const ir::CallInst &call) {
+  auto operand =
+      resolveOperandOrImmediate(arg, "call argument not materialized", &call);
+  if (arg && arg->type()->kind() == ir::TypeKind::Pointer &&
+      std::dynamic_pointer_cast<StackSlot>(operand)) {
+    return materializeAddress(operand, &call,
+                              "call pointer argument cannot be addressed");
+  }
+  return operand;
 }
 
 } // namespace rc::backend

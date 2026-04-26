@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -50,8 +51,8 @@ private:
   };
 
   static constexpr size_t kSpillSlotSize = 4;
-  static constexpr std::array<int, 15> kCallerSavedRegs = {
-      5,  6,  7,  10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30, 31};
+  static constexpr std::array<int, 14> kCallerSavedRegs = {
+      6,  7,  10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30, 31};
   static constexpr std::array<int, 11> kCalleeSavedRegs = {
       9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27};
 
@@ -63,6 +64,8 @@ private:
   computeFixedRegisterSpans(const AsmFunction &function) const;
   std::vector<LiveInterval> buildIntervals(const AsmFunction &function) const;
   void linearScan(AsmFunction &function,
+                  std::vector<LiveInterval> &intervals) const;
+  void graphColor(AsmFunction &function,
                   std::vector<LiveInterval> &intervals) const;
   bool rewriteSpills(AsmFunction &function,
                      const std::vector<LiveInterval> &intervals,
@@ -104,6 +107,9 @@ RegAlloc::allocate(const std::vector<std::unique_ptr<AsmFunction>> &functions) {
     LOG_DEBUG("[RegAlloc] Begin function: " + function->name);
     size_t nextVirtualRegId = maxVirtualRegisterId(*function) + 1;
     constexpr size_t kMaxRewriteIterations = 32;
+    const char *strategyEnv = std::getenv("RC_REGALLOC");
+    const bool useLinearScan =
+        strategyEnv && std::string(strategyEnv) == "linear";
 
     bool finished = false;
     for (size_t iteration = 0; iteration < kMaxRewriteIterations; ++iteration) {
@@ -115,7 +121,11 @@ RegAlloc::allocate(const std::vector<std::unique_ptr<AsmFunction>> &functions) {
         break;
       }
 
-      linearScan(*function, intervals);
+      if (useLinearScan) {
+        linearScan(*function, intervals);
+      } else {
+        graphColor(*function, intervals);
+      }
 
       bool hasSpills = false;
       for (const auto &interval : intervals) {
@@ -519,6 +529,228 @@ inline void RegAlloc::linearScan(AsmFunction &function,
     interval.assignedPhysReg = available.front();
     active.push_back(&interval);
     sortActive();
+  }
+
+  markSpilledRegisters(function, spilledIds);
+}
+
+inline void RegAlloc::graphColor(AsmFunction &function,
+                                 std::vector<LiveInterval> &intervals) const {
+  std::unordered_set<size_t> spilledIds;
+  const auto fixedRegSpans = computeFixedRegisterSpans(function);
+  const size_t n = intervals.size();
+  const size_t originalStackSize = function.stackSize;
+  constexpr size_t kGraphColorIntervalLimit = 1024;
+  if (n > kGraphColorIntervalLimit) {
+    LOG_DEBUG("[RegAlloc] Falling back to linear scan for large function: " +
+              function.name);
+    linearScan(function, intervals);
+    return;
+  }
+
+  std::unordered_map<size_t, size_t> indexByVreg;
+  indexByVreg.reserve(n);
+  for (size_t i = 0; i < n; ++i) {
+    indexByVreg[intervals[i].vregId] = i;
+  }
+
+  std::vector<std::vector<size_t>> graph(n);
+  std::vector<std::unordered_set<size_t>> edgeSets(n);
+
+  auto addEdge = [&](size_t lhsReg, size_t rhsReg) {
+    if (lhsReg == rhsReg) {
+      return;
+    }
+    auto lhsIt = indexByVreg.find(lhsReg);
+    auto rhsIt = indexByVreg.find(rhsReg);
+    if (lhsIt == indexByVreg.end() || rhsIt == indexByVreg.end()) {
+      return;
+    }
+    size_t lhs = lhsIt->second;
+    size_t rhs = rhsIt->second;
+    edgeSets[lhs].insert(rhs);
+    edgeSets[rhs].insert(lhs);
+  };
+
+  std::vector<BlockLiveness> blocks(function.blocks.size());
+  for (size_t blockIndex = 0; blockIndex < function.blocks.size();
+       ++blockIndex) {
+    const auto &block = function.blocks[blockIndex];
+    if (!block) {
+      continue;
+    }
+
+    for (const auto &inst : block->instructions) {
+      if (!inst) {
+        continue;
+      }
+
+      size_t regId = 0;
+      for (const auto &use : inst->getUses()) {
+        if (!isVirtualRegisterOperand(use, &regId)) {
+          continue;
+        }
+        if (blocks[blockIndex].def.find(regId) ==
+            blocks[blockIndex].def.end()) {
+          blocks[blockIndex].use.insert(regId);
+        }
+      }
+
+      if (isVirtualRegisterOperand(inst->getDst(), &regId)) {
+        blocks[blockIndex].def.insert(regId);
+      }
+    }
+  }
+
+  const auto successors = computeSuccessors(function);
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (size_t i = function.blocks.size(); i-- > 0;) {
+      std::unordered_set<size_t> newLiveOut;
+      for (size_t succ : successors[i]) {
+        newLiveOut.insert(blocks[succ].liveIn.begin(),
+                          blocks[succ].liveIn.end());
+      }
+
+      std::unordered_set<size_t> newLiveIn = blocks[i].use;
+      for (size_t regId : newLiveOut) {
+        if (blocks[i].def.find(regId) == blocks[i].def.end()) {
+          newLiveIn.insert(regId);
+        }
+      }
+
+      if (newLiveOut != blocks[i].liveOut || newLiveIn != blocks[i].liveIn) {
+        blocks[i].liveOut = std::move(newLiveOut);
+        blocks[i].liveIn = std::move(newLiveIn);
+        changed = true;
+      }
+    }
+  }
+
+  for (size_t blockIndex = 0; blockIndex < function.blocks.size();
+       ++blockIndex) {
+    const auto &block = function.blocks[blockIndex];
+    if (!block) {
+      continue;
+    }
+
+    auto live = blocks[blockIndex].liveOut;
+    for (auto instIt = block->instructions.rbegin();
+         instIt != block->instructions.rend(); ++instIt) {
+      const auto &inst = *instIt;
+      if (!inst) {
+        continue;
+      }
+
+      std::vector<size_t> useRegs;
+      size_t regId = 0;
+      for (const auto &use : inst->getUses()) {
+        if (isVirtualRegisterOperand(use, &regId)) {
+          useRegs.push_back(regId);
+        }
+      }
+      for (size_t i = 0; i < useRegs.size(); ++i) {
+        for (size_t j = i + 1; j < useRegs.size(); ++j) {
+          addEdge(useRegs[i], useRegs[j]);
+        }
+      }
+
+      size_t dstId = 0;
+      if (isVirtualRegisterOperand(inst->getDst(), &dstId)) {
+        for (size_t liveReg : live) {
+          addEdge(dstId, liveReg);
+        }
+        live.erase(dstId);
+      }
+
+      for (size_t useReg : useRegs) {
+        live.insert(useReg);
+      }
+    }
+  }
+
+  for (size_t i = 0; i < n; ++i) {
+    graph[i].assign(edgeSets[i].begin(), edgeSets[i].end());
+  }
+
+  auto availableColors = [&](const LiveInterval &interval) {
+    std::vector<int> colors;
+    const auto &candidates = candidateRegisters(interval.crossesCall);
+    colors.reserve(candidates.size());
+    for (int physReg : candidates) {
+      auto fixedIt = fixedRegSpans.find(physReg);
+      if (fixedIt != fixedRegSpans.end() &&
+          overlapsFixedRegister(fixedIt->second, interval.start,
+                                interval.end)) {
+        continue;
+      }
+      colors.push_back(physReg);
+    }
+    return colors;
+  };
+
+  std::vector<std::vector<int>> colors(n);
+  std::vector<size_t> order(n);
+  for (size_t i = 0; i < n; ++i) {
+    colors[i] = availableColors(intervals[i]);
+    order[i] = i;
+  }
+  std::sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) {
+    if (colors[lhs].empty() != colors[rhs].empty()) {
+      return !colors[lhs].empty();
+    }
+    if (graph[lhs].size() != graph[rhs].size()) {
+      return graph[lhs].size() > graph[rhs].size();
+    }
+    const auto lhsLen = intervals[lhs].end - intervals[lhs].start;
+    const auto rhsLen = intervals[rhs].end - intervals[rhs].start;
+    if (lhsLen != rhsLen) {
+      return lhsLen > rhsLen;
+    }
+    return intervals[lhs].vregId < intervals[rhs].vregId;
+  });
+
+  std::vector<int> assigned(n, -1);
+  for (size_t index : order) {
+    std::unordered_set<int> unavailable;
+    for (size_t neighbor : graph[index]) {
+      if (assigned[neighbor] >= 0) {
+        unavailable.insert(assigned[neighbor]);
+      }
+    }
+
+    int color = -1;
+    for (int candidate : colors[index]) {
+      if (unavailable.find(candidate) == unavailable.end()) {
+        color = candidate;
+        break;
+      }
+    }
+
+    if (color < 0) {
+      intervals[index].spilled = true;
+      intervals[index].assignedPhysReg = -1;
+      intervals[index].spillSlot = createSpillSlot(function);
+      spilledIds.insert(intervals[index].vregId);
+      continue;
+    }
+
+    assigned[index] = color;
+    intervals[index].assignedPhysReg = color;
+    intervals[index].spilled = false;
+    intervals[index].spillSlot = nullptr;
+  }
+
+  if (!spilledIds.empty()) {
+    function.stackSize = originalStackSize;
+    for (auto &interval : intervals) {
+      interval.assignedPhysReg = -1;
+      interval.spilled = false;
+      interval.spillSlot = nullptr;
+    }
+    linearScan(function, intervals);
+    return;
   }
 
   markSpilledRegisters(function, spilledIds);
