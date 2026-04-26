@@ -9,6 +9,7 @@ ScopeNode *enter_scope(ScopeNode *&current, const std::string &name,
   current = current->add_child_scope(name, owner_node);
   return current;
 }
+
 void exit_scope(ScopeNode *&current) {
   if (!current)
     throw SemanticException("null current scope");
@@ -18,6 +19,7 @@ void exit_scope(ScopeNode *&current) {
     // Root, do not exit
   }
 }
+
 void print_scope_tree(const ScopeNode &scope, int indent) {
   auto indent_str = std::string(indent, ' ');
   if (indent == 0) {

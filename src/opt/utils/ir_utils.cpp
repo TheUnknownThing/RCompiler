@@ -20,12 +20,14 @@ void replace_all_uses_with(ir::Value &from, ir::Value *to) {
     user->replace_operand(&from, to);
   }
 }
+
 void replace_all_uses_with(ir::Value *from, ir::Value *to) {
   if (!from) {
     return;
   }
   replace_all_uses_with(*from, to);
 }
+
 std::shared_ptr<ir::Instruction>
 find_shared_instruction(ir::BasicBlock &bb, ir::Instruction *inst) {
   if (!inst) {
@@ -38,6 +40,7 @@ find_shared_instruction(ir::BasicBlock &bb, ir::Instruction *inst) {
   }
   return nullptr;
 }
+
 bool erase_instruction(ir::BasicBlock &bb, ir::Instruction *inst) {
   auto sp = find_shared_instruction(bb, inst);
   if (!sp) {
@@ -46,6 +49,7 @@ bool erase_instruction(ir::BasicBlock &bb, ir::Instruction *inst) {
   bb.erase_instruction(sp);
   return true;
 }
+
 std::shared_ptr<ir::ConstantInt> as_const_int(ir::Value *v) {
   if (!v) {
     return nullptr;
@@ -55,10 +59,12 @@ std::shared_ptr<ir::ConstantInt> as_const_int(ir::Value *v) {
   }
   return nullptr;
 }
+
 bool is_const_int(ir::Value *v, std::uint64_t val) {
   auto ci = as_const_int(v);
   return ci && ci->value() == val;
 }
+
 std::optional<unsigned> int_bits(const ir::TypePtr &ty) {
   auto it = std::dynamic_pointer_cast<const ir::IntegerType>(ty);
   if (!it) {

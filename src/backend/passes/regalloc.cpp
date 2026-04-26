@@ -62,6 +62,7 @@ RegAlloc::allocate(const std::vector<std::unique_ptr<AsmFunction>> &functions) {
     LOG_DEBUG("[RegAlloc] End function: " + function->name);
   }
 }
+
 size_t RegAlloc::align_to(size_t value, size_t align) const {
   if (align <= 1) {
     return value;
@@ -69,6 +70,7 @@ size_t RegAlloc::align_to(size_t value, size_t align) const {
   auto rem = value % align;
   return rem == 0 ? value : (value + (align - rem));
 }
+
 size_t
 RegAlloc::max_virtual_register_id(const AsmFunction &function) const {
   size_t max_id = 0;
@@ -94,6 +96,7 @@ RegAlloc::max_virtual_register_id(const AsmFunction &function) const {
   }
   return max_id;
 }
+
 std::vector<std::vector<size_t>>
 RegAlloc::compute_successors(const AsmFunction &function) const {
   std::unordered_map<std::string, size_t> block_index_by_name;
@@ -157,6 +160,7 @@ RegAlloc::compute_successors(const AsmFunction &function) const {
 
   return successors;
 }
+
 std::unordered_map<int, RegAlloc::FixedRegisterSpan>
 RegAlloc::compute_fixed_register_spans(const AsmFunction &function) const {
   std::unordered_map<int, FixedRegisterSpan> spans;
@@ -199,6 +203,7 @@ RegAlloc::compute_fixed_register_spans(const AsmFunction &function) const {
 
   return spans;
 }
+
 std::vector<RegAlloc::LiveInterval>
 RegAlloc::build_intervals(const AsmFunction &function) const {
   std::vector<BlockLiveness> blocks(function.blocks.size());
@@ -335,6 +340,7 @@ RegAlloc::build_intervals(const AsmFunction &function) const {
 
   return intervals;
 }
+
 void RegAlloc::linear_scan(AsmFunction &function,
                                  std::vector<LiveInterval> &intervals) const {
   std::unordered_set<size_t> spilled_ids;
@@ -432,6 +438,7 @@ void RegAlloc::linear_scan(AsmFunction &function,
 
   mark_spilled_registers(function, spilled_ids);
 }
+
 void RegAlloc::graph_color(AsmFunction &function,
                                  std::vector<LiveInterval> &intervals) const {
   std::unordered_set<size_t> spilled_ids;
@@ -653,6 +660,7 @@ void RegAlloc::graph_color(AsmFunction &function,
 
   mark_spilled_registers(function, spilled_ids);
 }
+
 bool RegAlloc::rewrite_spills(AsmFunction &function,
                                     const std::vector<LiveInterval> &intervals,
                                     size_t &next_virtual_reg_id) const {
@@ -745,6 +753,7 @@ bool RegAlloc::rewrite_spills(AsmFunction &function,
 
   return changed;
 }
+
 void RegAlloc::assign_physical_registers(
     AsmFunction &function, const std::vector<LiveInterval> &intervals) const {
   std::unordered_map<size_t, int> assignment;
@@ -802,6 +811,7 @@ void RegAlloc::assign_physical_registers(
     block->instructions = std::move(rewritten);
   }
 }
+
 std::shared_ptr<Register>
 RegAlloc::create_virtual_register(size_t id) const {
   auto reg = std::make_shared<Register>();
@@ -810,6 +820,7 @@ RegAlloc::create_virtual_register(size_t id) const {
   reg->spilled = false;
   return reg;
 }
+
 std::shared_ptr<Register>
 RegAlloc::create_physical_register(size_t id) const {
   auto reg = std::make_shared<Register>();
@@ -818,6 +829,7 @@ RegAlloc::create_physical_register(size_t id) const {
   reg->spilled = false;
   return reg;
 }
+
 std::shared_ptr<StackSlot>
 RegAlloc::create_spill_slot(AsmFunction &function) const {
   size_t offset = align_to(function.stack_size, k_spill_slot_size);
@@ -825,6 +837,7 @@ RegAlloc::create_spill_slot(AsmFunction &function) const {
   function.stack_size = offset + k_spill_slot_size;
   return slot;
 }
+
 void RegAlloc::clear_spill_flags(AsmFunction &function) const {
   for (auto &block : function.blocks) {
     if (!block) {
@@ -849,6 +862,7 @@ void RegAlloc::clear_spill_flags(AsmFunction &function) const {
     }
   }
 }
+
 void RegAlloc::mark_spilled_registers(
     AsmFunction &function, const std::unordered_set<size_t> &spilled) const {
   if (spilled.empty()) {
@@ -877,6 +891,7 @@ void RegAlloc::mark_spilled_registers(
     }
   }
 }
+
 bool
 RegAlloc::is_virtual_register_operand(const std::shared_ptr<AsmOperand> &operand,
                                    size_t *id) const {
@@ -889,6 +904,7 @@ RegAlloc::is_virtual_register_operand(const std::shared_ptr<AsmOperand> &operand
   }
   return true;
 }
+
 bool
 RegAlloc::is_physical_register_operand(const std::shared_ptr<AsmOperand> &operand,
                                     int *id) const {
@@ -901,9 +917,11 @@ RegAlloc::is_physical_register_operand(const std::shared_ptr<AsmOperand> &operan
   }
   return true;
 }
+
 bool RegAlloc::is_call(const AsmInst &inst) const {
   return inst.get_opcode() == InstOpcode::CALL;
 }
+
 bool RegAlloc::is_terminator(const AsmInst &inst) const {
   switch (inst.get_opcode()) {
   case InstOpcode::RET:
@@ -921,6 +939,7 @@ bool RegAlloc::is_terminator(const AsmInst &inst) const {
     return false;
   }
 }
+
 const std::vector<int> &
 RegAlloc::candidate_registers(bool crosses_call) const {
   static const std::vector<int> k_cross_call_candidates(k_callee_saved_regs.begin(),
@@ -935,6 +954,7 @@ RegAlloc::candidate_registers(bool crosses_call) const {
 
   return crosses_call ? k_cross_call_candidates : k_general_candidates;
 }
+
 bool RegAlloc::overlaps_fixed_register(const FixedRegisterSpan &span,
                                             size_t start, size_t end) const {
   if (!span.valid) {
@@ -942,6 +962,7 @@ bool RegAlloc::overlaps_fixed_register(const FixedRegisterSpan &span,
   }
   return !(end < span.start || span.end < start);
 }
+
 size_t
 RegAlloc::block_label_index(const std::vector<std::shared_ptr<AsmOperand>> &uses,
                           InstOpcode opcode) const {
@@ -961,6 +982,7 @@ RegAlloc::block_label_index(const std::vector<std::shared_ptr<AsmOperand>> &uses
     return 0;
   }
 }
+
 void
 RegAlloc::extend_interval(std::unordered_map<size_t, LiveInterval> &intervals,
                          size_t vreg_id, size_t start, size_t end) const {
@@ -975,6 +997,7 @@ RegAlloc::extend_interval(std::unordered_map<size_t, LiveInterval> &intervals,
   interval.start = std::min(interval.start, start);
   interval.end = std::max(interval.end, end);
 }
+
 std::unique_ptr<AsmInst> RegAlloc::clone_inst(
     const AsmInst &inst, const std::shared_ptr<AsmOperand> &dst,
     const std::vector<std::shared_ptr<AsmOperand>> &uses) const {

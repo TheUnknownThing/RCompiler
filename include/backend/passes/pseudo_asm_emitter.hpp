@@ -19,8 +19,4 @@ private:
   std::string inst_name(const AsmInst &inst) const;
 };
 
-
-
-
-
 } // namespace rc::backend

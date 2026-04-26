@@ -19,5 +19,4 @@ private:
   std::vector<std::string> file_lines;
 };
 
-
 } // namespace rc

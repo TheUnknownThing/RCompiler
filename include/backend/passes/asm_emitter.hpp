@@ -40,14 +40,4 @@ private:
                 std::ostream &os) const;
 };
 
-
-
-
-
-
-
-
-
-
-
 } // namespace rc::backend

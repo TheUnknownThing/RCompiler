@@ -28,6 +28,7 @@ void add_builtin_function(const std::string &name,
     item->metadata = meta;
   }
 }
+
 std::unique_ptr<ScopeNode> create_prelude_scope() {
   auto prelude = std::make_unique<ScopeNode>("prelude", nullptr, nullptr);
 
@@ -70,6 +71,7 @@ std::unique_ptr<ScopeNode> create_prelude_scope() {
 
   return prelude;
 }
+
 bool is_builtin_method(const SemType &receiver_type,
                               const std::string &method_name) {
   if (receiver_type.is_primitive()) {
@@ -120,6 +122,7 @@ bool is_builtin_method(const SemType &receiver_type,
 
   return false;
 }
+
 SemType get_builtin_method_return_type(const SemType &receiver_type,
                                               const std::string &method_name) {
   if (!is_builtin_method(receiver_type, method_name)) {

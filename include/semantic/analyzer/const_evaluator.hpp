@@ -223,34 +223,4 @@ private:
 
 // Implementation
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 } // namespace rc

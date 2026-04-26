@@ -13,6 +13,7 @@ std::shared_ptr<Value> remap_value(const std::shared_ptr<Value> &v,
   }
   return v;
 }
+
 BasicBlock *remap_block(BasicBlock *bb, const BlockRemapMap &block_map) {
   if (!bb) {
     return nullptr;

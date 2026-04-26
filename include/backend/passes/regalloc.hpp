@@ -97,28 +97,4 @@ private:
             const std::vector<std::shared_ptr<AsmOperand>> &uses) const;
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 } // namespace rc::backend

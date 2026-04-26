@@ -11,6 +11,7 @@ void FunctionInline::run(ir::Module &module) {
     check_inline(*function);
   }
 }
+
 void FunctionInline::merge_multiple_returns(ir::Function &function) {
   std::vector<std::shared_ptr<ir::ReturnInst>> ret_insts;
   for (const auto &block : function.blocks()) {
@@ -67,6 +68,7 @@ void FunctionInline::merge_multiple_returns(ir::Function &function) {
     new_ret_block->instructions().push_back(new_ret_inst);
   }
 }
+
 void FunctionInline::check_inline(ir::Function &function) {
   bool changed = true;
   while (changed) {
@@ -131,6 +133,7 @@ void FunctionInline::check_inline(ir::Function &function) {
     }
   }
 }
+
 std::shared_ptr<ir::Value>
 FunctionInline::process_inline(ir::CallInst &call_inst,
                               std::shared_ptr<ir::BasicBlock> return_bb) {
@@ -217,6 +220,7 @@ FunctionInline::process_inline(ir::CallInst &call_inst,
 
   return ret_val;
 }
+
 void
 FunctionInline::append_cloned_inst(ir::BasicBlock &bb,
                                  const std::shared_ptr<ir::Instruction> &inst) {
@@ -231,6 +235,7 @@ FunctionInline::append_cloned_inst(ir::BasicBlock &bb,
   inst->set_next(nullptr);
   insts.push_back(inst);
 }
+
 void
 FunctionInline::fix_operands(const std::shared_ptr<ir::Instruction> &inst,
                             const ir::ValueRemapMap &value_map) {
@@ -261,6 +266,7 @@ FunctionInline::fix_operands(const std::shared_ptr<ir::Instruction> &inst,
     }
   }
 }
+
 void
 FunctionInline::replace_phi_block(ir::Function &function,
                                 std::shared_ptr<ir::BasicBlock> old_bb,
@@ -273,6 +279,7 @@ FunctionInline::replace_phi_block(ir::Function &function,
     }
   }
 }
+
 void FunctionInline::replace_all_uses_with(ir::Function &function,
                                                ir::Value &from, ir::Value *to) {
   for (const auto &bb : function.blocks()) {
@@ -287,6 +294,7 @@ void FunctionInline::replace_all_uses_with(ir::Function &function,
     }
   }
 }
+
 bool FunctionInline::judge_inline(ir::Function &function) {
   // < 20 instruction & no recursion
   size_t instruction_count = 0;
@@ -324,6 +332,7 @@ bool FunctionInline::judge_inline(ir::Function &function) {
 
   return true;
 }
+
 bool
 FunctionInline::can_reach_function(ir::Function *start, ir::Function *target,
                                  std::unordered_set<ir::Function *> &visited) {

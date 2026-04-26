@@ -21,6 +21,7 @@ Preprocessor::Preprocessor(const std::string &filename) {
     }
   }
 }
+
 std::string Preprocessor::preprocess() {
   std::string result;
 

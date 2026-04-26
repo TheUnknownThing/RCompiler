@@ -134,25 +134,4 @@ private:
   }
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 } // namespace rc::opt

@@ -34,5 +34,4 @@ public:
   virtual void visit(ir::SelectInst &select_inst);
 };
 
-
 } // namespace rc::opt

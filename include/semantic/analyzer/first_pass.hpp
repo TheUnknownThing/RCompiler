@@ -55,26 +55,4 @@ private:
 
 // Implementation
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 } // namespace rc

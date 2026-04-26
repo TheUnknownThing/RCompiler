@@ -88,6 +88,7 @@ void PrologueEpiloguePass::run(
     }
   }
 }
+
 size_t PrologueEpiloguePass::align_to(size_t value, size_t align) const {
   if (align <= 1) {
     return value;
@@ -95,11 +96,13 @@ size_t PrologueEpiloguePass::align_to(size_t value, size_t align) const {
   auto rem = value % align;
   return rem == 0 ? value : value + (align - rem);
 }
+
 bool PrologueEpiloguePass::is_physical_register(
     const std::shared_ptr<AsmOperand> &operand, int reg_id) const {
   auto reg = std::dynamic_pointer_cast<Register>(operand);
   return reg && !reg->is_virtual && static_cast<int>(reg->id) == reg_id;
 }
+
 bool PrologueEpiloguePass::has_call(const AsmFunction &function) const {
   for (const auto &block : function.blocks) {
     if (!block) {
@@ -113,6 +116,7 @@ bool PrologueEpiloguePass::has_call(const AsmFunction &function) const {
   }
   return false;
 }
+
 std::vector<int> PrologueEpiloguePass::used_callee_saved_registers(
     const AsmFunction &function) const {
   std::unordered_set<int> used;
@@ -142,6 +146,7 @@ std::vector<int> PrologueEpiloguePass::used_callee_saved_registers(
   std::sort(regs.begin(), regs.end());
   return regs;
 }
+
 std::shared_ptr<Register>
 PrologueEpiloguePass::physical(size_t id) const {
   auto reg = std::make_shared<Register>();
@@ -150,14 +155,17 @@ PrologueEpiloguePass::physical(size_t id) const {
   reg->spilled = false;
   return reg;
 }
+
 std::shared_ptr<Immediate>
 PrologueEpiloguePass::immediate(int32_t value) const {
   return std::make_shared<Immediate>(value);
 }
+
 std::shared_ptr<StackSlot>
 PrologueEpiloguePass::stack_slot(size_t offset, size_t size) const {
   return std::make_shared<StackSlot>(offset, size);
 }
+
 std::vector<std::unique_ptr<AsmInst>>
 PrologueEpiloguePass::adjust_sp(int32_t delta) const {
   std::vector<std::unique_ptr<AsmInst>> insts;

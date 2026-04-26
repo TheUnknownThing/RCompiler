@@ -20,9 +20,11 @@ void DirtyWorkPass::run(const std::shared_ptr<RootNode> &root,
 
   LOG_DEBUG("[DirtyWorkPass] Completed dirty work pass");
 }
+
 void DirtyWorkPass::visit(BaseNode &node) {
   node.accept(*this);
 }
+
 void DirtyWorkPass::visit(FunctionDecl &node) {
   LOG_DEBUG("[DirtyWorkPass] Entering function '" + node.name + "'");
 
@@ -53,6 +55,7 @@ void DirtyWorkPass::visit(FunctionDecl &node) {
 
   LOG_DEBUG("[DirtyWorkPass] Exiting function '" + node.name + "'");
 }
+
 void DirtyWorkPass::visit(CallExpression &node) {
   auto *name_expr = dynamic_cast<NameExpression *>(node.function_name.get());
   if (name_expr && name_expr->name == "exit") {
@@ -72,6 +75,7 @@ void DirtyWorkPass::visit(CallExpression &node) {
     }
   }
 }
+
 void DirtyWorkPass::visit(BlockExpression &node) {
   LOG_DEBUG("[DirtyWorkPass] Entering block expression");
 
@@ -127,6 +131,7 @@ void DirtyWorkPass::visit(BlockExpression &node) {
 
   LOG_DEBUG("[DirtyWorkPass] Exiting block expression");
 }
+
 void DirtyWorkPass::visit(IfExpression &node) {
   if (node.condition) {
     node.condition->accept(*this);
@@ -138,11 +143,13 @@ void DirtyWorkPass::visit(IfExpression &node) {
     node.else_block.value()->accept(*this);
   }
 }
+
 void DirtyWorkPass::visit(LoopExpression &node) {
   if (node.body) {
     node.body->accept(*this);
   }
 }
+
 void DirtyWorkPass::visit(WhileExpression &node) {
   if (node.condition) {
     node.condition->accept(*this);
@@ -151,21 +158,25 @@ void DirtyWorkPass::visit(WhileExpression &node) {
     node.body->accept(*this);
   }
 }
+
 void DirtyWorkPass::visit(ReturnExpression &node) {
   if (node.value.has_value()) {
     node.value.value()->accept(*this);
   }
 }
+
 void DirtyWorkPass::visit(ExpressionStatement &node) {
   if (node.expression) {
     node.expression->accept(*this);
   }
 }
+
 void DirtyWorkPass::visit(LetStatement &node) {
   if (node.expr) {
     node.expr->accept(*this);
   }
 }
+
 void DirtyWorkPass::visit(ImplDecl &node) {
   LOG_DEBUG("[DirtyWorkPass] Visiting impl block");
   is_in_impl = true;

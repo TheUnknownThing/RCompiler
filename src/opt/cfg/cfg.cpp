@@ -15,11 +15,13 @@ void CFGVisitor::visit(ir::Value &value) {
     visit(*ret);
   }
 }
+
 void CFGVisitor::visit(ir::Module &module) {
   for (const auto &function : module.functions()) {
     visit(*function);
   }
 }
+
 void CFGVisitor::visit(ir::Function &function) {
   for (const auto &basic_block : function.blocks()) {
     basic_block->clear_predecessors();
@@ -32,6 +34,7 @@ void CFGVisitor::visit(ir::Function &function) {
   //   LOG_DEBUG("\n" + rc::opt::utils::cfgToString(function));
   //   LOG_DEBUG("\n" + rc::opt::utils::cfgToDot(function));
 }
+
 void CFGVisitor::visit(ir::BasicBlock &basic_block) {
   for (const auto &instruction : basic_block.instructions()) {
     if (!instruction ||
@@ -41,6 +44,7 @@ void CFGVisitor::visit(ir::BasicBlock &basic_block) {
     visit(*instruction);
   }
 }
+
 void CFGVisitor::visit(ir::BranchInst &branch_inst) {
   auto parent = branch_inst.parent();
   if (branch_inst.is_conditional()) {
@@ -56,6 +60,7 @@ void CFGVisitor::visit(ir::BranchInst &branch_inst) {
     }
   }
 }
+
 void CFGVisitor::visit(ir::ReturnInst &) {
   // exit block, no-op
 }

@@ -272,9 +272,4 @@ private:
 
 std::size_t align_to(std::size_t value, std::size_t align);
 
-
-
-
-
-
 } // namespace rc::ir

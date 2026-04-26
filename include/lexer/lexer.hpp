@@ -51,10 +51,4 @@ private:
   void check_for_keywords();
 };
 
-
-
-
-
-
-
 } // namespace rc

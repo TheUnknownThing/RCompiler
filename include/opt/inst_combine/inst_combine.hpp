@@ -467,5 +467,4 @@ public:
   }
 };
 
-
 } // namespace rc::opt

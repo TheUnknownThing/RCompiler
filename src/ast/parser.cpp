@@ -8,6 +8,7 @@ Parser::Parser(std::vector<Token> tokens)
   LOG_DEBUG("Parser initialized with " + std::to_string(this->tokens.size()) +
             " tokens");
 }
+
 parsec::Parser<std::shared_ptr<BaseItem>> Parser::any_top_level_item() {
   return parsec::Parser<std::shared_ptr<BaseItem>>(
       [this](const std::vector<Token> &toks,
@@ -45,6 +46,7 @@ parsec::Parser<std::shared_ptr<BaseItem>> Parser::any_top_level_item() {
         return std::nullopt;
       });
 }
+
 std::shared_ptr<RootNode> Parser::parse() {
   LOG_INFO("Starting parsing process");
   auto root = std::make_shared<RootNode>();
@@ -76,6 +78,7 @@ std::shared_ptr<RootNode> Parser::parse() {
            std::to_string(item_count) + " top-level items");
   return root;
 }
+
 std::shared_ptr<BaseNode> Parser::parse_statement() {
   LOG_DEBUG("Parsing statement");
 
@@ -119,6 +122,7 @@ std::shared_ptr<BaseNode> Parser::parse_statement() {
   LOG_WARN("Failed to parse statement");
   return nullptr;
 }
+
 parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
   auto params = optional(parse_function_parameters());
 
@@ -180,6 +184,7 @@ parsec::Parser<std::shared_ptr<FunctionDecl>> Parser::parse_function() {
                                           std::get<2>(h), std::get<3>(h), b);
   });
 }
+
 parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
   using SD = StructDecl;
 
@@ -268,6 +273,7 @@ parsec::Parser<std::shared_ptr<StructDecl>> Parser::parse_struct() {
 
   return parser;
 }
+
 parsec::Parser<std::shared_ptr<EnumDecl>> Parser::parse_enum() {
   using EV = EnumDecl::EnumVariant;
 
@@ -354,6 +360,7 @@ parsec::Parser<std::shared_ptr<EnumDecl>> Parser::parse_enum() {
         return std::make_shared<EnumDecl>(name, std::move(variants));
       });
 }
+
 parsec::Parser<std::shared_ptr<ConstantItem>>
 Parser::parse_const_item() {
   // const name : Type ( = expr )? ;
@@ -381,6 +388,7 @@ Parser::parse_const_item() {
         return std::make_shared<ConstantItem>(name, ty, init);
       });
 }
+
 parsec::Parser<std::shared_ptr<ImplDecl>> Parser::parse_impl() {
   auto to_base_item = [](const auto &item_ptr) {
     return std::static_pointer_cast<BaseItem>(item_ptr);
@@ -422,6 +430,7 @@ parsec::Parser<std::shared_ptr<ImplDecl>> Parser::parse_impl() {
 
   return inherent_impl | trait_impl;
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_return_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -451,6 +460,7 @@ Parser::parse_return_expression() {
         return *result;
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_block_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -610,6 +620,7 @@ Parser::parse_block_expression() {
             std::make_shared<BlockExpression>(std::move(stmts), tail_expr));
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_break_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -637,6 +648,7 @@ Parser::parse_break_expression() {
         return std::nullopt;
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_continue_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -662,6 +674,7 @@ Parser::parse_continue_expression() {
         return std::nullopt;
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_if_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -725,6 +738,7 @@ Parser::parse_if_expression() {
             std::make_shared<IfExpression>(*cond, *then_blk, else_expr));
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_loop_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -748,6 +762,7 @@ Parser::parse_loop_expression() {
             std::make_shared<LoopExpression>(*body));
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_while_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -779,6 +794,7 @@ Parser::parse_while_expression() {
         return *result;
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_array_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -860,6 +876,7 @@ Parser::parse_array_expression() {
         return std::make_shared<ArrayExpression>(std::move(elems));
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_tuple_or_group_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -932,6 +949,7 @@ Parser::parse_tuple_or_group_expression() {
         return std::make_shared<GroupExpression>(*first);
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_path_or_name_expression() {
   auto path_ident = parsec::Parser<std::pair<std::string, bool>>(
@@ -1007,6 +1025,7 @@ Parser::parse_path_or_name_expression() {
         return std::make_shared<rc::PathExpression>(leading, std::move(segs));
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
       [this](const std::vector<rc::Token> &toks,
@@ -1026,6 +1045,7 @@ parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
         return std::nullopt;
       });
 }
+
 parsec::Parser<std::pair<std::shared_ptr<BasePattern>, rc::AstType>>
 Parser::pattern_and_type_parser() {
   using namespace parsec;
@@ -1114,6 +1134,7 @@ Parser::argument_list_parser() {
         return args;
       });
 }
+
 parsec::Parser<std::vector<std::shared_ptr<Expression>>>
 Parser::expression_list_parser() {
   using namespace parsec;
@@ -1136,6 +1157,7 @@ Parser::expression_list_parser() {
         return exprs;
       });
 }
+
 parsec::Parser<AstType> Parser::type_parser() {
   return parsec::typ_with_expr(
       [this](const std::vector<rc::Token> &toks, size_t &pos)
@@ -1143,6 +1165,7 @@ parsec::Parser<AstType> Parser::type_parser() {
         return this->any_expression().parse(toks, pos);
       });
 }
+
 parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
   using namespace parsec;
   auto assignment = tok(TokenType::ASSIGN).then_r(any_expression());
@@ -1166,6 +1189,7 @@ parsec::Parser<std::shared_ptr<BaseNode>> Parser::parse_let_statement() {
         return std::make_shared<LetStatement>(pattern, type, init);
       });
 }
+
 parsec::Parser<std::shared_ptr<Expression>>
 Parser::parse_struct_expression() {
   return parsec::Parser<std::shared_ptr<Expression>>(
@@ -1191,6 +1215,7 @@ Parser::parse_struct_expression() {
         return std::make_shared<rc::StructExpression>(*path, *fields);
       });
 }
+
 parsec::Parser<std::vector<rc::StructExpression::FieldInit>>
 Parser::parse_struct_expr_fields() {
   using Field = rc::StructExpression::FieldInit;

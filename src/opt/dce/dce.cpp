@@ -17,6 +17,7 @@ void DeadCodeElimVisitor::run(ir::Module &module) {
     remove_undef_phi_incoming_blocks(*function);
   }
 }
+
 void DeadCodeElimVisitor::trim_after_terminator(ir::BasicBlock &bb) {
   auto &instrs = bb.instructions();
   bool found_terminator = false;
@@ -53,6 +54,7 @@ void DeadCodeElimVisitor::trim_after_terminator(ir::BasicBlock &bb) {
     ++it;
   }
 }
+
 void
 DeadCodeElimVisitor::fold_constant_conditional_branches(ir::Function &function) {
   for (const auto &bb_ptr : function.blocks()) {
@@ -130,6 +132,7 @@ DeadCodeElimVisitor::fold_constant_conditional_branches(ir::Function &function) 
     }
   }
 }
+
 std::unordered_set<ir::BasicBlock *>
 DeadCodeElimVisitor::compute_reachable(ir::Function &function) {
   std::unordered_set<ir::BasicBlock *> reachable;
@@ -156,6 +159,7 @@ DeadCodeElimVisitor::compute_reachable(ir::Function &function) {
 
   return reachable;
 }
+
 void DeadCodeElimVisitor::squash_unreachable_blocks(
     ir::Function &function,
     const std::unordered_set<ir::BasicBlock *> &reachable) {
@@ -190,6 +194,7 @@ void DeadCodeElimVisitor::squash_unreachable_blocks(
     bb->append<ir::UnreachableInst>();
   }
 }
+
 void DeadCodeElimVisitor::rebuild_predecessors(ir::Function &function) {
   // Clear existing predecessor lists.
   for (const auto &bb : function.blocks()) {
@@ -205,6 +210,7 @@ void DeadCodeElimVisitor::rebuild_predecessors(ir::Function &function) {
     }
   }
 }
+
 void
 DeadCodeElimVisitor::remove_undef_phi_incoming_blocks(ir::Function &function) {
   for (const auto &bb : function.blocks()) {

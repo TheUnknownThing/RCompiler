@@ -18,6 +18,7 @@ void FourthPass::run(const std::shared_ptr<RootNode> &root,
   }
   LOG_INFO("[FourthPass] Completed");
 }
+
 SemType FourthPass::evaluate(Expression *expr) {
   if (!expr)
     throw SemanticException("null expression in evaluate");
@@ -30,15 +31,18 @@ SemType FourthPass::evaluate(Expression *expr) {
   }
   return expr_cache.at(expr);
 }
+
 void FourthPass::visit(BaseNode &node) {
   node.accept(*this);
 }
+
 void FourthPass::visit(RootNode &node) {
   for (auto &c : node.children) {
     if (c)
       c->accept(*this);
   }
 }
+
 void FourthPass::visit(FunctionDecl &node) {
   LOG_DEBUG("[FourthPass] Visiting function '" + node.name + "'");
   auto *item = current_scope_node->find_value_item(node.name);
@@ -68,6 +72,7 @@ void FourthPass::visit(FunctionDecl &node) {
 
   function_return_stack.pop_back();
 }
+
 void FourthPass::visit(ConstantItem &node) {
   if (node.value) {
     auto *item = current_scope_node->find_value_item(node.name);
@@ -85,6 +90,7 @@ void FourthPass::visit(ConstantItem &node) {
     }
   }
 }
+
 void FourthPass::visit(StructDecl &node) {
   LOG_DEBUG("[FourthPass] Visiting struct '" + node.name + "'");
   auto *type_item = current_scope_node->find_type_item(node.name);
@@ -181,6 +187,7 @@ void FourthPass::visit(StructDecl &node) {
   }
   current_struct_type = prev_struct;
 }
+
 void FourthPass::visit(EnumDecl &) {}
 void FourthPass::visit(TraitDecl &) {}
 void FourthPass::visit(ImplDecl &) {}
@@ -239,11 +246,13 @@ void FourthPass::visit(LetStatement &node) {
 
   LOG_DEBUG("[FourthPass] Let statement processed");
 }
+
 void FourthPass::visit(ExpressionStatement &node) {
   LOG_DEBUG("[FourthPass] Processing expression statement");
   if (node.expression)
     (void)evaluate(node.expression.get());
 }
+
 void FourthPass::visit(EmptyStatement &) {}
 void FourthPass::visit(NameExpression &node) {
   LOG_DEBUG("[FourthPass] Evaluating NameExpression: " + node.name);
@@ -270,9 +279,11 @@ void FourthPass::visit(NameExpression &node) {
   }
   throw SemanticException("identifier '" + node.name + "' not found");
 }
+
 void FourthPass::visit(LiteralExpression &node) {
   cache_expr(&node, ScopeNode::resolve_type(node.type, current_scope_node));
 }
+
 void FourthPass::visit(PrefixExpression &node) {
   auto rt = evaluate(node.right.get());
   switch (node.op.type) {
@@ -288,6 +299,7 @@ void FourthPass::visit(PrefixExpression &node) {
     throw TypeError("unsupported prefix operator");
   }
 }
+
 void FourthPass::visit(BinaryExpression &node) {
   if (is_assignment_token(node.op.type)) {
     LOG_DEBUG("[FourthPass] Handling assignment");
@@ -307,9 +319,11 @@ void FourthPass::visit(BinaryExpression &node) {
 
   cache_expr(&node, eval_binary(node));
 }
+
 void FourthPass::visit(GroupExpression &node) {
   cache_expr(&node, evaluate(node.inner.get()));
 }
+
 void FourthPass::visit(IfExpression &node) {
   if (node.condition) {
     auto ct = evaluate(node.condition.get());
@@ -362,6 +376,7 @@ void FourthPass::visit(IfExpression &node) {
       to_string(else_t.value_or(SemType::primitive(SemPrimitiveKind::UNIT))) +
       "'");
 }
+
 void FourthPass::visit(ReturnExpression &node) {
   SemType rt = SemType::primitive(SemPrimitiveKind::NEVER);
   if (node.value)
@@ -376,6 +391,7 @@ void FourthPass::visit(ReturnExpression &node) {
   }
   cache_expr(&node, SemType::primitive(SemPrimitiveKind::NEVER));
 }
+
 void FourthPass::visit(CallExpression &node) {
   if (auto *name_expr =
           dynamic_cast<NameExpression *>(node.function_name.get())) {
@@ -453,6 +469,7 @@ void FourthPass::visit(CallExpression &node) {
 
   throw SemanticException("unsupported call target");
 }
+
 void FourthPass::visit(MethodCallExpression &node) {
   auto recv_type = evaluate(node.receiver.get());
 
@@ -612,6 +629,7 @@ void FourthPass::visit(MethodCallExpression &node) {
   }
   cache_expr(&node, found->return_type);
 }
+
 void FourthPass::visit(FieldAccessExpression &node) {
   auto target_type = evaluate(node.target.get());
 
@@ -642,6 +660,7 @@ void FourthPass::visit(FieldAccessExpression &node) {
   }
   throw TypeError("unknown field '" + node.field_name + "'");
 }
+
 void FourthPass::visit(StructExpression &node) {
   auto struct_path = dynamic_cast<PathExpression *>(node.path_expr.get());
   if (struct_path) {
@@ -691,9 +710,11 @@ void FourthPass::visit(StructExpression &node) {
   }
   throw SemanticException("struct expressions not found");
 }
+
 void FourthPass::visit(UnderscoreExpression &node) {
   cache_expr(&node, SemType::primitive(SemPrimitiveKind::UNIT));
 }
+
 void FourthPass::visit(BlockExpression &node) {
   auto *block_scope = find_scope_for_owner(&node, current_scope_node);
   if (!block_scope) {
@@ -744,6 +765,7 @@ void FourthPass::visit(BlockExpression &node) {
   binding_stack.pop_back();
   current_scope_node = saved;
 }
+
 void FourthPass::visit(LoopExpression &node) {
   const size_t before_breaks = loop_break_stack.size();
   if (node.body)
@@ -755,6 +777,7 @@ void FourthPass::visit(LoopExpression &node) {
   }
   cache_expr(&node, loop_type);
 }
+
 void FourthPass::visit(WhileExpression &node) {
   LOG_DEBUG("[FourthPass] Visiting while expression");
   if (node.condition) {
@@ -766,6 +789,7 @@ void FourthPass::visit(WhileExpression &node) {
   cache_expr(&node, SemType::primitive(SemPrimitiveKind::UNIT));
   LOG_DEBUG("[FourthPass] While expression processed");
 }
+
 void FourthPass::visit(ArrayExpression &node) {
   if (node.repeat) {
     auto el = evaluate(node.repeat->first.get());
@@ -793,6 +817,7 @@ void FourthPass::visit(ArrayExpression &node) {
     cache_expr(&node, SemType::array(elem_type, node.elements.size()));
   }
 }
+
 void FourthPass::visit(IndexExpression &node) {
   auto target_t = evaluate(node.target.get());
   auto idx_type = evaluate(node.index.get());
@@ -809,6 +834,7 @@ void FourthPass::visit(IndexExpression &node) {
   }
   throw TypeError("indexing non-array/slice type");
 }
+
 void FourthPass::visit(TupleExpression &) {}
 void FourthPass::visit(BreakExpression &node) {
   auto t = SemType::primitive(SemPrimitiveKind::NEVER);
@@ -818,9 +844,11 @@ void FourthPass::visit(BreakExpression &node) {
   cache_expr(&node, SemType::primitive(SemPrimitiveKind::NEVER));
   loop_break_stack.push_back(t);
 }
+
 void FourthPass::visit(ContinueExpression &node) {
   cache_expr(&node, SemType::primitive(SemPrimitiveKind::NEVER));
 }
+
 void FourthPass::visit(PathExpression &node) {
   // as we already handled path function call, so here we handle it as value
   if (node.leading_colons) {
@@ -923,14 +951,17 @@ void FourthPass::visit(PathExpression &node) {
     throw TypeError("type '" + type_name + "' is not a struct or enum");
   }
 }
+
 void FourthPass::visit(QualifiedPathExpression &) {
   throw SemanticException("qualified path expression not supported yet");
 }
+
 void FourthPass::visit(BorrowExpression &node) {
   auto target_t = evaluate(node.right.get());
   // TODO: validate target_t is mutable and borrowable
   cache_expr(&node, SemType::reference(target_t, node.is_mutable));
 }
+
 void FourthPass::visit(DerefExpression &node) {
   auto target_t = evaluate(node.right.get());
   if (!target_t.is_reference()) {
@@ -938,6 +969,7 @@ void FourthPass::visit(DerefExpression &node) {
   }
   cache_expr(&node, auto_deref(*target_t.as_reference().target));
 }
+
 void FourthPass::cache_expr(const BaseNode *n, SemType t) {
   if (!n)
     return;
@@ -948,6 +980,7 @@ void FourthPass::cache_expr(const BaseNode *n, SemType t) {
     throw SemanticException("revisit the same expr again, why?");
   }
 }
+
 std::optional<SemType>
 FourthPass::lookup_binding(const std::string &name) const {
   for (auto it = binding_stack.rbegin(); it != binding_stack.rend(); ++it) {
@@ -957,6 +990,7 @@ FourthPass::lookup_binding(const std::string &name) const {
   }
   return std::nullopt;
 }
+
 const FourthPass::IdentifierMeta *
 FourthPass::lookup_binding_meta(const std::string &name) const {
   for (auto it = binding_stack.rbegin(); it != binding_stack.rend(); ++it) {
@@ -966,6 +1000,7 @@ FourthPass::lookup_binding_meta(const std::string &name) const {
   }
   return nullptr;
 }
+
 void FourthPass::add_binding(const std::string &name,
                                     const IdentifierMeta &meta) {
   if (current_scope_node) {
@@ -990,6 +1025,7 @@ void FourthPass::add_binding(const std::string &name,
     throw SemanticException("internal error: empty binding stack");
   (*binding_stack.rbegin())[name] = meta;
 }
+
 void FourthPass::extract_pattern_bindings(const BasePattern &pattern,
                                                  const SemType &type) {
   if (auto *idp = dynamic_cast<const IdentifierPattern *>(&pattern)) {
@@ -1004,6 +1040,7 @@ void FourthPass::extract_pattern_bindings(const BasePattern &pattern,
   }
   // LiteralPattern, WildcardPattern: do not create bindings
 }
+
 void
 FourthPass::extract_identifier_pattern(const IdentifierPattern &pattern,
                                        const SemType &type) {
@@ -1013,6 +1050,7 @@ FourthPass::extract_identifier_pattern(const IdentifierPattern &pattern,
             (pattern.is_ref ? " (ref)" : ""));
   add_binding(pattern.name, meta);
 }
+
 void
 FourthPass::extract_reference_pattern(const ReferencePattern &pattern,
                                       const SemType &type) {
@@ -1029,24 +1067,29 @@ FourthPass::extract_reference_pattern(const ReferencePattern &pattern,
     extract_pattern_bindings(*pattern.inner_pattern, *ref_type.target);
   }
 }
+
 bool FourthPass::is_integer(SemPrimitiveKind k) const {
   return k == SemPrimitiveKind::ANY_INT || k == SemPrimitiveKind::I32 ||
          k == SemPrimitiveKind::U32 || k == SemPrimitiveKind::ISIZE ||
          k == SemPrimitiveKind::USIZE;
 }
+
 bool FourthPass::is_str(SemPrimitiveKind k) const {
   return k == SemPrimitiveKind::STRING;
 }
+
 void FourthPass::require_bool(const SemType &t, const std::string &msg) {
   if (can_assign(SemType::primitive(SemPrimitiveKind::BOOL), t))
     return;
   throw TypeError(msg);
 }
+
 void FourthPass::require_integer(const SemType &t,
                                         const std::string &msg) {
   if (!(t.is_primitive() && is_integer(t.as_primitive().kind)))
     throw TypeError(msg);
 }
+
 void FourthPass::require_bool_or_integer(const SemType &t,
                                                 const std::string &msg) {
   if (can_assign(SemType::primitive(SemPrimitiveKind::BOOL), t))
@@ -1055,6 +1098,7 @@ void FourthPass::require_bool_or_integer(const SemType &t,
     return;
   throw TypeError(msg);
 }
+
 std::optional<SemType>
 FourthPass::unify_integers(const SemType &a, const SemType &b) const {
   if (!(a.is_primitive() && b.is_primitive()))
@@ -1072,6 +1116,7 @@ FourthPass::unify_integers(const SemType &a, const SemType &b) const {
     return a;
   return std::nullopt;
 }
+
 std::optional<SemType> FourthPass::unify_for_op(const SemType &a,
                                                        const SemType &b,
                                                        bool allow_str) const {
@@ -1085,6 +1130,7 @@ std::optional<SemType> FourthPass::unify_for_op(const SemType &a,
   }
   return std::nullopt;
 }
+
 bool FourthPass::can_assign(const SemType &dst,
                                    const SemType &src) const {
   if (dst == src)
@@ -1121,6 +1167,7 @@ bool FourthPass::can_assign(const SemType &dst,
 
   return false;
 }
+
 SemType FourthPass::eval_binary(BinaryExpression &bin) {
   auto lt = evaluate(bin.left.get());
   auto rt = evaluate(bin.right.get());
@@ -1186,6 +1233,7 @@ SemType FourthPass::eval_binary(BinaryExpression &bin) {
                   "' not applicable to types '" + to_string(lt) + "' and '" +
                   to_string(rt) + "'");
 }
+
 bool FourthPass::is_assignment_token(TokenType tt) const {
   switch (tt) {
   case TokenType::ASSIGN:
@@ -1204,6 +1252,7 @@ bool FourthPass::is_assignment_token(TokenType tt) const {
     return false;
   }
 }
+
 std::optional<TokenType>
 FourthPass::compound_base_operator(TokenType tt) const {
   switch (tt) {
@@ -1231,6 +1280,7 @@ FourthPass::compound_base_operator(TokenType tt) const {
     return std::nullopt;
   }
 }
+
 FourthPass::PlaceInfo FourthPass::analyze_place(Expression *expr) {
   if (!expr)
     throw SemanticException("analyze_place on null expr");
@@ -1363,6 +1413,7 @@ FourthPass::PlaceInfo FourthPass::analyze_place(Expression *expr) {
   // All others are r-values
   throw SemanticException("expression is r-value");
 }
+
 void FourthPass::require_place_writable(Expression *lhs,
                                                const char *context) {
   PlaceInfo info = analyze_place(lhs);
@@ -1378,6 +1429,7 @@ void FourthPass::require_place_writable(Expression *lhs,
     throw TypeError("cannot assign, target does not have a writable root");
   }
 }
+
 void FourthPass::handle_assignment(BinaryExpression &node) {
   require_place_writable(node.left.get(), "assignment");
 
@@ -1441,6 +1493,7 @@ void FourthPass::handle_assignment(BinaryExpression &node) {
   // Assignment expression type is unit
   cache_expr(&node, SemType::primitive(SemPrimitiveKind::UNIT));
 }
+
 void
 FourthPass::validate_irrefutable_pattern(const BasePattern &pattern) {
   if (auto *idp = dynamic_cast<const IdentifierPattern *>(&pattern)) {
@@ -1463,6 +1516,7 @@ FourthPass::validate_irrefutable_pattern(const BasePattern &pattern) {
 
   throw SemanticException("unsupported pattern");
 }
+
 SemType FourthPass::primitive_kind_from_name(Expression *e) {
   auto *ne = dynamic_cast<NameExpression *>(e);
   if (!ne) {
@@ -1492,12 +1546,15 @@ SemType FourthPass::primitive_kind_from_name(Expression *e) {
 
   throw SemanticException("unknown primitive type name '" + name + "'");
 }
+
 bool FourthPass::is_integer_primitive_kind(SemPrimitiveKind k) const {
   return is_integer(k);
 }
+
 bool FourthPass::is_integer_type(const SemType &t) const {
   return t.is_primitive() && is_integer_primitive_kind(t.as_primitive().kind);
 }
+
 bool FourthPass::is_cast_allowed(const SemType &src,
                                         const SemType &dst) const {
   if (src == dst)
@@ -1509,6 +1566,7 @@ bool FourthPass::is_cast_allowed(const SemType &src,
     return true;
   return false;
 }
+
 void FourthPass::handle_as_cast(BinaryExpression &node) {
   SemType src = evaluate(node.left.get());
   SemType dst = primitive_kind_from_name(node.right.get());
@@ -1552,6 +1610,7 @@ void FourthPass::handle_as_cast(BinaryExpression &node) {
   }
   cache_expr(&node, dst);
 }
+
 void FourthPass::resolve_path_function_call(const PathExpression &pe,
                                                    CallExpression &node) {
   if (pe.leading_colons) {
@@ -1675,12 +1734,14 @@ void FourthPass::resolve_path_function_call(const PathExpression &pe,
 
   cache_expr(&node, found->return_type);
 }
+
 SemType FourthPass::auto_deref(const SemType &t) {
   // TODO: this do not validate `mut`
   if (!t.is_reference())
     return t;
   return auto_deref(*t.as_reference().target);
 }
+
 ScopeNode *FourthPass::find_scope_for_owner(const BaseNode *owner,
                                                    ScopeNode *start) const {
   if (!owner || !start)

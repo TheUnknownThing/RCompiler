@@ -8,6 +8,7 @@ bool BasicBlock::is_terminated() const {
   const auto &last = instructions_.back();
   return last->is_terminator();
 }
+
 void IREmitter::run(const std::shared_ptr<RootNode> &root,
                            ScopeNode *root_scope_, const Context &ctx) {
   LOG_INFO("[IREmitter] Starting IR emission");
@@ -42,6 +43,7 @@ void IREmitter::run(const std::shared_ptr<RootNode> &root,
   }
   LOG_INFO("[IREmitter] Completed");
 }
+
 void IREmitter::visit(BaseNode &node) { node.accept(*this); }
 void IREmitter::visit(FunctionDecl &node) {
   LOG_DEBUG("[IREmitter] Visiting function declaration: " + node.name);
@@ -58,6 +60,7 @@ void IREmitter::visit(FunctionDecl &node) {
   LOG_INFO("[IREmitter] Emitting function: " + node.name + " as " + mangled);
   emit_function(meta, node, item->owner_scope, params, mangled);
 }
+
 void IREmitter::visit(BinaryExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting BinaryExpression op:" + node.op.lexeme);
 
@@ -290,6 +293,7 @@ void IREmitter::visit(BinaryExpression &node) {
   auto cmp = current_block_->append<ICmpInst>(pred, lhs, rhs);
   push_operand(cmp);
 }
+
 void IREmitter::visit(ReturnExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting return expression");
   if (node.value) {
@@ -340,6 +344,7 @@ void IREmitter::visit(ReturnExpression &node) {
     current_block_->append<ReturnInst>();
   }
 }
+
 void IREmitter::visit(PrefixExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting prefix operator " + node.op.lexeme);
   // visit, modify, store
@@ -377,6 +382,7 @@ void IREmitter::visit(PrefixExpression &node) {
     throw IRException("unsupported prefix operator");
   }
 }
+
 void IREmitter::visit(LetStatement &node) {
   LOG_DEBUG("[IREmitter] Visiting let statement");
   // alloca & store
@@ -411,6 +417,7 @@ void IREmitter::visit(LetStatement &node) {
   bind_local(ident->name, slot);
   LOG_DEBUG("[IREmitter] Bound local '" + ident->name + "'");
 }
+
 void IREmitter::visit(BlockExpression &node) {
   LOG_DEBUG("[IREmitter] Entering block expression");
   auto *previous_scope = current_scope_node;
@@ -436,6 +443,7 @@ void IREmitter::visit(BlockExpression &node) {
   current_scope_node = previous_scope;
   LOG_DEBUG("[IREmitter] Exiting block expression");
 }
+
 void IREmitter::visit(LiteralExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting literal: " + node.value);
   const auto sem_ty = context->lookup_type(&node);
@@ -493,6 +501,7 @@ void IREmitter::visit(LiteralExpression &node) {
   push_operand(std::make_shared<ConstantInt>(
       std::make_shared<IntegerType>(int_ty->bits(), int_ty->is_signed()), parsed));
 }
+
 void IREmitter::visit(NameExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting name expression: " + node.name);
   auto value = lookup_local(node.name);
@@ -508,6 +517,7 @@ void IREmitter::visit(NameExpression &node) {
 
   push_operand(value);
 }
+
 void IREmitter::visit(ExpressionStatement &node) {
   LOG_DEBUG("[IREmitter] Visiting expression statement");
   if (node.expression)
@@ -517,6 +527,7 @@ void IREmitter::visit(ExpressionStatement &node) {
     operand_stack_.pop_back(); // discard result
   }
 }
+
 void IREmitter::visit(RootNode &node) {
   LOG_DEBUG("[IREmitter] Visiting root node");
   for (const auto &child : node.children) {
@@ -524,6 +535,7 @@ void IREmitter::visit(RootNode &node) {
       child->accept(*this);
   }
 }
+
 void IREmitter::visit(ConstantItem &node) {
   LOG_DEBUG("[IREmitter] Emitting constant: " + node.name);
   auto *item = resolve_value_item(node.name);
@@ -604,6 +616,7 @@ void IREmitter::visit(ConstantItem &node) {
   LOG_DEBUG("[IREmitter] Registered global constant: " + meta.name +
             " mangled=" + mangled);
 }
+
 void IREmitter::visit(CallExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting call expression");
   std::vector<ValuePtr> args;
@@ -707,6 +720,7 @@ void IREmitter::visit(CallExpression &node) {
     push_operand(call_inst);
   }
 }
+
 void IREmitter::visit(StructDecl &node) {
   LOG_DEBUG("[IREmitter] Visiting struct declaration: " + node.name);
   auto *item = current_scope_node
@@ -803,12 +817,15 @@ void IREmitter::visit(StructDecl &node) {
 
   return;
 }
+
 void IREmitter::visit(EnumDecl &) {
   throw std::runtime_error("EnumDecl emission not implemented");
 }
+
 void IREmitter::visit(TraitDecl &) {
   throw std::runtime_error("TraitDecl emission not implemented");
 }
+
 void IREmitter::visit(ImplDecl &node) {
   LOG_DEBUG("[IREmitter] Visiting impl declaration");
 
@@ -852,12 +869,14 @@ void IREmitter::visit(ImplDecl &node) {
   }
   current_impl_target_ = prev_impl;
 }
+
 void IREmitter::visit(EmptyStatement &) {}
 void IREmitter::visit(GroupExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting grouped expression");
   if (node.inner)
     node.inner->accept(*this);
 }
+
 void IREmitter::visit(IfExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting if expression");
   node.condition->accept(*this);
@@ -1011,6 +1030,7 @@ void IREmitter::visit(IfExpression &node) {
     }
   }
 }
+
 void IREmitter::visit(MethodCallExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting method call: " + node.method_name.name);
 
@@ -1106,6 +1126,7 @@ void IREmitter::visit(MethodCallExpression &node) {
   }
   LOG_DEBUG("[IREmitter] Emitted method call to " + found->name);
 }
+
 void IREmitter::visit(FieldAccessExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting field access: " + node.field_name);
   node.target->accept(*this);
@@ -1156,6 +1177,7 @@ void IREmitter::visit(FieldAccessExpression &node) {
   push_operand(gep);
   LOG_DEBUG("[IREmitter] Loaded field '" + node.field_name + "'");
 }
+
 void IREmitter::visit(StructExpression &node) {
   LOG_DEBUG("[IREmitter] Emitting struct expression");
 
@@ -1213,10 +1235,12 @@ void IREmitter::visit(StructExpression &node) {
   push_operand(slot);
   LOG_DEBUG("[IREmitter] Constructed struct instance for " + name_expr->name);
 }
+
 void IREmitter::visit(UnderscoreExpression &) {
   LOG_DEBUG("[IREmitter] Visiting underscore expression (unit)");
   push_operand(std::make_shared<ConstantUnit>());
 }
+
 void IREmitter::visit(LoopExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting loop expression");
   auto cur_func = functions_.back();
@@ -1238,6 +1262,7 @@ void IREmitter::visit(LoopExpression &node) {
   push_operand(std::make_shared<ConstantUnit>());
   LOG_DEBUG("[IREmitter] Finished loop expression");
 }
+
 void IREmitter::visit(WhileExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting while expression");
   auto cur_func = functions_.back();
@@ -1267,6 +1292,7 @@ void IREmitter::visit(WhileExpression &node) {
   push_operand(std::make_shared<ConstantUnit>());
   LOG_DEBUG("[IREmitter] Finished while expression");
 }
+
 void IREmitter::visit(ArrayExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting array expression");
 
@@ -1440,6 +1466,7 @@ void IREmitter::visit(ArrayExpression &node) {
   push_operand(slot);
   LOG_DEBUG("[IREmitter] Constructed array of count " + std::to_string(count));
 }
+
 void IREmitter::visit(IndexExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting index expression");
 
@@ -1490,10 +1517,12 @@ void IREmitter::visit(IndexExpression &node) {
   push_operand(gep);
   LOG_DEBUG("[IREmitter] Emitted index access");
 }
+
 void IREmitter::visit(TupleExpression &) {
   LOG_ERROR("[IREmitter] TupleExpression emission not implemented");
   throw std::runtime_error("TupleExpression emission not implemented");
 }
+
 void IREmitter::visit(BreakExpression &) {
   LOG_DEBUG("[IREmitter] Visiting break expression");
   if (loop_stack_.empty()) {
@@ -1508,6 +1537,7 @@ void IREmitter::visit(BreakExpression &) {
   auto unreachable_block = cur_func->create_block("unreachable_after_break");
   current_block_ = unreachable_block;
 }
+
 void IREmitter::visit(ContinueExpression &) {
   LOG_DEBUG("[IREmitter] Visiting continue expression");
   if (loop_stack_.empty()) {
@@ -1522,6 +1552,7 @@ void IREmitter::visit(ContinueExpression &) {
   auto unreachable_block = cur_func->create_block("unreachable_after_continue");
   current_block_ = unreachable_block;
 }
+
 void IREmitter::visit(PathExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting path expression");
 
@@ -1619,10 +1650,12 @@ void IREmitter::visit(PathExpression &node) {
   push_operand(ir_const);
   LOG_DEBUG("[IREmitter] Created path constant " + mangled);
 }
+
 void IREmitter::visit(QualifiedPathExpression &) {
   LOG_ERROR("[IREmitter] QualifiedPathExpression emission not implemented");
   throw std::runtime_error("QualifiedPathExpression emission not implemented");
 }
+
 void IREmitter::visit(BorrowExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting borrow expression");
 
@@ -1641,6 +1674,7 @@ void IREmitter::visit(BorrowExpression &node) {
     throw IRException("not available for borrow");
   }
 }
+
 void IREmitter::visit(DerefExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting deref expression");
   if (!current_block_) {
@@ -1673,6 +1707,7 @@ void IREmitter::visit(DerefExpression &node) {
 
   push_operand(current);
 }
+
 ValuePtr IREmitter::pop_operand() {
   if (operand_stack_.empty()) {
     LOG_ERROR("[IREmitter] operand stack underflow");
@@ -1683,6 +1718,7 @@ ValuePtr IREmitter::pop_operand() {
   LOG_DEBUG("[IREmitter] popOperand -> " + (v ? v->name() : "<null>"));
   return v;
 }
+
 void IREmitter::push_operand(ValuePtr v) {
   if (!v) {
     LOG_ERROR("[IREmitter] attempt to push null operand");
@@ -1691,6 +1727,7 @@ void IREmitter::push_operand(ValuePtr v) {
   LOG_DEBUG("[IREmitter] pushOperand -> " + v->name());
   operand_stack_.push_back(std::move(v));
 }
+
 ValuePtr IREmitter::create_alloca(const TypePtr &ty,
                                         const std::string &name,
                                         ValuePtr array_size,
@@ -1698,6 +1735,7 @@ ValuePtr IREmitter::create_alloca(const TypePtr &ty,
   return current_entry_block_->prepend<AllocaInst>(ty, std::move(array_size),
                                                    alignment, name);
 }
+
 ValuePtr IREmitter::load_ptr_value(ValuePtr v, const SemType &sem_ty) {
   if (!v) {
     throw IRException("attempt to materialize null value");
@@ -1743,6 +1781,7 @@ ValuePtr IREmitter::load_ptr_value(ValuePtr v, const SemType &sem_ty) {
 
   throw IRException("loadPtrValue unable to match reference type");
 }
+
 bool IREmitter::type_equals(const TypePtr &a, const TypePtr &b) const {
   if (a->kind() != b->kind())
     return false;
@@ -1796,6 +1835,7 @@ bool IREmitter::type_equals(const TypePtr &a, const TypePtr &b) const {
   }
   return false;
 }
+
 ValuePtr IREmitter::lookup_local(const std::string &name) const {
   for (auto it = locals_.rbegin(); it != locals_.rend(); ++it) {
     auto found = it->find(name);
@@ -1805,6 +1845,7 @@ ValuePtr IREmitter::lookup_local(const std::string &name) const {
   }
   return nullptr;
 }
+
 void IREmitter::bind_local(const std::string &name, ValuePtr v) {
   if (locals_.empty()) {
     locals_.emplace_back();
@@ -1812,17 +1853,20 @@ void IREmitter::bind_local(const std::string &name, ValuePtr v) {
   locals_.back()[name] = std::move(v);
   LOG_DEBUG("[IREmitter] bindLocal: " + name);
 }
+
 void IREmitter::push_local_scope() {
   locals_.emplace_back();
   LOG_DEBUG("[IREmitter] pushLocalScope depth=" +
             std::to_string(locals_.size()));
 }
+
 void IREmitter::pop_local_scope() {
   if (!locals_.empty())
     locals_.pop_back();
   LOG_DEBUG("[IREmitter] popLocalScope depth=" +
             std::to_string(locals_.size()));
 }
+
 bool IREmitter::is_assignment(TokenType tt) const {
   switch (tt) {
   case TokenType::ASSIGN:
@@ -1841,11 +1885,13 @@ bool IREmitter::is_assignment(TokenType tt) const {
     return false;
   }
 }
+
 bool IREmitter::is_integer(SemPrimitiveKind k) const {
   return k == SemPrimitiveKind::ANY_INT || k == SemPrimitiveKind::I32 ||
          k == SemPrimitiveKind::U32 || k == SemPrimitiveKind::ISIZE ||
          k == SemPrimitiveKind::USIZE;
 }
+
 std::optional<BinaryOpKind> IREmitter::token_to_op(TokenType tt) const {
   switch (tt) {
   case TokenType::PLUS:
@@ -1884,6 +1930,7 @@ std::optional<BinaryOpKind> IREmitter::token_to_op(TokenType tt) const {
     return std::nullopt;
   }
 }
+
 std::string IREmitter::get_scope_name(const ScopeNode *scope) const {
   std::vector<std::string> parts;
   for (auto *s = scope; s; s = s->parent) {
@@ -1899,6 +1946,7 @@ std::string IREmitter::get_scope_name(const ScopeNode *scope) const {
   }
   return qualified;
 }
+
 std::string IREmitter::mangle_struct(const CollectedItem &item) const {
   auto qualified = get_scope_name(item.owner_scope);
   if (!qualified.empty())
@@ -1906,6 +1954,7 @@ std::string IREmitter::mangle_struct(const CollectedItem &item) const {
   qualified += item.name;
   return "_Struct_" + qualified;
 }
+
 std::string
 IREmitter::mangle_constant(const std::string &name,
                            const ScopeNode *owner_scope,
@@ -1921,6 +1970,7 @@ IREmitter::mangle_constant(const std::string &name,
   qualified += name;
   return "_Const_" + qualified;
 }
+
 std::string
 IREmitter::mangle_function(const FunctionMetaData &meta,
                            const ScopeNode *owner_scope,
@@ -1941,6 +1991,7 @@ IREmitter::mangle_function(const FunctionMetaData &meta,
 
   return "_Function_" + qualified;
 }
+
 CollectedItem *
 IREmitter::resolve_value_item(const std::string &name) const {
   for (auto *s = current_scope_node; s; s = s->parent) {
@@ -1950,6 +2001,7 @@ IREmitter::resolve_value_item(const std::string &name) const {
   }
   return nullptr;
 }
+
 const CollectedItem *
 IREmitter::resolve_struct_item(const std::string &name) const {
   for (auto *s = current_scope_node; s; s = s->parent) {
@@ -1959,6 +2011,7 @@ IREmitter::resolve_struct_item(const std::string &name) const {
   }
   return nullptr;
 }
+
 FuncPtr IREmitter::find_function(const FunctionMetaData *meta) const {
   auto it = function_table_.find(meta);
   if (it != function_table_.end()) {
@@ -1966,6 +2019,7 @@ FuncPtr IREmitter::find_function(const FunctionMetaData *meta) const {
   }
   return nullptr;
 }
+
 ValuePtr IREmitter::function_symbol(const FunctionMetaData &meta,
                                            const FuncPtr &fn) {
   if (!fn) {
@@ -1981,6 +2035,7 @@ ValuePtr IREmitter::function_symbol(const FunctionMetaData &meta,
   LOG_DEBUG("[IREmitter] Created function symbol for " + fn->name());
   return sym;
 }
+
 ValuePtr IREmitter::resolve_ptr(ValuePtr value, const SemType &expected,
                                        const std::string &name) {
   auto expected_ty = context->resolve_type(expected);
@@ -2056,6 +2111,7 @@ ValuePtr IREmitter::resolve_ptr(ValuePtr value, const SemType &expected,
   LOG_DEBUG("[IREmitter] resolve_ptr: value already a scalar");
   return value;
 }
+
 ValuePtr IREmitter::find_aggregate_init_target(const TypePtr &ty) const {
   if (!is_aggregate_type(ty)) {
     return nullptr;
@@ -2068,15 +2124,18 @@ ValuePtr IREmitter::find_aggregate_init_target(const TypePtr &ty) const {
   }
   return nullptr;
 }
+
 void IREmitter::push_aggregate_init_target(const TypePtr &ty,
                                                ValuePtr ptr) {
   aggregate_init_targets_.push_back({ty, ptr});
 }
+
 void IREmitter::pop_aggregate_init_target() {
   if (!aggregate_init_targets_.empty()) {
     aggregate_init_targets_.pop_back();
   }
 }
+
 std::vector<SemType> IREmitter::build_effective_params(
     const FunctionMetaData &meta,
     const std::optional<SemType> &self_type) const {
@@ -2090,6 +2149,7 @@ std::vector<SemType> IREmitter::build_effective_params(
   }
   return params;
 }
+
 TypePtr IREmitter::get_param_type(const SemType &param_sem_ty) const {
   auto ir_ty = context->resolve_type(param_sem_ty);
   if (is_aggregate_type(ir_ty)) {
@@ -2097,6 +2157,7 @@ TypePtr IREmitter::get_param_type(const SemType &param_sem_ty) const {
   }
   return ir_ty;
 }
+
 SemType IREmitter::compute_self_type(const FunctionDecl &decl,
                                             const CollectedItem *owner) const {
   SemType base = decl.self_param->explicit_type.has_value()
@@ -2108,6 +2169,7 @@ SemType IREmitter::compute_self_type(const FunctionDecl &decl,
   }
   return base;
 }
+
 FuncPtr IREmitter::emit_function(const FunctionMetaData &meta,
                                         const FunctionDecl &node,
                                         const ScopeNode *scope,
@@ -2251,6 +2313,7 @@ FuncPtr IREmitter::emit_function(const FunctionMetaData &meta,
   LOG_INFO("[IREmitter] Finished emitting function: " + meta.name);
   return fn;
 }
+
 FuncPtr IREmitter::create_function(const std::string &name,
                                           std::shared_ptr<FunctionType> ty,
                                           bool is_external,
@@ -2269,6 +2332,7 @@ FuncPtr IREmitter::create_function(const std::string &name,
   function_table_[meta] = fn;
   return fn;
 }
+
 std::shared_ptr<ConstantString>
 IREmitter::intern_string_literal(const std::string &data_with_null) {
   auto it = interned_strings_.find(data_with_null);
@@ -2283,6 +2347,7 @@ IREmitter::intern_string_literal(const std::string &data_with_null) {
   interned_strings_[data_with_null] = cst;
   return cst;
 }
+
 char IREmitter::decode_char_literal(const std::string &literal) {
   if (literal.size() < 3 || literal.front() != '\'' || literal.back() != '\'') {
     throw IRException("invalid char literal: " + literal);
@@ -2342,6 +2407,7 @@ char IREmitter::decode_char_literal(const std::string &literal) {
     return ensure_ascii(static_cast<unsigned char>(esc));
   }
 }
+
 std::string IREmitter::decode_string_literal(const std::string &literal) {
   if (literal.empty()) {
     return {};
@@ -2450,6 +2516,7 @@ std::string IREmitter::decode_string_literal(const std::string &literal) {
 
   return out;
 }
+
 FuncPtr IREmitter::create_memset_fn() {
   // Signature: ptr @_Function_prelude_builtin_memset(ptr, i32, i32)
   auto ptr_ty = std::make_shared<PointerType>(IntegerType::i32(false));
@@ -2461,6 +2528,7 @@ FuncPtr IREmitter::create_memset_fn() {
   LOG_DEBUG("[IREmitter] Created builtin_memset function declaration");
   return memset_fn_;
 }
+
 FuncPtr IREmitter::create_memcpy_fn() {
   // Signature: ptr @_Function_prelude_builtin_memcpy(ptr, ptr, i32)
   auto ptr_ty =
@@ -2473,6 +2541,7 @@ FuncPtr IREmitter::create_memcpy_fn() {
   LOG_DEBUG("[IREmitter] Created builtin_memcpy function declaration");
   return memcpy_fn_;
 }
+
 std::size_t align_to(std::size_t value, std::size_t align) {
   if (align <= 1) {
     return value;
@@ -2480,6 +2549,7 @@ std::size_t align_to(std::size_t value, std::size_t align) {
   auto rem = value % align;
   return rem ? (value + (align - rem)) : value;
 }
+
 IREmitter::TypeLayoutInfo
 IREmitter::compute_type_layout(const TypePtr &ty) const {
   if (auto int_ty = std::dynamic_pointer_cast<const IntegerType>(ty)) {
@@ -2517,9 +2587,11 @@ IREmitter::compute_type_layout(const TypePtr &ty) const {
   }
   throw IRException("unknown type");
 }
+
 std::size_t IREmitter::compute_type_byte_size(const TypePtr &ty) const {
   return compute_type_layout(ty).size;
 }
+
 bool IREmitter::is_zero_literal(const Expression *expr) const {
   if (auto *lit = dynamic_cast<const LiteralExpression *>(expr)) {
     if (lit->value == "false") {
@@ -2536,9 +2608,11 @@ bool IREmitter::is_zero_literal(const Expression *expr) const {
   }
   return false;
 }
+
 bool IREmitter::is_aggregate_type(const TypePtr &ty) const {
   return ty->kind() == TypeKind::Array || ty->kind() == TypeKind::Struct;
 }
+
 void IREmitter::emit_memcpy(ValuePtr dst, ValuePtr src,
                                   std::size_t byte_size) {
   if (byte_size == 0) {

@@ -25,6 +25,7 @@ bool operator==(const SemType &a, const SemType &b) {
     return a.as_unknown().id == b.as_unknown().id;
   return false;
 }
+
 std::string to_string(SemPrimitiveKind k) {
   switch (k) {
   case SemPrimitiveKind::ANY_INT:
@@ -54,6 +55,7 @@ std::string to_string(SemPrimitiveKind k) {
   }
   return "<invalid>";
 }
+
 std::string to_string(const SemType &t) {
   if (t.is_primitive())
     return to_string(t.as_primitive().kind);

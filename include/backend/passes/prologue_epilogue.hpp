@@ -30,13 +30,4 @@ private:
   std::vector<std::unique_ptr<AsmInst>> adjust_sp(int32_t delta) const;
 };
 
-
-
-
-
-
-
-
-
-
 } // namespace rc::backend

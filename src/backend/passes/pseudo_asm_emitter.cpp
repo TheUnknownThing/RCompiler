@@ -23,6 +23,7 @@ void PseudoAsmEmitter::emit(
   }
   os << "# ---- end pseudo asm ----\n";
 }
+
 std::string PseudoAsmEmitter::opcode_name(InstOpcode opcode) const {
   switch (opcode) {
   case InstOpcode::ADD:
@@ -126,6 +127,7 @@ std::string PseudoAsmEmitter::opcode_name(InstOpcode opcode) const {
   }
   return "<unknown-opcode>";
 }
+
 std::string PseudoAsmEmitter::operand_name(
     const std::shared_ptr<AsmOperand> &operand) const {
   if (!operand) {
@@ -157,6 +159,7 @@ std::string PseudoAsmEmitter::operand_name(
 
   return "<unknown-operand>";
 }
+
 std::string PseudoAsmEmitter::inst_name(const AsmInst &inst) const {
   std::string result = opcode_name(inst.get_opcode());
 

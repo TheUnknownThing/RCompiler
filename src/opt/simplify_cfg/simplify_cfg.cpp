@@ -7,6 +7,7 @@ void SimplifyCFG::run(ir::Module *module) {
     simplify_cfg(function.get());
   }
 }
+
 void SimplifyCFG::simplify_cfg(ir::Function *func) {
   std::unordered_set<ir::BasicBlock *> unreachable;
   if (func->blocks().empty()) {
@@ -59,6 +60,7 @@ void SimplifyCFG::simplify_cfg(ir::Function *func) {
     }
   }
 }
+
 void
 SimplifyCFG::remove_phi_incoming(ir::Function *func,
                                std::shared_ptr<ir::BasicBlock> old_bb) {
@@ -80,6 +82,7 @@ SimplifyCFG::remove_phi_incoming(ir::Function *func,
     }
   }
 }
+
 void
 SimplifyCFG::replace_phi_incoming(ir::Function *func,
                                 std::shared_ptr<ir::BasicBlock> old_bb,
@@ -102,6 +105,7 @@ SimplifyCFG::replace_phi_incoming(ir::Function *func,
     }
   }
 }
+
 void SimplifyCFG::merge_blocks(ir::Function *func,
                                      std::shared_ptr<ir::BasicBlock> from,
                                      std::shared_ptr<ir::BasicBlock> to) {
@@ -135,6 +139,7 @@ void SimplifyCFG::merge_blocks(ir::Function *func,
   replace_phi_incoming(func, from, to);
   func->erase_block(from);
 }
+
 bool
 SimplifyCFG::try_fold_trivial_phi(ir::BasicBlock &bb,
                                const std::shared_ptr<ir::PhiInst> &phi) {
@@ -158,6 +163,7 @@ SimplifyCFG::try_fold_trivial_phi(ir::BasicBlock &bb,
 
   return false;
 }
+
 bool SimplifyCFG::fold_trivial_phis_in_block(ir::BasicBlock &bb) {
   bool changed = false;
   auto &insts = bb.instructions();
@@ -176,6 +182,7 @@ bool SimplifyCFG::fold_trivial_phis_in_block(ir::BasicBlock &bb) {
   }
   return changed;
 }
+
 void SimplifyCFG::rebuild_predecessors(ir::Function &function) {
   for (auto &bb : function.blocks()) {
     bb->clear_predecessors();

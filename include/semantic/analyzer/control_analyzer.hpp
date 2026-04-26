@@ -94,8 +94,4 @@ private:
 
 // Top-level declaration visitors
 
-
-
-
-
 } // namespace rc

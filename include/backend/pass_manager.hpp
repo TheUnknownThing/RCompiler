@@ -19,5 +19,4 @@ private:
   opt::CFGVisitor cfg;
 };
 
-
 } // namespace rc::backend

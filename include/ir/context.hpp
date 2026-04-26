@@ -28,6 +28,4 @@ private:
       &expr_cache_; // from semantic
 };
 
-
-
 } // namespace rc::ir

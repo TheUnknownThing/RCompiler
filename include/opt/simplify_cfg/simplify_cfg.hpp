@@ -40,12 +40,4 @@ private:
   void rebuild_predecessors(ir::Function &function);
 };
 
-
-
-
-
-
-
-
-
 } // namespace rc::opt

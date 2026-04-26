@@ -13,6 +13,7 @@ void PhiElimination::run(ir::Module *module) {
     eliminate_phi_in_function(function.get());
   }
 }
+
 void PhiElimination::eliminate_critical_edge(ir::Function *func) {
   bool changed = true;
   while (changed) {
@@ -37,6 +38,7 @@ void PhiElimination::eliminate_critical_edge(ir::Function *func) {
     }
   }
 }
+
 void PhiElimination::eliminate_phi_in_function(ir::Function *func) {
   for (const auto &bb : func->blocks()) {
     bool changed = true;
@@ -164,6 +166,7 @@ void PhiElimination::eliminate_phi_in_function(ir::Function *func) {
     }
   }
 }
+
 void PhiElimination::replace_critical_edge(ir::Function *func,
                                                 ir::BasicBlock *from,
                                                 ir::BasicBlock *to) {

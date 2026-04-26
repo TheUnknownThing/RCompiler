@@ -31,9 +31,11 @@ FirstPassBuilder::build(const std::shared_ptr<RootNode> &root) {
 
   return std::move(prelude_scope_owner_);
 }
+
 void FirstPassBuilder::visit(BaseNode &node) {
   node.accept(*this);
 }
+
 void FirstPassBuilder::visit(FunctionDecl &node) {
   LOG_DEBUG("[FirstPass] Collect function '" + node.name + "'");
   current_scope->add_item(node.name, ItemKind::Function, &node);
@@ -42,18 +44,22 @@ void FirstPassBuilder::visit(FunctionDecl &node) {
     node.body.value()->accept(*this);
   }
 }
+
 void FirstPassBuilder::visit(ConstantItem &node) {
   LOG_DEBUG("[FirstPass] Collect constant '" + node.name + "'");
   current_scope->add_item(node.name, ItemKind::Constant, &node);
 }
+
 void FirstPassBuilder::visit(StructDecl &node) {
   LOG_DEBUG("[FirstPass] Collect struct '" + node.name + "'");
   current_scope->add_item(node.name, ItemKind::Struct, &node);
 }
+
 void FirstPassBuilder::visit(EnumDecl &node) {
   LOG_DEBUG("[FirstPass] Collect enum '" + node.name + "'");
   current_scope->add_item(node.name, ItemKind::Enum, &node);
 }
+
 void FirstPassBuilder::visit(TraitDecl &node) {
   LOG_DEBUG("[FirstPass] Collect trait '" + node.name + "'");
   current_scope->add_item(node.name, ItemKind::Trait, &node);
@@ -66,6 +72,7 @@ void FirstPassBuilder::visit(TraitDecl &node) {
   exit_scope(current_scope);
   LOG_DEBUG("[FirstPass] Exit trait scope '" + node.name + "'");
 }
+
 void FirstPassBuilder::visit(ImplDecl &node) {
   LOG_DEBUG("[FirstPass] Traverse impl block");
   for (const auto &assoc : node.associated_items) {
@@ -82,16 +89,19 @@ void FirstPassBuilder::visit(ImplDecl &node) {
     }
   }
 }
+
 void FirstPassBuilder::visit(LetStatement &node) {
   if (node.expr) {
     node.expr->accept(*this);
   }
 }
+
 void FirstPassBuilder::visit(ExpressionStatement &node) {
   if (node.expression) {
     node.expression->accept(*this);
   }
 }
+
 void FirstPassBuilder::visit(EmptyStatement &) {}
 void FirstPassBuilder::visit(BlockExpression &node) {
   enter_scope(current_scope, "block", &node);
@@ -107,6 +117,7 @@ void FirstPassBuilder::visit(BlockExpression &node) {
   exit_scope(current_scope);
   LOG_DEBUG("[FirstPass] Exit block scope");
 }
+
 void FirstPassBuilder::visit(IfExpression &node) {
   if (node.condition)
     node.condition->accept(*this);
@@ -115,30 +126,36 @@ void FirstPassBuilder::visit(IfExpression &node) {
   if (node.else_block)
     node.else_block.value()->accept(*this);
 }
+
 void FirstPassBuilder::visit(LoopExpression &node) {
   if (node.body)
     node.body->accept(*this);
 }
+
 void FirstPassBuilder::visit(WhileExpression &node) {
   if (node.condition)
     node.condition->accept(*this);
   if (node.body)
     node.body->accept(*this);
 }
+
 void FirstPassBuilder::visit(BinaryExpression &node) {
   if (node.left)
     node.left->accept(*this);
   if (node.right)
     node.right->accept(*this);
 }
+
 void FirstPassBuilder::visit(PrefixExpression &node) {
   if (node.right)
     node.right->accept(*this);
 }
+
 void FirstPassBuilder::visit(ReturnExpression &node) {
   if (node.value)
     node.value.value()->accept(*this);
 }
+
 void FirstPassBuilder::visit(StructExpression &node) {
   if (node.path_expr)
     node.path_expr->accept(*this);
@@ -147,6 +164,7 @@ void FirstPassBuilder::visit(StructExpression &node) {
       field.value.value()->accept(*this);
   }
 }
+
 void FirstPassBuilder::visit(CallExpression &node) {
   if (node.function_name)
     node.function_name->accept(*this);
@@ -155,6 +173,7 @@ void FirstPassBuilder::visit(CallExpression &node) {
       arg->accept(*this);
   }
 }
+
 void FirstPassBuilder::visit(RootNode &node) {
   for (const auto &child : node.children) {
     if (child)

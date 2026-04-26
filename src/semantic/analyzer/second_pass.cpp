@@ -40,9 +40,11 @@ void SecondPassResolver::run(const std::shared_ptr<RootNode> &root,
 
   LOG_INFO("[SecondPass] Completed");
 }
+
 void SecondPassResolver::visit(BaseNode &node) {
   node.accept(*this);
 }
+
 void SecondPassResolver::visit(FunctionDecl &node) {
   LOG_DEBUG("[SecondPass] Resolve function '" + node.name + "'");
 
@@ -111,6 +113,7 @@ void SecondPassResolver::visit(FunctionDecl &node) {
     node.body.value()->accept(*this);
   }
 }
+
 void SecondPassResolver::visit(ConstantItem &node) {
   LOG_DEBUG("[SecondPass] Resolve and evaluate constant '" + node.name + "'");
 
@@ -140,6 +143,7 @@ void SecondPassResolver::visit(ConstantItem &node) {
     }
   }
 }
+
 void SecondPassResolver::visit(StructDecl &node) {
   LOG_DEBUG("[SecondPass] Resolve struct '" + node.name + "'");
   StructMetaData info;
@@ -162,6 +166,7 @@ void SecondPassResolver::visit(StructDecl &node) {
     ci->metadata = std::move(info);
   }
 }
+
 void SecondPassResolver::visit(EnumDecl &node) {
   LOG_DEBUG("[SecondPass] Resolve enum '" + node.name + "'");
   std::set<std::string> seen;
@@ -177,6 +182,7 @@ void SecondPassResolver::visit(EnumDecl &node) {
     ci->metadata = std::move(info);
   }
 }
+
 void SecondPassResolver::visit(TraitDecl &node) {
   auto *parent_scope = current_scope();
   auto *trait_scope =
@@ -196,6 +202,7 @@ void SecondPassResolver::visit(TraitDecl &node) {
   exit_scope();
   LOG_DEBUG("[SecondPass] Exit trait '" + node.name + "'");
 }
+
 void SecondPassResolver::visit(ImplDecl &node) {
   std::string target_name;
   if (node.impl_type == ImplDecl::ImplType::Inherent &&
@@ -242,6 +249,7 @@ void SecondPassResolver::visit(ImplDecl &node) {
     }
   }
 }
+
 void SecondPassResolver::visit(BlockExpression &node) {
   auto *block_scope = current_scope()
                           ? current_scope()->find_child_scope_by_owner(&node)
@@ -264,20 +272,24 @@ void SecondPassResolver::visit(BlockExpression &node) {
 
   exit_scope();
 }
+
 void SecondPassResolver::visit(IfExpression &node) {
   if (node.then_block)
     node.then_block->accept(*this);
   if (node.else_block)
     node.else_block.value()->accept(*this);
 }
+
 void SecondPassResolver::visit(LoopExpression &node) {
   if (node.body)
     node.body->accept(*this);
 }
+
 void SecondPassResolver::visit(WhileExpression &node) {
   if (node.body)
     node.body->accept(*this);
 }
+
 void SecondPassResolver::visit(LetStatement &node) {
   SemType annotated = resolve_type(node.type);
   if (node.type.is_array()) {
@@ -288,6 +300,7 @@ void SecondPassResolver::visit(LetStatement &node) {
     node.expr->accept(*this);
   }
 }
+
 void SecondPassResolver::visit(ArrayExpression &node) {
   if (node.repeat) {
     auto cv = evaluator.evaluate(node.repeat->second.get(), current_scope());
@@ -321,48 +334,58 @@ void SecondPassResolver::visit(ArrayExpression &node) {
   LOG_DEBUG("[SecondPass] ArrayExpr with size " +
             std::to_string(node.actual_size));
 }
+
 void SecondPassResolver::visit(BorrowExpression &node) {
   if (node.right)
     node.right->accept(*this);
 }
+
 void SecondPassResolver::visit(DerefExpression &node) {
   if (node.right)
     node.right->accept(*this);
 }
+
 void SecondPassResolver::visit(BinaryExpression &node) {
   if (node.left)
     node.left->accept(*this);
   if (node.right)
     node.right->accept(*this);
 }
+
 void SecondPassResolver::visit(PrefixExpression &node) {
   if (node.right)
     node.right->accept(*this);
 }
+
 void SecondPassResolver::visit(ExpressionStatement &node) {
   if (node.expression)
     node.expression->accept(*this);
 }
+
 void SecondPassResolver::visit(StructExpression &node) {
   for (const auto &field : node.fields) {
     if (field.value)
       field.value.value()->accept(*this);
   }
 }
+
 void SecondPassResolver::visit(RootNode &) {}
 ScopeNode *SecondPassResolver::current_scope() const {
   return scope_stack.back();
 }
+
 void SecondPassResolver::enter_scope(ScopeNode *s) {
   if (s) {
     scope_stack.push_back(s);
   }
 }
+
 void SecondPassResolver::exit_scope() {
   if (scope_stack.size() > 1) {
     scope_stack.pop_back();
   }
 }
+
 SemType SecondPassResolver::resolve_type(AstType &t) {
   if (t.is_base()) {
     return SemType::map_primitive(t.as_base());
@@ -426,6 +449,7 @@ SemType SecondPassResolver::resolve_type(AstType &t) {
   }
   throw SemanticException("unknown type");
 }
+
 const CollectedItem *
 SecondPassResolver::resolve_named_item(const std::string &name) const {
   for (auto *scope = current_scope(); scope; scope = scope->parent) {
@@ -437,6 +461,7 @@ SecondPassResolver::resolve_named_item(const std::string &name) const {
   }
   return nullptr;
 }
+
 CollectedItem *
 SecondPassResolver::lookup_current_value_item(const std::string &name,
                                               ItemKind kind) {
@@ -446,6 +471,7 @@ SecondPassResolver::lookup_current_value_item(const std::string &name,
     return found;
   throw SemanticException("item " + name + " not found in value namespace");
 }
+
 CollectedItem *
 SecondPassResolver::lookup_current_type_item(const std::string &name,
                                              ItemKind kind) {

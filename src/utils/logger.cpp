@@ -16,6 +16,7 @@ const char *get_level_string(Level level) {
     return "NONE ";
   }
 }
+
 const char *get_level_color(Level level) {
   switch (level) {
   case Level::ERROR:
@@ -30,6 +31,7 @@ const char *get_level_color(Level level) {
     return color::RESET;
   }
 }
+
 std::string get_timestamp() {
   auto now = std::chrono::system_clock::now();
   auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -42,6 +44,7 @@ std::string get_timestamp() {
   ss << '.' << std::setfill('0') << std::setw(3) << ms.count();
   return ss.str();
 }
+
 void log(Level level, std::string_view message) {
   if (static_cast<int>(level) <= static_cast<int>(get_current_level())) {
     std::cerr << color::GRAY << "[" << get_timestamp() << "] "
@@ -49,6 +52,7 @@ void log(Level level, std::string_view message) {
               << color::RESET << message << std::endl;
   }
 }
+
 void error(std::string_view message) { log(Level::ERROR, message); }
 void warn(std::string_view message) { log(Level::WARN, message); }
 void info(std::string_view message) { log(Level::INFO, message); }

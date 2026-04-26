@@ -14,6 +14,7 @@ rc::TokenType token_type_from_name(const std::string &name) {
   }
   return it->second;
 }
+
 Parser<rc::Token> tok(rc::TokenType t) {
   return Parser<rc::Token>([t](const std::vector<rc::Token> &toks,
                                size_t &pos) -> ParseResult<rc::Token> {
@@ -22,6 +23,7 @@ Parser<rc::Token> tok(rc::TokenType t) {
     return std::nullopt;
   });
 }
+
 Parser<rc::Token> tok(rc::TokenType t, std::string lexeme) {
   return Parser<rc::Token>([t, lexeme](const std::vector<rc::Token> &toks,
                                        size_t &pos) -> ParseResult<rc::Token> {
@@ -174,6 +176,7 @@ parse_type_impl(const std::vector<rc::Token> &toks, size_t &pos,
 
   return std::nullopt;
 }
+
 Parser<rc::AstType> typ_with_expr(ExprParseFn parse_expr) {
   return Parser<rc::AstType>(
       [parse_expr](const std::vector<rc::Token> &toks,

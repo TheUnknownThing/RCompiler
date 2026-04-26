@@ -23,6 +23,7 @@ void Mem2RegVisitor::run(ir::Module &module) {
     remove_dead_instructions(*function);
   }
 }
+
 void Mem2RegVisitor::remove_unused_allocas(ir::Function &function) {
   for (const auto &bb : function.blocks()) {
     for (const auto &inst : bb->instructions()) {
@@ -34,6 +35,7 @@ void Mem2RegVisitor::remove_unused_allocas(ir::Function &function) {
     }
   }
 }
+
 void Mem2RegVisitor::replace_use_with_value(ir::Function &function) {
   // if an alloca is only used by 1 store and > 1 load, we can replace loads with the stored value
   std::unordered_map<ir::AllocaInst *, ir::Value *> alloca_store_values;
@@ -92,6 +94,7 @@ void Mem2RegVisitor::replace_use_with_value(ir::Function &function) {
     }
   }
 }
+
 void Mem2RegVisitor::find_dominators(ir::Function &function) {
   const auto &blocks = function.blocks();
   if (blocks.empty()) {
@@ -139,6 +142,7 @@ void Mem2RegVisitor::find_dominators(ir::Function &function) {
     }
   }
 }
+
 void Mem2RegVisitor::find_i_dom(ir::Function &function) {
   const auto &blocks = function.blocks();
   if (blocks.empty()) {
@@ -171,6 +175,7 @@ void Mem2RegVisitor::find_i_dom(ir::Function &function) {
     idom_[bb.get()] = idom;
   }
 }
+
 void Mem2RegVisitor::find_dom_frontiers(ir::Function &function) {
   const auto &blocks = function.blocks();
   if (blocks.empty()) {
@@ -192,6 +197,7 @@ void Mem2RegVisitor::find_dom_frontiers(ir::Function &function) {
     }
   }
 }
+
 void Mem2RegVisitor::mem2reg(ir::Function &function) {
   const auto &blocks = function.blocks();
   if (blocks.empty()) {
@@ -255,6 +261,7 @@ void Mem2RegVisitor::mem2reg(ir::Function &function) {
 
   rename(*blocks.front());
 }
+
 void Mem2RegVisitor::place_phi_nodes(ir::BasicBlock &bb,
                                           ir::AllocaInst *alloca) {
 
@@ -271,6 +278,7 @@ void Mem2RegVisitor::place_phi_nodes(ir::BasicBlock &bb,
     place_phi_nodes(*df_bb, alloca);
   }
 }
+
 void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
   std::vector<const ir::AllocaInst *> pushed_allocas;
 
@@ -351,6 +359,7 @@ void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
     }
   }
 }
+
 void Mem2RegVisitor::remove_dead_instructions(ir::Function &function) {
   for (const auto &bb : function.blocks()) {
     auto &instrs = bb->instructions();

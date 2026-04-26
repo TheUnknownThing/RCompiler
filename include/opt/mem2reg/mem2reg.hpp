@@ -56,14 +56,4 @@ private:
   std::vector<std::shared_ptr<ir::UndefValue>> undef_values_;
 };
 
-
-
-
-
-
-
-
-
-
-
 } // namespace rc::opt

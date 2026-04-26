@@ -28,5 +28,4 @@ private:
   ConstantContext &const_ctx_;
 };
 
-
 } // namespace rc::opt

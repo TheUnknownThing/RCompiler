@@ -24,6 +24,7 @@ void ThirdPassPromoter::run(const std::shared_ptr<RootNode> &root,
   }
   LOG_INFO("[ThirdPass] Completed");
 }
+
 void ThirdPassPromoter::visit(BaseNode &node) { node.accept(*this); }
 void ThirdPassPromoter::visit(FunctionDecl &node) {
   if (node.body && node.body.value()) {
@@ -31,6 +32,7 @@ void ThirdPassPromoter::visit(FunctionDecl &node) {
     expr->accept(*this);
   }
 }
+
 void ThirdPassPromoter::visit(ImplDecl &node) {
   LOG_DEBUG("[ThirdPass] Impl block for target type start");
   if (node.impl_type != ImplDecl::ImplType::Inherent) {
@@ -110,9 +112,11 @@ void ThirdPassPromoter::visit(ImplDecl &node) {
     }
   }
 }
+
 void ThirdPassPromoter::visit(TraitDecl &) {
   // TODO: I do not want to care about it now.
 }
+
 void ThirdPassPromoter::visit(BlockExpression &node) {
   auto *block_scope = current_scope()->find_child_scope_by_owner(&node);
   enter_scope(block_scope);
@@ -124,32 +128,39 @@ void ThirdPassPromoter::visit(BlockExpression &node) {
   if (node.final_expr)
     node.final_expr.value()->accept(*this);
 }
+
 void ThirdPassPromoter::visit(IfExpression &node) {
   if (node.then_block)
     node.then_block->accept(*this);
   if (node.else_block)
     node.else_block.value()->accept(*this);
 }
+
 void ThirdPassPromoter::visit(LoopExpression &node) {
   if (node.body)
     node.body->accept(*this);
 }
+
 void ThirdPassPromoter::visit(WhileExpression &node) {
   if (node.body)
     node.body->accept(*this);
 }
+
 void ThirdPassPromoter::visit(RootNode &) {}
 ScopeNode *ThirdPassPromoter::current_scope() const {
   return scope_stack.back();
 }
+
 void ThirdPassPromoter::enter_scope(ScopeNode *s) {
   scope_stack.push_back(s);
 }
+
 void ThirdPassPromoter::exit_scope() {
   if (scope_stack.size() > 1) {
     scope_stack.pop_back();
   }
 }
+
 CollectedItem *
 ThirdPassPromoter::resolve_struct(const std::string &name) {
   for (auto *scope = current_scope(); scope; scope = scope->parent) {

@@ -17,6 +17,7 @@ parsec::Parser<ExprPtr> pratt_expr(const PrattTable &tbl, int min_bp) {
         return e;
       });
 }
+
 auto validate_int_literal(const std::string &lexeme)
     -> std::tuple<long long, bool, std::string> { // value, has_suffix, suffix
   static const std::vector<std::string> valid_suffixes = {"i32", "u32", "isize",

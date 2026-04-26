@@ -14,6 +14,7 @@ void SCCPVisitor::run(ir::Module &module) {
     visit(*function);
   }
 }
+
 void SCCPVisitor::visit(ir::Value &value) {
   if (auto function = dynamic_cast<ir::Function *>(&value)) {
     visit(*function);
@@ -47,6 +48,7 @@ void SCCPVisitor::visit(ir::Value &value) {
     visit(*select);
   }
 }
+
 void SCCPVisitor::visit(ir::Function &function) {
   LOG_DEBUG("Starting SCCP on function: " + function.name());
   //   executableBlocks_.insert(function.blocks().front().get());
@@ -118,6 +120,7 @@ void SCCPVisitor::visit(ir::Function &function) {
 
   remove_dead_instructions(function);
 }
+
 void SCCPVisitor::visit(ir::BasicBlock &basic_block) {
   LOG_DEBUG("SCCP visiting basic block: " + basic_block.name());
   for (const auto &inst : basic_block.instructions()) {
@@ -127,6 +130,7 @@ void SCCPVisitor::visit(ir::BasicBlock &basic_block) {
     instruction_worklist_.push_back(inst.get());
   }
 }
+
 void SCCPVisitor::visit(ir::BinaryOpInst &binary_op_inst) {
   LOG_DEBUG("SCCP visiting binary op: " + binary_op_inst.name());
   auto kind = evaluate_kind(binary_op_inst.lhs().get(), binary_op_inst.rhs().get());
@@ -189,6 +193,7 @@ void SCCPVisitor::visit(ir::BinaryOpInst &binary_op_inst) {
     }
   }
 }
+
 void SCCPVisitor::visit(ir::BranchInst &branch_inst) {
   LOG_DEBUG("SCCP visiting branch instruction");
   if (branch_inst.is_conditional()) {
@@ -218,14 +223,17 @@ void SCCPVisitor::visit(ir::BranchInst &branch_inst) {
     edges_.push_back(std::make_pair(branch_inst.parent(), target_bb));
   }
 }
+
 void SCCPVisitor::visit(ir::UnreachableInst &) {
   LOG_DEBUG("SCCP visiting unreachable instruction");
   // no-op
 }
+
 void SCCPVisitor::visit(ir::ReturnInst &) {
   LOG_DEBUG("SCCP visiting return instruction");
   // no-op
 }
+
 void SCCPVisitor::visit(ir::AllocaInst &alloca_inst) {
   LOG_DEBUG("SCCP visiting alloca instruction");
   // overdef
@@ -240,6 +248,7 @@ void SCCPVisitor::visit(ir::AllocaInst &alloca_inst) {
     }
   }
 }
+
 void SCCPVisitor::visit(ir::LoadInst &load_inst) {
   LOG_DEBUG("SCCP visiting load instruction");
   auto prev = get_lattice_value(&load_inst);
@@ -266,10 +275,12 @@ void SCCPVisitor::visit(ir::LoadInst &load_inst) {
     }
   }
 }
+
 void SCCPVisitor::visit(ir::StoreInst &) {
   LOG_DEBUG("SCCP visiting store instruction");
   // no-op
 }
+
 void SCCPVisitor::visit(ir::GetElementPtrInst &get_element_ptr_inst) {
   LOG_DEBUG("SCCP visiting getelementptr instruction");
   auto prev = get_lattice_value(&get_element_ptr_inst);
@@ -383,6 +394,7 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &get_element_ptr_inst) {
     }
   }
 }
+
 void SCCPVisitor::visit(ir::ICmpInst &icmp_inst) {
   LOG_DEBUG("SCCP visiting icmp instruction");
   auto kind = evaluate_kind(icmp_inst.lhs().get(), icmp_inst.rhs().get());
@@ -459,6 +471,7 @@ void SCCPVisitor::visit(ir::ICmpInst &icmp_inst) {
     }
   }
 }
+
 void SCCPVisitor::visit(ir::SExtInst &sext_inst) {
   LOG_DEBUG("SCCP visiting sext instruction");
   auto kind = get_lattice_value(sext_inst.source().get());
@@ -487,6 +500,7 @@ void SCCPVisitor::visit(ir::SExtInst &sext_inst) {
     }
   }
 }
+
 void SCCPVisitor::visit(ir::ZExtInst &zext_inst) {
   LOG_DEBUG("SCCP visiting zext instruction");
   auto kind = get_lattice_value(zext_inst.source().get());
@@ -512,6 +526,7 @@ void SCCPVisitor::visit(ir::ZExtInst &zext_inst) {
     }
   }
 }
+
 void SCCPVisitor::visit(ir::TruncInst &trunc_inst) {
   LOG_DEBUG("SCCP visiting trunc instruction");
   auto kind = get_lattice_value(trunc_inst.source().get());
@@ -539,6 +554,7 @@ void SCCPVisitor::visit(ir::TruncInst &trunc_inst) {
     }
   }
 }
+
 void SCCPVisitor::visit(ir::CallInst &call_inst) {
   LOG_DEBUG("SCCP visiting call instruction");
   // overdef
@@ -553,6 +569,7 @@ void SCCPVisitor::visit(ir::CallInst &call_inst) {
     }
   }
 }
+
 void SCCPVisitor::visit(ir::PhiInst &phi_inst) {
   LOG_DEBUG("SCCP visiting phi instruction");
 
@@ -602,6 +619,7 @@ void SCCPVisitor::visit(ir::PhiInst &phi_inst) {
     }
   }
 }
+
 void SCCPVisitor::visit(ir::SelectInst &select_inst) {
   LOG_DEBUG("SCCP visiting select instruction");
 
@@ -643,6 +661,7 @@ void SCCPVisitor::visit(ir::SelectInst &select_inst) {
     }
   }
 }
+
 void SCCPVisitor::remove_dead_instructions(ir::Function &function) {
 
   auto instruction_safe_to_remove = [&](ir::Instruction *inst) -> bool {
@@ -683,6 +702,7 @@ void SCCPVisitor::remove_dead_instructions(ir::Function &function) {
     }
   }
 }
+
 void SCCPVisitor::remove_dead_blocks(ir::Function &function) {
 
   for (auto &bb : function.blocks()) {

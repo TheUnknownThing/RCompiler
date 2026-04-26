@@ -26,11 +26,4 @@ private:
   void remove_undef_phi_incoming_blocks(ir::Function &function);
 };
 
-
-
-
-
-
-
-
 } // namespace rc::opt

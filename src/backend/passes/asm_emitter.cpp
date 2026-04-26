@@ -26,6 +26,7 @@ AsmEmitter::emit(const std::vector<std::unique_ptr<AsmFunction>> &functions,
     }
   }
 }
+
 std::string AsmEmitter::opcode_name(InstOpcode opcode) const {
   switch (opcode) {
   case InstOpcode::ADD:
@@ -129,6 +130,7 @@ std::string AsmEmitter::opcode_name(InstOpcode opcode) const {
   }
   throw std::runtime_error("unknown opcode");
 }
+
 std::string
 AsmEmitter::reg_name(const std::shared_ptr<AsmOperand> &operand) const {
   auto reg = std::dynamic_pointer_cast<Register>(operand);
@@ -137,6 +139,7 @@ AsmEmitter::reg_name(const std::shared_ptr<AsmOperand> &operand) const {
   }
   return "x" + std::to_string(reg->id);
 }
+
 std::string
 AsmEmitter::symbol_name(const std::shared_ptr<AsmOperand> &operand) const {
   auto symbol = std::dynamic_pointer_cast<Symbol>(operand);
@@ -145,6 +148,7 @@ AsmEmitter::symbol_name(const std::shared_ptr<AsmOperand> &operand) const {
   }
   return symbol->name;
 }
+
 int32_t
 AsmEmitter::immediate_value(const std::shared_ptr<AsmOperand> &operand) const {
   auto imm = std::dynamic_pointer_cast<Immediate>(operand);
@@ -153,6 +157,7 @@ AsmEmitter::immediate_value(const std::shared_ptr<AsmOperand> &operand) const {
   }
   return imm->value;
 }
+
 size_t
 AsmEmitter::stack_offset(const AsmFunction &function,
                         const std::shared_ptr<AsmOperand> &operand) const {
@@ -165,9 +170,11 @@ AsmEmitter::stack_offset(const AsmFunction &function,
   }
   return slot->offset;
 }
+
 bool AsmEmitter::fits_signed12(int64_t value) const {
   return value >= -2048 && value <= 2047;
 }
+
 void AsmEmitter::emit_load(
     const AsmFunction &function, std::ostream &os, const std::string &mnemonic,
     const std::shared_ptr<AsmOperand> &dst,
@@ -197,6 +204,7 @@ void AsmEmitter::emit_load(
   os << "\t" << mnemonic << "\t" << reg_name(dst) << ", "
      << offset << "(" << reg_name(slot_or_base) << ")\n";
 }
+
 void AsmEmitter::emit_store(
     const AsmFunction &function, std::ostream &os, const std::string &mnemonic,
     const std::shared_ptr<AsmOperand> &src,
@@ -226,6 +234,7 @@ void AsmEmitter::emit_store(
   os << "\t" << mnemonic << "\t" << reg_name(src) << ", "
      << offset << "(" << reg_name(slot_or_base) << ")\n";
 }
+
 void AsmEmitter::emit_inst(const AsmFunction &function,
                                  const AsmInst &inst,
                                  std::ostream &os) const {

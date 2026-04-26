@@ -27,10 +27,4 @@ public:
   void visit(ir::ReturnInst &return_inst) override;
 };
 
-
-
-
-
-
-
 } // namespace rc::opt

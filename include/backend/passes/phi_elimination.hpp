@@ -26,8 +26,4 @@ private:
                            ir::BasicBlock *to);
 };
 
-
-
-
-
 } // namespace rc::backend

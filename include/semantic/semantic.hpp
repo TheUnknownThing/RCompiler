@@ -31,6 +31,4 @@ private:
   std::unordered_map<const BaseNode *, SemType> expr_cache_;
 };
 
-
-
 } // namespace rc

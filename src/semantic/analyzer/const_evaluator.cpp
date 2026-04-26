@@ -35,10 +35,12 @@ ConstEvaluator::evaluate(const Expression *expr, ScopeNode *semantic_scope) {
 
   return std::nullopt;
 }
+
 bool ConstEvaluator::is_integer_value(const ConstValue &v) {
   return v.is_any_int() || v.is_i32() || v.is_u32() || v.is_isize() ||
          v.is_usize();
 }
+
 ConstValue ConstEvaluator::any_int_to(const ConstValue &v,
                                              SemPrimitiveKind target) {
   if (!v.is_any_int())
@@ -73,6 +75,7 @@ ConstValue ConstEvaluator::any_int_to(const ConstValue &v,
   }
   return v;
 }
+
 std::optional<SemPrimitiveKind>
 ConstEvaluator::int_result_kind(const ConstValue &left,
                                 const ConstValue &right) {
@@ -95,6 +98,7 @@ ConstEvaluator::int_result_kind(const ConstValue &left,
 
   return std::nullopt;
 }
+
 std::optional<SemPrimitiveKind>
 ConstEvaluator::as_base_type(const NameExpression &node) {
   const std::string &name = node.name;
@@ -109,6 +113,7 @@ ConstEvaluator::as_base_type(const NameExpression &node) {
 
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_literal(const LiteralExpression &node) {
   try {
@@ -158,6 +163,7 @@ ConstEvaluator::evaluate_literal(const LiteralExpression &node) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_name(const NameExpression &node) {
   if (current_scope) {
@@ -187,6 +193,7 @@ ConstEvaluator::evaluate_name(const NameExpression &node) {
   }
   throw SemanticException("no current scope to resolve name: " + node.name);
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_prefix(const PrefixExpression &node) {
   if (!node.right)
@@ -221,6 +228,7 @@ ConstEvaluator::evaluate_prefix(const PrefixExpression &node) {
 
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_binary(const BinaryExpression &node) {
   if (!node.left || !node.right)
@@ -290,6 +298,7 @@ ConstEvaluator::evaluate_binary(const BinaryExpression &node) {
 
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_array(const ArrayExpression &node) {
   if (node.repeat) {
@@ -344,6 +353,7 @@ ConstEvaluator::evaluate_array(const ArrayExpression &node) {
     return ConstValue::array(std::move(elements), std::move(elem_type), size);
   }
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_tuple(const TupleExpression &node) {
   std::vector<ConstValue> elements;
@@ -359,6 +369,7 @@ ConstEvaluator::evaluate_tuple(const TupleExpression &node) {
 
   return ConstValue::tuple(std::move(elements));
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_index(const IndexExpression &node) {
   if (!node.target || !node.index)
@@ -398,6 +409,7 @@ ConstEvaluator::evaluate_index(const IndexExpression &node) {
 
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_field_access(const FieldAccessExpression &node) {
   if (!node.target)
@@ -419,11 +431,13 @@ ConstEvaluator::evaluate_field_access(const FieldAccessExpression &node) {
 
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_struct(const StructExpression &) {
   // TODO: Evaluate struct expressions
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_add(const ConstValue &left, const ConstValue &right) {
   auto kind = int_result_kind(left, right);
@@ -451,6 +465,7 @@ ConstEvaluator::evaluate_add(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_sub(const ConstValue &left, const ConstValue &right) {
   auto kind = int_result_kind(left, right);
@@ -477,6 +492,7 @@ ConstEvaluator::evaluate_sub(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_mul(const ConstValue &left, const ConstValue &right) {
   auto kind = int_result_kind(left, right);
@@ -503,6 +519,7 @@ ConstEvaluator::evaluate_mul(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_div(const ConstValue &left, const ConstValue &right) {
   auto kind = int_result_kind(left, right);
@@ -544,6 +561,7 @@ ConstEvaluator::evaluate_div(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_mod(const ConstValue &left, const ConstValue &right) {
   auto kind = int_result_kind(left, right);
@@ -585,6 +603,7 @@ ConstEvaluator::evaluate_mod(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_eq(const ConstValue &left, const ConstValue &right) {
   if (left.is_i32() && right.is_i32()) {
@@ -629,6 +648,7 @@ ConstEvaluator::evaluate_eq(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_ne(const ConstValue &left, const ConstValue &right) {
   auto eq_result = evaluate_eq(left, right);
@@ -637,6 +657,7 @@ ConstEvaluator::evaluate_ne(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_lt(const ConstValue &left, const ConstValue &right) {
   if (left.is_i32() && right.is_i32()) {
@@ -678,6 +699,7 @@ ConstEvaluator::evaluate_lt(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_le(const ConstValue &left, const ConstValue &right) {
   auto lt_result = evaluate_lt(left, right);
@@ -687,6 +709,7 @@ ConstEvaluator::evaluate_le(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_gt(const ConstValue &left, const ConstValue &right) {
   auto le_result = evaluate_le(left, right);
@@ -695,6 +718,7 @@ ConstEvaluator::evaluate_gt(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_ge(const ConstValue &left, const ConstValue &right) {
   auto lt_result = evaluate_lt(left, right);
@@ -703,6 +727,7 @@ ConstEvaluator::evaluate_ge(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_logical_and(const ConstValue &left,
                                      const ConstValue &right) {
@@ -711,6 +736,7 @@ ConstEvaluator::evaluate_logical_and(const ConstValue &left,
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_logical_or(const ConstValue &left,
                                     const ConstValue &right) {
@@ -719,6 +745,7 @@ ConstEvaluator::evaluate_logical_or(const ConstValue &left,
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_shl(const ConstValue &left, const ConstValue &right) {
   auto kind = int_result_kind(left, right);
@@ -745,6 +772,7 @@ ConstEvaluator::evaluate_shl(const ConstValue &left, const ConstValue &right) {
   }
   return std::nullopt;
 }
+
 std::optional<ConstValue>
 ConstEvaluator::evaluate_shr(const ConstValue &left, const ConstValue &right) {
   auto kind = int_result_kind(left, right);

@@ -12,15 +12,18 @@ index_blocks(const ir::Function &fn) {
   }
   return index;
 }
+
 std::string node_id(std::size_t index) {
   return "bb" + std::to_string(index);
 }
+
 std::string node_label(const ir::BasicBlock &bb, std::size_t index) {
   if (!bb.name().empty()) {
     return bb.name() + " (" + node_id(index) + ")";
   }
   return node_id(index);
 }
+
 std::vector<const ir::BasicBlock *> successors(const ir::BasicBlock &bb) {
   std::vector<const ir::BasicBlock *> outs;
   const auto &ins = bb.instructions();
@@ -49,6 +52,7 @@ std::vector<const ir::BasicBlock *> successors(const ir::BasicBlock &bb) {
 
   return outs;
 }
+
 std::vector<ir::BasicBlock *> successors(ir::BasicBlock &bb) {
   std::vector<ir::BasicBlock *> outs;
   auto &ins = bb.instructions();
@@ -77,6 +81,7 @@ std::vector<ir::BasicBlock *> successors(ir::BasicBlock &bb) {
 
   return outs;
 }
+
 std::vector<const ir::BasicBlock *>
 dedup_and_sort_by_index(std::vector<const ir::BasicBlock *> v,
                     const std::unordered_map<const ir::BasicBlock *, std::size_t>
@@ -108,6 +113,7 @@ dedup_and_sort_by_index(std::vector<const ir::BasicBlock *> v,
 
   return out;
 }
+
 std::string escape_dot_label(std::string s) {
   // Minimal escaping for DOT labels.
   std::string out;
@@ -207,6 +213,7 @@ std::string cfg_to_string(const ir::Function &fn) {
 
   return oss.str();
 }
+
 std::string cfg_to_dot(const ir::Function &fn) {
   std::ostringstream oss;
 

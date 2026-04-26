@@ -13,6 +13,7 @@ const char *to_string(TokenType type) {
     return "!!_UNDEFINED_TOKEN_!!";
   }
 }
+
 std::ostream &operator<<(std::ostream &os, const TokenType &type) {
   os << to_string(type);
   return os;
@@ -131,16 +132,19 @@ std::vector<Token> Lexer::tokenize() {
   check_for_keywords();
   return tokens;
 }
+
 bool Lexer::check_word_boundary(char c) {
   if (std::isalnum(c) || c == '_') {
     return true;
   }
   return false;
 }
+
 bool Lexer::is_punctuation(char c) {
   return c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']' ||
          c == ',' || c == '.' || c == ':' || c == ';' || c == '@';
 }
+
 void Lexer::first_pass() {
   auto push = [&](TokenType t, std::size_t beg, std::size_t end) {
     tokens.push_back({t, source.substr(beg, end - beg)});
@@ -338,6 +342,7 @@ void Lexer::first_pass() {
   }
   push(TokenType::TOK_EOF, n, n);
 }
+
 void Lexer::check_for_keywords() {
   for (auto &tok : tokens) {
     if (tok.type == TokenType::NON_KEYWORD_IDENTIFIER) {

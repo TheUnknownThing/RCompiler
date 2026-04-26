@@ -9,6 +9,7 @@ SemType Context::lookup_type(const BaseNode *node) const {
   }
   return it->second;
 }
+
 TypePtr Context::resolve_type(const SemType &type) const {
   if (type.is_primitive()) {
     switch (type.as_primitive().kind) {

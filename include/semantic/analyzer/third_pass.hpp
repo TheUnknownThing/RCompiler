@@ -39,18 +39,4 @@ private:
 
 // Implementation
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 } // namespace rc
