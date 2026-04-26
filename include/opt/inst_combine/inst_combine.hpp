@@ -10,6 +10,7 @@
 #include "opt/utils/ir_utils.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -308,6 +309,194 @@ public:
       return false;
     }
     return false;
+  }
+};
+
+class StrengthReductionRule final : public InstCombineRule {
+public:
+  bool try_apply(ir::Instruction &inst, InstCombineContext &ctx) override {
+    auto *bin = dynamic_cast<ir::BinaryOpInst *>(&inst);
+    if (!bin) {
+      return false;
+    }
+
+    auto bits = utils::int_bits(bin->type());
+    if (!bits || *bits != 32) {
+      return false;
+    }
+
+    switch (bin->op()) {
+    case ir::BinaryOpKind::ADD:
+      return fold_add(*bin, ctx);
+    case ir::BinaryOpKind::MUL:
+      return fold_mul(*bin, ctx);
+    case ir::BinaryOpKind::UDIV:
+      return fold_udiv(*bin, ctx);
+    case ir::BinaryOpKind::UREM:
+      return fold_urem(*bin, ctx);
+    default:
+      return false;
+    }
+  }
+
+private:
+  static bool is_pow2(std::uint64_t v) {
+    return v != 0 && (v & (v - 1)) == 0;
+  }
+
+  static unsigned log2_exact(std::uint64_t v) {
+    return static_cast<unsigned>(std::countr_zero(v));
+  }
+
+  static bool replace_with_new_inst(
+      ir::BinaryOpInst &old_inst,
+      const std::shared_ptr<ir::Instruction> &replacement) {
+    if (!replacement) {
+      return false;
+    }
+    utils::replace_all_uses_with(old_inst, replacement.get());
+    return utils::erase_instruction(*old_inst.parent(), &old_inst);
+  }
+
+  static std::shared_ptr<ir::BinaryOpInst>
+  insert_binary_before(ir::BinaryOpInst &pos, ir::BinaryOpKind op,
+                       std::shared_ptr<ir::Value> lhs,
+                       std::shared_ptr<ir::Value> rhs, ir::TypePtr ty,
+                       std::string name = {}) {
+    auto *bb = pos.parent();
+    if (!bb) {
+      return nullptr;
+    }
+    auto pos_sp = utils::find_shared_instruction(*bb, &pos);
+    if (!pos_sp) {
+      return nullptr;
+    }
+    return bb->insert_before<ir::BinaryOpInst>(pos_sp, op, std::move(lhs),
+                                               std::move(rhs), std::move(ty),
+                                               std::move(name));
+  }
+
+  static std::shared_ptr<ir::Value> shift_amount(InstCombineContext &ctx,
+                                                 unsigned amount) {
+    return ctx.get_i32(static_cast<int>(amount));
+  }
+
+  bool fold_add(ir::BinaryOpInst &bin, InstCombineContext &ctx) {
+    auto lhs = bin.lhs();
+    auto rhs = bin.rhs();
+    if (lhs.get() != rhs.get()) {
+      return false;
+    }
+
+    auto shl = insert_binary_before(bin, ir::BinaryOpKind::SHL, lhs,
+                                    shift_amount(ctx, 1), bin.type(),
+                                    bin.name());
+    return replace_with_new_inst(bin, shl);
+  }
+
+  bool fold_mul(ir::BinaryOpInst &bin, InstCombineContext &ctx) {
+    auto lhs_c = utils::as_const_int(bin.lhs().get());
+    auto rhs_c = utils::as_const_int(bin.rhs().get());
+
+    std::shared_ptr<ir::Value> value;
+    std::uint64_t factor = 0;
+    if (rhs_c && !lhs_c) {
+      value = bin.lhs();
+      factor = rhs_c->value();
+    } else if (lhs_c && !rhs_c) {
+      value = bin.rhs();
+      factor = lhs_c->value();
+    } else {
+      return false;
+    }
+
+    if (factor > UINT32_MAX || factor <= 1) {
+      return false;
+    }
+
+    if (is_pow2(factor)) {
+      auto shl = insert_binary_before(bin, ir::BinaryOpKind::SHL, value,
+                                      shift_amount(ctx, log2_exact(factor)),
+                                      bin.type(), bin.name());
+      return replace_with_new_inst(bin, shl);
+    }
+
+    if (is_pow2(factor - 1)) {
+      auto shl = insert_binary_before(bin, ir::BinaryOpKind::SHL, value,
+                                      shift_amount(ctx, log2_exact(factor - 1)),
+                                      bin.type());
+      if (!shl) {
+        return false;
+      }
+      auto add = insert_binary_before(bin, ir::BinaryOpKind::ADD, shl, value,
+                                      bin.type(), bin.name());
+      return replace_with_new_inst(bin, add);
+    }
+
+    if (factor > 2 && is_pow2(factor + 1) && log2_exact(factor + 1) < 32) {
+      auto shl = insert_binary_before(bin, ir::BinaryOpKind::SHL, value,
+                                      shift_amount(ctx, log2_exact(factor + 1)),
+                                      bin.type());
+      if (!shl) {
+        return false;
+      }
+      auto sub = insert_binary_before(bin, ir::BinaryOpKind::SUB, shl, value,
+                                      bin.type(), bin.name());
+      return replace_with_new_inst(bin, sub);
+    }
+
+    if (std::popcount(static_cast<std::uint32_t>(factor)) == 2) {
+      const auto low = log2_exact(factor & (~factor + 1));
+      const auto high = log2_exact(factor ^ (1ULL << low));
+
+      std::shared_ptr<ir::Value> low_term = value;
+      if (low != 0) {
+        low_term = insert_binary_before(bin, ir::BinaryOpKind::SHL, value,
+                                        shift_amount(ctx, low), bin.type());
+      }
+      auto high_term = insert_binary_before(bin, ir::BinaryOpKind::SHL, value,
+                                            shift_amount(ctx, high), bin.type());
+      if (!low_term || !high_term) {
+        return false;
+      }
+      auto add = insert_binary_before(bin, ir::BinaryOpKind::ADD, low_term,
+                                      high_term, bin.type(), bin.name());
+      return replace_with_new_inst(bin, add);
+    }
+
+    return false;
+  }
+
+  bool fold_udiv(ir::BinaryOpInst &bin, InstCombineContext &ctx) {
+    auto rhs_c = utils::as_const_int(bin.rhs().get());
+    if (!rhs_c) {
+      return false;
+    }
+    const auto divisor = rhs_c->value();
+    if (divisor <= 1 || divisor > UINT32_MAX || !is_pow2(divisor)) {
+      return false;
+    }
+
+    auto lshr = insert_binary_before(bin, ir::BinaryOpKind::LSHR, bin.lhs(),
+                                     shift_amount(ctx, log2_exact(divisor)),
+                                     bin.type(), bin.name());
+    return replace_with_new_inst(bin, lshr);
+  }
+
+  bool fold_urem(ir::BinaryOpInst &bin, InstCombineContext &ctx) {
+    auto rhs_c = utils::as_const_int(bin.rhs().get());
+    if (!rhs_c) {
+      return false;
+    }
+    const auto divisor = rhs_c->value();
+    if (divisor <= 1 || divisor > UINT32_MAX || !is_pow2(divisor)) {
+      return false;
+    }
+
+    auto mask = ctx.get_i32(static_cast<int>(divisor - 1), false);
+    auto and_inst = insert_binary_before(bin, ir::BinaryOpKind::AND, bin.lhs(),
+                                         mask, bin.type(), bin.name());
+    return replace_with_new_inst(bin, and_inst);
   }
 };
 
