@@ -79,21 +79,22 @@ See [whitelist.md](whitelist.md) for the concrete, implementable subset of the R
 
 - [x] IR Optimization
     - [x] CFG construction and refresh
-    - [x] Dead Code Elimination (DCE)
+    - [x] Aggressive Dead Code Elimination (DCE)
         - Remove instructions after terminators
         - Fold constant conditional branches
         - Eliminate unreachable blocks
+        - Remove dead instructions (those with no side effects and whose results are not used)
     - [x] Mem2Reg / SSA promotion
     - [x] Function inlining
     - [x] Instruction combining
         - Constant folding
         - Algebraic simplification
+        - Strength reduction
     - [x] Sparse Conditional Constant Propagation (SCCP)
     - [x] CFG simplification
         - Remove unreachable blocks
         - Fold trivial phi nodes
         - Merge trivial basic blocks
     - [ ] GVN & GCM (TBD)
-    - [ ] Magic Numbers (TBD)
 
-- [ ] Backend Codegen (WIP)
+- [x] Backend Codegen
