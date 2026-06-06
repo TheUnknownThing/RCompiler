@@ -570,8 +570,12 @@ void SCCPVisitor::visit(ir::TruncInst &trunc_inst) {
       if (auto src_int = std::dynamic_pointer_cast<ir::ConstantInt>(src_const)) {
         LOG_DEBUG("SCCP folding trunc constant");
         auto src_value = src_int->value();
-        std::uint32_t truncated_value =
-            src_value & ((1u << trunc_inst.dest_bits()) - 1);
+        std::uint32_t truncated_value = static_cast<std::uint32_t>(src_value);
+        if (trunc_inst.dest_bits() < 32) {
+          auto mask =
+              (std::uint32_t{1} << trunc_inst.dest_bits()) - std::uint32_t{1};
+          truncated_value &= mask;
+        }
         constant_values_[&trunc_inst] =
             context_->get_int_constant(static_cast<int>(truncated_value), false);
       } else {

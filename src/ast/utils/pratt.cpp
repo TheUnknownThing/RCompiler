@@ -4,6 +4,69 @@
 
 namespace pratt {
 
+namespace {
+
+bool is_associative(rc::TokenType type) {
+  switch (type) {
+  case rc::TokenType::PLUS:
+  case rc::TokenType::STAR:
+  case rc::TokenType::AMPERSAND:
+  case rc::TokenType::PIPE:
+  case rc::TokenType::CARET:
+  case rc::TokenType::AND:
+  case rc::TokenType::OR:
+    return true;
+  default:
+    return false;
+  }
+}
+
+ExprPtr build_balanced(const std::vector<ExprPtr> &operands,
+                       std::size_t begin, std::size_t end,
+                       const rc::Token &op) {
+  if (begin >= end) {
+    return nullptr;
+  }
+  if (end - begin == 1) {
+    return operands[begin];
+  }
+  const auto mid = begin + (end - begin) / 2;
+  auto left = build_balanced(operands, begin, mid, op);
+  auto right = build_balanced(operands, mid, end, op);
+  return std::make_shared<rc::BinaryExpression>(std::move(left), op,
+                                                std::move(right));
+}
+
+} // namespace
+
+ExprPtr balance_associative_expression(ExprPtr expr) {
+  auto root = std::dynamic_pointer_cast<rc::BinaryExpression>(expr);
+  if (!root || !is_associative(root->op.type)) {
+    return expr;
+  }
+
+  const auto op = root->op;
+  std::vector<ExprPtr> operands;
+  std::vector<ExprPtr> stack;
+  stack.push_back(std::move(expr));
+
+  while (!stack.empty()) {
+    auto cur = std::move(stack.back());
+    stack.pop_back();
+
+    auto bin = std::dynamic_pointer_cast<rc::BinaryExpression>(cur);
+    if (bin && bin->op.type == op.type) {
+      stack.push_back(bin->right);
+      stack.push_back(bin->left);
+      continue;
+    }
+
+    operands.push_back(balance_associative_expression(std::move(cur)));
+  }
+
+  return build_balanced(operands, 0, operands.size(), op);
+}
+
 parsec::Parser<ExprPtr> pratt_expr(const PrattTable &tbl, int min_bp) {
   return parsec::Parser<ExprPtr>(
       [tbl, min_bp](const std::vector<rc::Token> &toks,
@@ -14,7 +77,7 @@ parsec::Parser<ExprPtr> pratt_expr(const PrattTable &tbl, int min_bp) {
           pos = saved;
           return std::nullopt;
         }
-        return e;
+        return balance_associative_expression(std::move(e));
       });
 }
 

@@ -748,14 +748,34 @@ void InstructionSelection::visit(const ir::ZExtInst &zext_inst) {
                                           "operand for ZExtInst", &zext_inst);
   auto src_int = std::dynamic_pointer_cast<const ir::IntegerType>(
       zext_inst.source()->type());
-  if (!src_int || src_int->bits() >= 32) {
+  if (!src_int) {
     current_block_->create_inst(InstOpcode::MV, dst, {get_reg(src)});
     return;
   }
-  current_block_->create_inst(
-      InstOpcode::ANDI, dst,
-      {get_reg(src), create_immediate(static_cast<int32_t>(
-                         (uint32_t{1} << src_int->bits()) - 1))});
+  if (src_int->bits() == 32) {
+    current_block_->create_inst(InstOpcode::MV, dst, {get_reg(src)});
+    if (register_size_ == 8) {
+      current_block_->create_inst(InstOpcode::SLLI, dst,
+                                  {dst, create_immediate(32)});
+      current_block_->create_inst(InstOpcode::SRLI, dst,
+                                  {dst, create_immediate(32)});
+    }
+    return;
+  }
+  if (src_int->bits() > 32) {
+    current_block_->create_inst(InstOpcode::MV, dst, {get_reg(src)});
+    return;
+  }
+
+  auto mask = create_immediate(static_cast<int32_t>(
+      (uint32_t{1} << src_int->bits()) - 1));
+  if (mask->is_valid_12()) {
+    current_block_->create_inst(InstOpcode::ANDI, dst, {get_reg(src), mask});
+    return;
+  }
+
+  current_block_->create_inst(InstOpcode::AND, dst,
+                              {get_reg(src), get_reg(mask)});
 }
 
 void InstructionSelection::visit(const ir::SExtInst &sext_inst) {
@@ -774,9 +794,26 @@ void InstructionSelection::visit(const ir::TruncInst &trunc_inst) {
   auto dst = get_or_create_result_register(&trunc_inst);
   auto src = resolve_operand_or_immediate(trunc_inst.source(),
                                           "operand for TruncInst", &trunc_inst);
-  current_block_->create_inst(
-      InstOpcode::ANDI, dst,
-      {get_reg(src), create_immediate((1u << trunc_inst.dest_bits()) - 1)});
+  if (trunc_inst.dest_bits() == 32) {
+    current_block_->create_inst(InstOpcode::MV, dst, {get_reg(src)});
+    if (register_size_ == 8) {
+      current_block_->create_inst(InstOpcode::SLLI, dst,
+                                  {dst, create_immediate(32)});
+      current_block_->create_inst(InstOpcode::SRLI, dst,
+                                  {dst, create_immediate(32)});
+    }
+    return;
+  }
+
+  auto mask = create_immediate(static_cast<int32_t>(
+      (uint32_t{1} << trunc_inst.dest_bits()) - 1));
+  if (mask->is_valid_12()) {
+    current_block_->create_inst(InstOpcode::ANDI, dst, {get_reg(src), mask});
+    return;
+  }
+
+  current_block_->create_inst(InstOpcode::AND, dst,
+                              {get_reg(src), get_reg(mask)});
 }
 
 void InstructionSelection::visit(const ir::MoveInst &move_inst) {

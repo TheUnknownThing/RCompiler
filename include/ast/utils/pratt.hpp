@@ -138,6 +138,8 @@ PrattTable default_table(rc::Parser *p);
 parsec::Parser<ExprPtr> pratt_expr(const PrattTable &tbl,
                                           int min_bp = 0);
 
+ExprPtr balance_associative_expression(ExprPtr expr);
+
 auto validate_int_literal(const std::string &lexeme)
     -> std::tuple<long long, bool, std::string>;
 

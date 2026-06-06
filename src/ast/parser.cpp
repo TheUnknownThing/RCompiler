@@ -1037,7 +1037,7 @@ parsec::Parser<std::shared_ptr<Expression>> Parser::any_expression() {
         // Use the PrattTable member of our class to parse.
         if (auto e = pratt_table_.parse_expression(toks, pos)) {
           LOG_DEBUG("Pratt parser succeeded.");
-          return e;
+          return pratt::balance_associative_expression(std::move(e));
         }
 
         pos = saved;
