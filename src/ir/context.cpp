@@ -69,6 +69,9 @@ TypePtr Context::resolve_type(const SemType &type) const {
       }
       return std::make_shared<StructType>(std::move(fields), item->name);
     }
+    if (item->kind == ItemKind::Enum && item->has_enum_meta()) {
+      return IntegerType::i32(true);
+    }
     throw std::runtime_error(
         "Context::resolveType: unsupported named item kind");
   }

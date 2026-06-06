@@ -296,9 +296,18 @@ void IREmitter::visit(BinaryExpression &node) {
 
 void IREmitter::visit(ReturnExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting return expression");
+  ValuePtr expression_value = std::make_shared<ConstantUnit>();
+  auto finish_return_expression = [&]() {
+    push_operand(expression_value);
+    auto cur_func = functions_.back();
+    current_block_ = cur_func->create_block("unreachable_after_return");
+    current_block_->append<UnreachableInst>();
+  };
+
   if (node.value) {
     auto ret_sem_ty = context->lookup_type(node.value->get());
     auto ret_ir_ty = context->resolve_type(ret_sem_ty);
+    expression_value = std::make_shared<UndefValue>(ret_ir_ty);
 
     if (current_sret_ptr_ && is_aggregate_type(ret_ir_ty)) {
       push_aggregate_init_target(ret_ir_ty, current_sret_ptr_);
@@ -312,6 +321,8 @@ void IREmitter::visit(ReturnExpression &node) {
         emit_memcpy(current_sret_ptr_, v, byte_size);
       }
       current_block_->append<ReturnInst>();
+      expression_value = current_sret_ptr_;
+      finish_return_expression();
       return;
     }
 
@@ -326,6 +337,8 @@ void IREmitter::visit(ReturnExpression &node) {
       std::size_t byte_size = compute_type_byte_size(ret_ir_ty);
       emit_memcpy(current_sret_ptr_, v, byte_size);
       current_block_->append<ReturnInst>();
+      expression_value = current_sret_ptr_;
+      finish_return_expression();
       return;
     }
 
@@ -336,13 +349,14 @@ void IREmitter::visit(ReturnExpression &node) {
 
     if (v->type()->is_void()) {
       current_block_->append<ReturnInst>();
-      return;
     } else {
       current_block_->append<ReturnInst>(v);
     }
   } else {
     current_block_->append<ReturnInst>();
   }
+
+  finish_return_expression();
 }
 
 void IREmitter::visit(PrefixExpression &node) {
@@ -645,7 +659,12 @@ void IREmitter::visit(CallExpression &node) {
                  dynamic_cast<PathExpression *>(node.function_name.get())) {
     const std::string &type_name = path_expr->segments[0].ident;
     const std::string &fn_name = path_expr->segments[1].ident;
-    const auto *type_item = resolve_struct_item(type_name);
+    const CollectedItem *type_item = nullptr;
+    if (type_name == "Self" && current_impl_target_) {
+      type_item = current_impl_target_;
+    } else {
+      type_item = resolve_struct_item(type_name);
+    }
     if (!type_item || !type_item->has_struct_meta()) {
       LOG_ERROR("[IREmitter] unknown type '" + type_name + "'");
       throw IRException("unknown type '" + type_name + "'");
@@ -818,8 +837,8 @@ void IREmitter::visit(StructDecl &node) {
   return;
 }
 
-void IREmitter::visit(EnumDecl &) {
-  throw std::runtime_error("EnumDecl emission not implemented");
+void IREmitter::visit(EnumDecl &node) {
+  LOG_DEBUG("[IREmitter] Visiting enum declaration: " + node.name);
 }
 
 void IREmitter::visit(TraitDecl &) {
@@ -881,7 +900,8 @@ void IREmitter::visit(IfExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting if expression");
   node.condition->accept(*this);
   auto cond_val = pop_operand();
-  cond_val = load_ptr_value(cond_val, context->lookup_type(node.condition.get()));
+  cond_val =
+      materialize_condition(cond_val, context->lookup_type(node.condition.get()));
 
   auto cur_func = functions_.back();
   auto then_block = cur_func->create_block("if_then");
@@ -957,6 +977,15 @@ void IREmitter::visit(IfExpression &node) {
       return;
     }
     if (result_ir_ty->is_void()) {
+      if (then_terminated != else_terminated) {
+        auto fallthrough_val = then_terminated ? else_val : then_val;
+        auto int_ty =
+            std::dynamic_pointer_cast<const IntegerType>(fallthrough_val->type());
+        if (int_ty) {
+          push_operand(fallthrough_val);
+          return;
+        }
+      }
       push_operand(std::make_shared<ConstantUnit>());
       return;
     }
@@ -1037,6 +1066,33 @@ void IREmitter::visit(MethodCallExpression &node) {
   node.receiver->accept(*this);
   auto receiver_val = pop_operand();
   auto recv_sem = context->lookup_type(node.receiver.get());
+
+  if (node.method_name.name == "len") {
+    SemType base_sem = recv_sem;
+    if (base_sem.is_reference()) {
+      base_sem = *base_sem.as_reference().target;
+    }
+    if (base_sem.is_array()) {
+      push_operand(std::make_shared<ConstantInt>(
+          IntegerType::usize(), base_sem.as_array().size));
+      return;
+    }
+    push_operand(std::make_shared<ConstantInt>(IntegerType::usize(), 0));
+    return;
+  }
+
+  if (node.method_name.name == "to_string") {
+    (void)receiver_val;
+    auto empty = intern_string_literal(std::string(1, '\0'));
+    push_operand(empty);
+    return;
+  }
+
+  if (node.method_name.name == "as_str") {
+    push_operand(load_ptr_value(receiver_val, recv_sem));
+    return;
+  }
+
   SemType lookup_type = recv_sem;
   if (lookup_type.is_reference()) {
     lookup_type = *lookup_type.as_reference().target;
@@ -1275,7 +1331,8 @@ void IREmitter::visit(WhileExpression &node) {
   current_block_ = cond_block;
   node.condition->accept(*this);
   auto cond_val = pop_operand();
-  cond_val = load_ptr_value(cond_val, context->lookup_type(node.condition.get()));
+  cond_val =
+      materialize_condition(cond_val, context->lookup_type(node.condition.get()));
   current_block_->append<BranchInst>(cond_val, body_block.get(),
                                      after_block.get());
 
@@ -1586,6 +1643,27 @@ void IREmitter::visit(PathExpression &node) {
     type_item = resolve_struct_item(type_name);
   }
 
+  if (!type_item) {
+    throw IRException("unknown type '" + type_name + "'");
+  }
+
+  if (type_item->has_enum_meta()) {
+    const auto &meta = type_item->as_enum_meta();
+    for (size_t i = 0; i < meta.variant_names.size(); ++i) {
+      if (meta.variant_names[i] == val_name) {
+        push_operand(ConstantInt::get_i32(static_cast<std::uint32_t>(i), true));
+        LOG_DEBUG("[IREmitter] Resolved enum variant " + type_name + "::" +
+                  val_name);
+        return;
+      }
+    }
+    throw IRException("enum variant '" + val_name + "' not found");
+  }
+
+  if (!type_item->has_struct_meta()) {
+    throw IRException("type '" + type_name + "' is not a struct or enum");
+  }
+
   const ConstantMetaData *found_const = nullptr;
   for (const auto &c : type_item->as_struct_meta().constants) {
     if (c.name == val_name) {
@@ -1780,6 +1858,20 @@ ValuePtr IREmitter::load_ptr_value(ValuePtr v, const SemType &sem_ty) {
   }
 
   throw IRException("loadPtrValue unable to match reference type");
+}
+
+ValuePtr IREmitter::materialize_condition(ValuePtr v, const SemType &sem_ty) {
+  v = load_ptr_value(std::move(v), sem_ty);
+  auto int_ty = std::dynamic_pointer_cast<const IntegerType>(v->type());
+  if (!int_ty) {
+    throw IRException("condition must be integer-compatible");
+  }
+  if (int_ty->bits() == 1) {
+    return v;
+  }
+  auto zero = std::make_shared<ConstantInt>(
+      std::make_shared<IntegerType>(int_ty->bits(), int_ty->is_signed()), 0);
+  return current_block_->append<ICmpInst>(ICmpPred::NE, v, zero, "cond");
 }
 
 bool IREmitter::type_equals(const TypePtr &a, const TypePtr &b) const {

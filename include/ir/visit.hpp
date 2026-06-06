@@ -128,6 +128,7 @@ private:
   ValuePtr pop_operand();
   void push_operand(ValuePtr v);
   ValuePtr load_ptr_value(ValuePtr v, const SemType &sem_ty);
+  ValuePtr materialize_condition(ValuePtr v, const SemType &sem_ty);
   ValuePtr create_alloca(const TypePtr &ty, const std::string &name = {},
                         ValuePtr array_size = nullptr, unsigned alignment = 0);
   bool type_equals(const TypePtr &a, const TypePtr &b) const;
