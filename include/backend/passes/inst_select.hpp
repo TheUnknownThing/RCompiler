@@ -24,6 +24,10 @@
 namespace rc::backend {
 class InstructionSelection : public ir::InstructionVisitor {
 public:
+  InstructionSelection() = default;
+  explicit InstructionSelection(size_t register_size)
+      : register_size_(register_size) {}
+
   void generate(const ir::Module &module);
   void visit(const ir::Function &function);
   void visit(const ir::BasicBlock &basic_block);
@@ -67,6 +71,7 @@ private:
   AsmBlock *current_block_{nullptr};
   size_t stack_offset_ = 0;
   const ir::BasicBlock *entry_ir_block_{nullptr};
+  size_t register_size_{4};
 
   std::string describe(const ir::Value *value) const;
   std::shared_ptr<AsmOperand>
@@ -83,6 +88,17 @@ private:
   TypeLayoutInfo compute_type_layout(const ir::TypePtr &ty) const;
   size_t compute_type_byte_size(const ir::TypePtr &ty) const;
   size_t align_to(size_t offset, size_t align) const;
+  bool use_rv64_word_ops(const ir::TypePtr &ty) const;
+  bool needs_rv64_unsigned_word_normalize(const ir::TypePtr &ty) const;
+  InstOpcode register_load_opcode() const;
+  InstOpcode register_store_opcode() const;
+  InstOpcode load_opcode_for_type(const ir::TypePtr &ty) const;
+  InstOpcode store_opcode_for_type(const ir::TypePtr &ty) const;
+  InstOpcode binary_opcode(InstOpcode rv32_opcode, InstOpcode rv64_word_opcode,
+                           const ir::TypePtr &ty) const;
+  InstOpcode immediate_add_opcode(const ir::TypePtr &ty) const;
+  void normalize_rv64_unsigned_word(const std::shared_ptr<Register> &reg,
+                                    const ir::TypePtr &ty);
   std::shared_ptr<Register>
   materialize_address(const std::shared_ptr<AsmOperand> &ptr,
                      const ir::Instruction *inst, const char *reason);

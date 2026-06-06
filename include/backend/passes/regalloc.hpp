@@ -22,6 +22,12 @@ namespace rc::backend {
 
 class RegAlloc {
 public:
+  RegAlloc() = default;
+  RegAlloc(size_t spill_slot_size, InstOpcode spill_load_opcode,
+           InstOpcode spill_store_opcode)
+      : spill_slot_size_(spill_slot_size), spill_load_opcode_(spill_load_opcode),
+        spill_store_opcode_(spill_store_opcode) {}
+
   void allocate(const std::vector<std::unique_ptr<AsmFunction>> &functions);
 
 private:
@@ -50,7 +56,9 @@ private:
     bool valid{false};
   };
 
-  static constexpr size_t k_spill_slot_size = 4;
+  size_t spill_slot_size_{4};
+  InstOpcode spill_load_opcode_{InstOpcode::LW};
+  InstOpcode spill_store_opcode_{InstOpcode::SW};
   static constexpr std::array<int, 14> k_caller_saved_regs = {
       6,  7,  10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30, 31};
   static constexpr std::array<int, 11> k_callee_saved_regs = {

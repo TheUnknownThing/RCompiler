@@ -59,8 +59,30 @@ std::string AsmEmitter::opcode_name(InstOpcode opcode) const {
     return "rem";
   case InstOpcode::REMU:
     return "remu";
+  case InstOpcode::ADDW:
+    return "addw";
+  case InstOpcode::SUBW:
+    return "subw";
+  case InstOpcode::SLLW:
+    return "sllw";
+  case InstOpcode::SRLW:
+    return "srlw";
+  case InstOpcode::SRAW:
+    return "sraw";
+  case InstOpcode::MULW:
+    return "mulw";
+  case InstOpcode::DIVW:
+    return "divw";
+  case InstOpcode::DIVUW:
+    return "divuw";
+  case InstOpcode::REMW:
+    return "remw";
+  case InstOpcode::REMUW:
+    return "remuw";
   case InstOpcode::ADDI:
     return "addi";
+  case InstOpcode::ADDIW:
+    return "addiw";
   case InstOpcode::XORI:
     return "xori";
   case InstOpcode::ORI:
@@ -73,6 +95,12 @@ std::string AsmEmitter::opcode_name(InstOpcode opcode) const {
     return "srli";
   case InstOpcode::SRAI:
     return "srai";
+  case InstOpcode::SLLIW:
+    return "slliw";
+  case InstOpcode::SRLIW:
+    return "srliw";
+  case InstOpcode::SRAIW:
+    return "sraiw";
   case InstOpcode::SLTI:
     return "slti";
   case InstOpcode::SLTIU:
@@ -87,6 +115,10 @@ std::string AsmEmitter::opcode_name(InstOpcode opcode) const {
     return "lbu";
   case InstOpcode::LHU:
     return "lhu";
+  case InstOpcode::LWU:
+    return "lwu";
+  case InstOpcode::LD:
+    return "ld";
   case InstOpcode::JALR:
     return "jalr";
   case InstOpcode::SB:
@@ -95,6 +127,8 @@ std::string AsmEmitter::opcode_name(InstOpcode opcode) const {
     return "sh";
   case InstOpcode::SW:
     return "sw";
+  case InstOpcode::SD:
+    return "sd";
   case InstOpcode::BEQ:
     return "beq";
   case InstOpcode::BNE:
@@ -257,17 +291,31 @@ void AsmEmitter::emit_inst(const AsmFunction &function,
   case InstOpcode::DIVU:
   case InstOpcode::REM:
   case InstOpcode::REMU:
+  case InstOpcode::ADDW:
+  case InstOpcode::SUBW:
+  case InstOpcode::SLLW:
+  case InstOpcode::SRLW:
+  case InstOpcode::SRAW:
+  case InstOpcode::MULW:
+  case InstOpcode::DIVW:
+  case InstOpcode::DIVUW:
+  case InstOpcode::REMW:
+  case InstOpcode::REMUW:
     os << "\t" << opcode_name(opcode) << "\t" << reg_name(inst.get_dst())
        << ", " << reg_name(uses.at(0)) << ", " << reg_name(uses.at(1)) << "\n";
     return;
 
   case InstOpcode::ADDI:
+  case InstOpcode::ADDIW:
   case InstOpcode::XORI:
   case InstOpcode::ORI:
   case InstOpcode::ANDI:
   case InstOpcode::SLLI:
   case InstOpcode::SRLI:
   case InstOpcode::SRAI:
+  case InstOpcode::SLLIW:
+  case InstOpcode::SRLIW:
+  case InstOpcode::SRAIW:
   case InstOpcode::SLTI:
   case InstOpcode::SLTIU:
     os << "\t" << opcode_name(opcode) << "\t" << reg_name(inst.get_dst())
@@ -280,6 +328,8 @@ void AsmEmitter::emit_inst(const AsmFunction &function,
   case InstOpcode::LW:
   case InstOpcode::LBU:
   case InstOpcode::LHU:
+  case InstOpcode::LWU:
+  case InstOpcode::LD:
     emit_load(function, os, opcode_name(opcode), inst.get_dst(), uses.at(0),
              uses.size() > 1 ? uses.at(1) : nullptr);
     return;
@@ -287,6 +337,7 @@ void AsmEmitter::emit_inst(const AsmFunction &function,
   case InstOpcode::SB:
   case InstOpcode::SH:
   case InstOpcode::SW:
+  case InstOpcode::SD:
     emit_store(function, os, opcode_name(opcode), uses.at(0), uses.at(1),
               uses.size() > 2 ? uses.at(2) : nullptr);
     return;

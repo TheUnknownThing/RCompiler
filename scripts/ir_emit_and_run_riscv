@@ -4,19 +4,54 @@ set -euo pipefail
 
 usage() {
     echo "Usage:"
-    echo "  $0 <testcase_name>"
-    echo "  $0 -a | --all   # Run all comprehensive tests found in testcases/IR-1/src/"
+    echo "  $0 [--rv32|--rv64] <testcase_name>"
+    echo "  $0 [--rv32|--rv64] -a | --all   # Run all comprehensive tests found in testcases/IR-1/src/"
     exit 1
 }
 
-if [ "${1:-}" = "" ]; then
+if [ "$#" -eq 0 ]; then
     usage
 fi
 
+ARCH="rv32"
 ALL_MODE=0
-ARG="$1"
-if [ "$ARG" = "-a" ] || [ "$ARG" = "--all" ]; then
-    ALL_MODE=1
+ARG=""
+for arg in "$@"; do
+    case "$arg" in
+        --rv32)
+            ARCH="rv32"
+            ;;
+        --rv64)
+            ARCH="rv64"
+            ;;
+        -a|--all)
+            ALL_MODE=1
+            ARG="$arg"
+            ;;
+        *)
+            if [ -z "$ARG" ]; then
+                ARG="$arg"
+            else
+                usage
+            fi
+            ;;
+    esac
+done
+
+if [ -z "$ARG" ]; then
+    usage
+fi
+
+if [ "$ARCH" = "rv64" ]; then
+    RISCV_TARGET="riscv64-unknown-elf"
+    RISCV_MARCH="rv64gc"
+    RISCV_MABI="lp64"
+    RCOMPILER_EMIT_FLAG="--emit-asm-rv64"
+else
+    RISCV_TARGET="riscv32-unknown-elf"
+    RISCV_MARCH="rv32im"
+    RISCV_MABI="ilp32"
+    RCOMPILER_EMIT_FLAG="--emit-asm"
 fi
 
 # Resolve directories
@@ -25,6 +60,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "Repository root: $ROOT_DIR"
+echo "Target: $ARCH ($RISCV_TARGET -march=$RISCV_MARCH -mabi=$RISCV_MABI)"
 if [ "$ALL_MODE" -eq 1 ]; then
     echo "Mode: ALL tests"
 else
@@ -71,9 +107,38 @@ get_reimu() {
     exit 1
 }
 
-REIMU=$(get_reimu)
-echo "Using reimu: $REIMU"
+REIMU=""
 REIMU_TIMEOUT="${REIMU_TIMEOUT:-30s}"
+
+get_qemu_rv64() {
+    if [ "${QEMU_RISCV64_BIN:-}" != "" ]; then
+        if [ -x "$QEMU_RISCV64_BIN" ]; then
+            echo "$QEMU_RISCV64_BIN"
+            return 0
+        fi
+        echo "Error: QEMU_RISCV64_BIN is set but not executable: $QEMU_RISCV64_BIN" >&2
+        exit 1
+    fi
+
+    if command -v qemu-riscv64 > /dev/null 2>&1; then
+        command -v qemu-riscv64
+        return 0
+    fi
+
+    echo "Error: qemu-riscv64 not found." >&2
+    echo "  Install qemu-user or set QEMU_RISCV64_BIN=/path/to/qemu-riscv64" >&2
+    exit 1
+}
+
+QEMU_RISCV64=""
+QEMU_TIMEOUT="${QEMU_TIMEOUT:-30s}"
+if [ "$ARCH" = "rv64" ]; then
+    QEMU_RISCV64="$(get_qemu_rv64)"
+    echo "Using qemu-riscv64: $QEMU_RISCV64"
+else
+    REIMU="$(get_reimu)"
+    echo "Using reimu: $REIMU"
+fi
 
 # Build project once
 echo "Running: cmake --build build"
@@ -135,20 +200,22 @@ run_test() {
 
     # Create and prepare tmp directory
     mkdir -p tmp
-    BUILTIN_C="$ROOT_DIR/ci/files/IR/builtin.c"
-    if [ ! -f "$BUILTIN_C" ]; then
-        echo "Error: builtin runtime not found: $BUILTIN_C"
-        FAILED+=( "$NAME (missing builtin.c)" )
-        return 1
+    if [ "$ARCH" = "rv32" ]; then
+        BUILTIN_C="$ROOT_DIR/ci/files/IR/builtin.c"
+        if [ ! -f "$BUILTIN_C" ]; then
+            echo "Error: builtin runtime not found: $BUILTIN_C"
+            FAILED+=( "$NAME (missing builtin.c)" )
+            return 1
+        fi
+        # Generate builtin.ll from the C source. This stays in sync with the repo and
+        # avoids depending on a potentially stale checked-in builtin.ll.
+        "$CLANG" -S -emit-llvm --target="$RISCV_TARGET" -march="$RISCV_MARCH" -mabi="$RISCV_MABI" -O0 -fno-builtin "$BUILTIN_C" -o tmp/builtin.ll
     fi
-    # Generate builtin.ll from the C source. This stays in sync with the repo and
-    # avoids depending on a potentially stale checked-in builtin.ll.
-    "$CLANG" -S -emit-llvm --target=riscv32-unknown-unknown-elf -march=rv32im -mabi=ilp32 -O0 -fno-builtin "$BUILTIN_C" -o tmp/builtin.ll
 
     # Run rcompiler backend and capture RISC-V assembly to tmp/output.s.source
-    echo "Running: $RCOMPILER --emit-asm $RX_FILE > tmp/output.s.source"
+    echo "Running: $RCOMPILER $RCOMPILER_EMIT_FLAG $RX_FILE > tmp/output.s.source"
     set +e
-    "$RCOMPILER" --emit-asm "$RX_FILE" > tmp/output.s.source
+    "$RCOMPILER" "$RCOMPILER_EMIT_FLAG" "$RX_FILE" > tmp/output.s.source
     RCOMP_RC=$?
     set -e
     if [ "$RCOMP_RC" -ne 0 ]; then
@@ -166,7 +233,7 @@ run_test() {
         FAILED+=( "$NAME (missing output.s.source)" )
         return 1
     fi
-    if [ ! -f "builtin.ll" ]; then
+    if [ "$ARCH" = "rv32" ] && [ ! -f "builtin.ll" ]; then
         echo "Error: builtin.ll not found in tmp/ (builtin compilation failed)"
         ls -la
         cd "$ROOT_DIR"
@@ -174,26 +241,63 @@ run_test() {
         return 1
     fi
 
-    echo "Compiling builtin.ll to RISC-V assembly with $CLANG..."
-    set +e
-    $CLANG -S --target=riscv32-unknown-elf -march=rv32im -mabi=ilp32 -O0 -fno-builtin "builtin.ll" -o "builtin.s.source" 2>&1
-    CLANG_RC=$?
-    set -e
-    if [ "$CLANG_RC" -ne 0 ]; then
-        echo "clang failed compiling builtin.ll (exit $CLANG_RC)"
-        cd "$ROOT_DIR"
-        FAILED+=( "$NAME (clang builtin.ll failed)" )
-        return 1
-    fi
-
-    # Remove @plt suffix + rewrite unsupported pseudo-ops for reimu
+    # Remove @plt suffix + rewrite unsupported pseudo-ops for reimu.
     remove_plt "output.s.source" "test.s"
-    remove_plt "builtin.s.source" "builtin.s"
+
+    if [ "$ARCH" = "rv64" ]; then
+        INPUT_FILE="../testcases/IR-1/src/$NAME/$NAME.in"
+        EXPECTED_FILE="../testcases/IR-1/src/$NAME/$NAME.out"
+
+        echo "Linking RV64 Linux executable with freestanding runtime..."
+        set +e
+        $CLANG --target="$RISCV_TARGET" -march="$RISCV_MARCH" -mabi="$RISCV_MABI" -fuse-ld=lld -nostdlib -static "$ROOT_DIR/ci/files/IR/builtin.s" "test.s" -o "test.elf" 2> "clang_link.err"
+        CLANG_LINK_RC=$?
+        set -e
+        if [ "$CLANG_LINK_RC" -ne 0 ]; then
+            echo "clang failed linking RV64 test.elf (exit $CLANG_LINK_RC)"
+            sed -n '1,200p' clang_link.err || true
+            cd "$ROOT_DIR"
+            FAILED+=( "$NAME (clang RV64 link failed)" )
+            return 1
+        fi
+
+        echo "Running with qemu-riscv64..."
+        set +e
+        if [ -f "$INPUT_FILE" ]; then
+            timeout "$QEMU_TIMEOUT" "$QEMU_RISCV64" "test.elf" < "$INPUT_FILE" > "tmp.out" 2> "qemu_err.txt"
+        else
+            timeout "$QEMU_TIMEOUT" "$QEMU_RISCV64" "test.elf" > "tmp.out" 2> "qemu_err.txt"
+        fi
+        QEMU_RC=$?
+        set -e
+        if [ "$QEMU_RC" -ne 0 ]; then
+            echo "qemu-riscv64 exited with non-zero status ($QEMU_RC). See qemu_err.txt:"
+            sed -n '1,200p' qemu_err.txt || true
+            cd "$ROOT_DIR"
+            FAILED+=( "$NAME (qemu-riscv64 exit $QEMU_RC)" )
+            return 1
+        fi
+    else
+        echo "Compiling builtin.ll to RISC-V assembly with $CLANG..."
+        set +e
+        $CLANG -S --target="$RISCV_TARGET" -march="$RISCV_MARCH" -mabi="$RISCV_MABI" -O0 -fno-builtin "builtin.ll" -o "builtin.s.source" 2>&1
+        CLANG_RC=$?
+        set -e
+        if [ "$CLANG_RC" -ne 0 ]; then
+            echo "clang failed compiling builtin.ll (exit $CLANG_RC)"
+            cd "$ROOT_DIR"
+            FAILED+=( "$NAME (clang builtin.ll failed)" )
+            return 1
+        fi
+
+        remove_plt "builtin.s.source" "builtin.s"
+    fi
 
     # Prepare input/output files
     INPUT_FILE="../testcases/IR-1/src/$NAME/$NAME.in"
     EXPECTED_FILE="../testcases/IR-1/src/$NAME/$NAME.out"
 
+    if [ "$ARCH" = "rv32" ]; then
         # Run with reimu
         echo "Running with reimu..."
         set +e
@@ -212,6 +316,7 @@ run_test() {
             FAILED+=( "$NAME (reimu exit $REIMU_RC)" )
             return 1
         fi
+    fi
 
     # Compare output
     if [ -f "$EXPECTED_FILE" ]; then

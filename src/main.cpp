@@ -14,7 +14,7 @@
 int main(int argc, char *argv[]) {
   try {
     std::string filename = "";
-    enum class EmitMode { LLVM, ASM };
+    enum class EmitMode { LLVM, ASM, ASM_RV64 };
     EmitMode emit_mode = EmitMode::LLVM;
 
     for (int i = 1; i < argc; ++i) {
@@ -23,6 +23,8 @@ int main(int argc, char *argv[]) {
         emit_mode = EmitMode::LLVM;
       } else if (arg == "--emit-asm" || arg == "-S") {
         emit_mode = EmitMode::ASM;
+      } else if (arg == "--emit-asm-rv64" || arg == "--emit-rv64") {
+        emit_mode = EmitMode::ASM_RV64;
       } else if (filename.empty()) {
         filename = arg;
       } else {
@@ -57,9 +59,12 @@ int main(int argc, char *argv[]) {
 
     if (emit_mode == EmitMode::LLVM) {
       rc::ir::emit_llvm(emitter.module(), std::cout);
-    } else {
+    } else if (emit_mode == EmitMode::ASM) {
       rc::backend::PassManager backend_pm;
       backend_pm.run(emitter.module(), std::cout);
+    } else {
+      rc::backend::PassManager backend_pm;
+      backend_pm.run_rv64(emitter.module(), std::cout);
     }
 
   } catch (const std::exception &e) {

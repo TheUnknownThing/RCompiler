@@ -15,13 +15,13 @@ void PrologueEpiloguePass::run(
     size_t save_area_offset = function->stack_size;
     std::vector<std::pair<int, std::shared_ptr<StackSlot>>> saved_regs;
     if (saves_ra) {
-      auto slot = stack_slot(save_area_offset, 4);
-      save_area_offset += 4;
+      auto slot = stack_slot(save_area_offset, saved_reg_size_);
+      save_area_offset += saved_reg_size_;
       saved_regs.emplace_back(1, slot);
     }
     for (int reg_id : used_callee_saved) {
-      auto slot = stack_slot(save_area_offset, 4);
-      save_area_offset += 4;
+      auto slot = stack_slot(save_area_offset, saved_reg_size_);
+      save_area_offset += saved_reg_size_;
       saved_regs.emplace_back(reg_id, slot);
     }
 
@@ -40,7 +40,7 @@ void PrologueEpiloguePass::run(
     }
     for (const auto &[reg_id, slot] : saved_regs) {
       prologue.push_back(std::make_unique<AsmInst>(
-          InstOpcode::SW,
+          save_opcode_,
           std::vector<std::shared_ptr<AsmOperand>>{physical(reg_id), slot}));
     }
 
@@ -72,7 +72,7 @@ void PrologueEpiloguePass::run(
 
         for (auto it = saved_regs.rbegin(); it != saved_regs.rend(); ++it) {
           rewritten.push_back(std::make_unique<AsmInst>(
-              InstOpcode::LW, physical(static_cast<size_t>(it->first)),
+              restore_opcode_, physical(static_cast<size_t>(it->first)),
               std::vector<std::shared_ptr<AsmOperand>>{it->second}));
         }
         if (function->stack_size != 0) {

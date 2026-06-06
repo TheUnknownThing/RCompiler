@@ -14,6 +14,7 @@ namespace rc::backend {
 class PassManager {
 public:
   void run(ir::Module &module, std::ostream &os);
+  void run_rv64(ir::Module &module, std::ostream &os);
 
 private:
   opt::CFGVisitor cfg;

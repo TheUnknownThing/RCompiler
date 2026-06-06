@@ -56,8 +56,30 @@ std::string PseudoAsmEmitter::opcode_name(InstOpcode opcode) const {
     return "rem";
   case InstOpcode::REMU:
     return "remu";
+  case InstOpcode::ADDW:
+    return "addw";
+  case InstOpcode::SUBW:
+    return "subw";
+  case InstOpcode::SLLW:
+    return "sllw";
+  case InstOpcode::SRLW:
+    return "srlw";
+  case InstOpcode::SRAW:
+    return "sraw";
+  case InstOpcode::MULW:
+    return "mulw";
+  case InstOpcode::DIVW:
+    return "divw";
+  case InstOpcode::DIVUW:
+    return "divuw";
+  case InstOpcode::REMW:
+    return "remw";
+  case InstOpcode::REMUW:
+    return "remuw";
   case InstOpcode::ADDI:
     return "addi";
+  case InstOpcode::ADDIW:
+    return "addiw";
   case InstOpcode::XORI:
     return "xori";
   case InstOpcode::ORI:
@@ -70,6 +92,12 @@ std::string PseudoAsmEmitter::opcode_name(InstOpcode opcode) const {
     return "srli";
   case InstOpcode::SRAI:
     return "srai";
+  case InstOpcode::SLLIW:
+    return "slliw";
+  case InstOpcode::SRLIW:
+    return "srliw";
+  case InstOpcode::SRAIW:
+    return "sraiw";
   case InstOpcode::SLTI:
     return "slti";
   case InstOpcode::SLTIU:
@@ -84,6 +112,10 @@ std::string PseudoAsmEmitter::opcode_name(InstOpcode opcode) const {
     return "lbu";
   case InstOpcode::LHU:
     return "lhu";
+  case InstOpcode::LWU:
+    return "lwu";
+  case InstOpcode::LD:
+    return "ld";
   case InstOpcode::JALR:
     return "jalr";
   case InstOpcode::SB:
@@ -92,6 +124,8 @@ std::string PseudoAsmEmitter::opcode_name(InstOpcode opcode) const {
     return "sh";
   case InstOpcode::SW:
     return "sw";
+  case InstOpcode::SD:
+    return "sd";
   case InstOpcode::BEQ:
     return "beq";
   case InstOpcode::BNE:

@@ -704,7 +704,7 @@ bool RegAlloc::rewrite_spills(AsmFunction &function,
 
         auto temp = create_virtual_register(next_virtual_reg_id++);
         before.push_back(std::make_unique<AsmInst>(
-            InstOpcode::LW, temp,
+            spill_load_opcode_, temp,
             std::vector<std::shared_ptr<AsmOperand>>{slot}));
         loaded_temps.emplace(reg_id, temp);
         return temp;
@@ -733,8 +733,8 @@ bool RegAlloc::rewrite_spills(AsmFunction &function,
           auto temp_dst = create_virtual_register(next_virtual_reg_id++);
           new_dst = temp_dst;
           after.push_back(std::make_unique<AsmInst>(
-              InstOpcode::SW, std::vector<std::shared_ptr<AsmOperand>>{
-                                  temp_dst, spill_it->second}));
+              spill_store_opcode_, std::vector<std::shared_ptr<AsmOperand>>{
+                                     temp_dst, spill_it->second}));
           changed = true;
         }
       }
@@ -832,9 +832,9 @@ RegAlloc::create_physical_register(size_t id) const {
 
 std::shared_ptr<StackSlot>
 RegAlloc::create_spill_slot(AsmFunction &function) const {
-  size_t offset = align_to(function.stack_size, k_spill_slot_size);
-  auto slot = std::make_shared<StackSlot>(offset, k_spill_slot_size);
-  function.stack_size = offset + k_spill_slot_size;
+  size_t offset = align_to(function.stack_size, spill_slot_size_);
+  auto slot = std::make_shared<StackSlot>(offset, spill_slot_size_);
+  function.stack_size = offset + spill_slot_size_;
   return slot;
 }
 

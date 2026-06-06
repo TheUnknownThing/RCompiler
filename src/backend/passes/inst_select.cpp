@@ -61,10 +61,11 @@ void InstructionSelection::visit(const ir::BasicBlock &basic_block) {
         std::min<size_t>(8, current_function_->args().size());
     register_arg_slots.reserve(register_arg_count);
     for (size_t i = 0; i < register_arg_count; ++i) {
-      auto slot = std::make_shared<StackSlot>(align_to(stack_offset_, 4), 4);
+      auto slot = std::make_shared<StackSlot>(
+          align_to(stack_offset_, register_size_), register_size_);
       stack_offset_ = slot->offset + slot->size;
       register_arg_slots.push_back(slot);
-      current_block_->create_inst(InstOpcode::SW, nullptr,
+      current_block_->create_inst(register_store_opcode(), nullptr,
                                   {create_physical_register(10 + i), slot});
     }
 
@@ -76,24 +77,16 @@ void InstructionSelection::visit(const ir::BasicBlock &basic_block) {
       }
 
       if (i < 8) {
-        current_block_->create_inst(InstOpcode::LW, dst,
+        current_block_->create_inst(
+            load_opcode_for_type(current_function_->args()[i]->type()), dst,
                                     {register_arg_slots[i]});
         continue;
       }
 
       auto slot = create_incoming_arg_slot(i);
-      size_t arg_size =
-          compute_type_byte_size(current_function_->args()[i]->type());
-      if (arg_size == 1) {
-        current_block_->create_inst(InstOpcode::LB, dst, {slot});
-      } else if (arg_size == 2) {
-        current_block_->create_inst(InstOpcode::LH, dst, {slot});
-      } else if (arg_size == 4) {
-        current_block_->create_inst(InstOpcode::LW, dst, {slot});
-      } else {
-        throw std::runtime_error("unsupported incoming argument size: " +
-                                 std::to_string(arg_size));
-      }
+      current_block_->create_inst(
+          load_opcode_for_type(current_function_->args()[i]->type()), dst,
+          {slot});
     }
   }
 
@@ -129,11 +122,13 @@ void InstructionSelection::visit(const ir::BinaryOpInst &bin_op) {
     auto *lhs_imm = as_immediate(lhs);
     auto *rhs_imm = as_immediate(rhs);
     if (!lhs_imm && rhs_imm && rhs_imm->is_valid_12()) {
-      current_block_->create_inst(InstOpcode::ADDI, dst, {lhs, rhs});
+      current_block_->create_inst(immediate_add_opcode(bin_op.type()), dst,
+                                  {lhs, rhs});
       break;
     }
     if (!rhs_imm && lhs_imm && lhs_imm->is_valid_12()) {
-      current_block_->create_inst(InstOpcode::ADDI, dst, {rhs, lhs});
+      current_block_->create_inst(immediate_add_opcode(bin_op.type()), dst,
+                                  {rhs, lhs});
       break;
     }
     if (lhs_imm && rhs_imm) {
@@ -142,8 +137,9 @@ void InstructionSelection::visit(const ir::BinaryOpInst &bin_op) {
                                       lhs_imm->value + rhs_imm->value))});
       break;
     }
-    current_block_->create_inst(InstOpcode::ADD, dst,
-                                {get_reg(lhs), get_reg(rhs)});
+    current_block_->create_inst(
+        binary_opcode(InstOpcode::ADD, InstOpcode::ADDW, bin_op.type()), dst,
+        {get_reg(lhs), get_reg(rhs)});
     break;
   }
   case rc::ir::BinaryOpKind::SUB: {
@@ -151,65 +147,80 @@ void InstructionSelection::visit(const ir::BinaryOpInst &bin_op) {
       int32_t neg64 = -static_cast<int32_t>(imm->value);
       if (neg64 >= -2048 && neg64 <= 2047) {
         auto neg_imm = create_immediate(static_cast<int32_t>(neg64));
-        current_block_->create_inst(InstOpcode::ADDI, dst,
+        current_block_->create_inst(immediate_add_opcode(bin_op.type()), dst,
                                     {get_reg(lhs), neg_imm});
         break;
       }
     }
-    current_block_->create_inst(InstOpcode::SUB, dst,
-                                {get_reg(lhs), get_reg(rhs)});
+    current_block_->create_inst(
+        binary_opcode(InstOpcode::SUB, InstOpcode::SUBW, bin_op.type()), dst,
+        {get_reg(lhs), get_reg(rhs)});
     break;
   }
   case rc::ir::BinaryOpKind::MUL: {
-    current_block_->create_inst(InstOpcode::MUL, dst,
-                                {get_reg(lhs), get_reg(rhs)});
+    current_block_->create_inst(
+        binary_opcode(InstOpcode::MUL, InstOpcode::MULW, bin_op.type()), dst,
+        {get_reg(lhs), get_reg(rhs)});
     break;
   }
   case rc::ir::BinaryOpKind::SDIV: {
-    current_block_->create_inst(InstOpcode::DIV, dst,
-                                {get_reg(lhs), get_reg(rhs)});
+    current_block_->create_inst(
+        binary_opcode(InstOpcode::DIV, InstOpcode::DIVW, bin_op.type()), dst,
+        {get_reg(lhs), get_reg(rhs)});
     break;
   }
   case rc::ir::BinaryOpKind::UDIV: {
-    current_block_->create_inst(InstOpcode::DIVU, dst,
-                                {get_reg(lhs), get_reg(rhs)});
+    current_block_->create_inst(
+        binary_opcode(InstOpcode::DIVU, InstOpcode::DIVUW, bin_op.type()), dst,
+        {get_reg(lhs), get_reg(rhs)});
     break;
   }
   case rc::ir::BinaryOpKind::SREM: {
-    current_block_->create_inst(InstOpcode::REM, dst,
-                                {get_reg(lhs), get_reg(rhs)});
+    current_block_->create_inst(
+        binary_opcode(InstOpcode::REM, InstOpcode::REMW, bin_op.type()), dst,
+        {get_reg(lhs), get_reg(rhs)});
     break;
   }
   case rc::ir::BinaryOpKind::UREM: {
-    current_block_->create_inst(InstOpcode::REMU, dst,
-                                {get_reg(lhs), get_reg(rhs)});
+    current_block_->create_inst(
+        binary_opcode(InstOpcode::REMU, InstOpcode::REMUW, bin_op.type()), dst,
+        {get_reg(lhs), get_reg(rhs)});
     break;
   }
   case rc::ir::BinaryOpKind::SHL: {
     if (auto *imm = as_immediate(rhs); imm && imm_fits_shamt(imm->value)) {
-      current_block_->create_inst(InstOpcode::SLLI, dst, {get_reg(lhs), rhs});
+      current_block_->create_inst(
+          binary_opcode(InstOpcode::SLLI, InstOpcode::SLLIW, bin_op.type()),
+          dst, {get_reg(lhs), rhs});
       break;
     }
-    current_block_->create_inst(InstOpcode::SLL, dst,
-                                {get_reg(lhs), get_reg(rhs)});
+    current_block_->create_inst(
+        binary_opcode(InstOpcode::SLL, InstOpcode::SLLW, bin_op.type()), dst,
+        {get_reg(lhs), get_reg(rhs)});
     break;
   }
   case rc::ir::BinaryOpKind::ASHR: {
     if (auto *imm = as_immediate(rhs); imm && imm_fits_shamt(imm->value)) {
-      current_block_->create_inst(InstOpcode::SRAI, dst, {get_reg(lhs), rhs});
+      current_block_->create_inst(
+          binary_opcode(InstOpcode::SRAI, InstOpcode::SRAIW, bin_op.type()),
+          dst, {get_reg(lhs), rhs});
       break;
     }
-    current_block_->create_inst(InstOpcode::SRA, dst,
-                                {get_reg(lhs), get_reg(rhs)});
+    current_block_->create_inst(
+        binary_opcode(InstOpcode::SRA, InstOpcode::SRAW, bin_op.type()), dst,
+        {get_reg(lhs), get_reg(rhs)});
     break;
   }
   case rc::ir::BinaryOpKind::LSHR: {
     if (auto *imm = as_immediate(rhs); imm && imm_fits_shamt(imm->value)) {
-      current_block_->create_inst(InstOpcode::SRLI, dst, {get_reg(lhs), rhs});
+      current_block_->create_inst(
+          binary_opcode(InstOpcode::SRLI, InstOpcode::SRLIW, bin_op.type()),
+          dst, {get_reg(lhs), rhs});
       break;
     }
-    current_block_->create_inst(InstOpcode::SRL, dst,
-                                {get_reg(lhs), get_reg(rhs)});
+    current_block_->create_inst(
+        binary_opcode(InstOpcode::SRL, InstOpcode::SRLW, bin_op.type()), dst,
+        {get_reg(lhs), get_reg(rhs)});
     break;
   }
   case rc::ir::BinaryOpKind::AND: {
@@ -260,6 +271,7 @@ void InstructionSelection::visit(const ir::BinaryOpInst &bin_op) {
   default:
     throw std::runtime_error("unhandled binary operation");
   }
+  normalize_rv64_unsigned_word(dst, bin_op.type());
 }
 
 void InstructionSelection::visit(const ir::AllocaInst &alloca) {
@@ -283,34 +295,17 @@ void InstructionSelection::visit(const ir::LoadInst &load) {
   if (load_size == 0) {
     throw std::runtime_error("cannot load type with zero byte size");
   }
+  auto load_opcode = load_opcode_for_type(load.type());
 
   if (slot) {
-    if (load_size == 1) {
-      current_block_->create_inst(InstOpcode::LB, dst, {slot});
-    } else if (load_size == 2) {
-      current_block_->create_inst(InstOpcode::LH, dst, {slot});
-    } else if (load_size == 4) {
-      current_block_->create_inst(InstOpcode::LW, dst, {slot});
-    } else {
-      throw std::runtime_error("unsupported load size: " +
-                               std::to_string(load_size));
-    }
+    current_block_->create_inst(load_opcode, dst, {slot});
     return;
   }
 
   if (ptr->type == OperandType::REG) {
     auto base = get_reg(ptr);
     auto zero = create_immediate(0);
-    if (load_size == 1) {
-      current_block_->create_inst(InstOpcode::LB, dst, {base, zero});
-    } else if (load_size == 2) {
-      current_block_->create_inst(InstOpcode::LH, dst, {base, zero});
-    } else if (load_size == 4) {
-      current_block_->create_inst(InstOpcode::LW, dst, {base, zero});
-    } else {
-      throw std::runtime_error("unsupported load size: " +
-                               std::to_string(load_size));
-    }
+    current_block_->create_inst(load_opcode, dst, {base, zero});
     return;
   }
 
@@ -331,40 +326,17 @@ void InstructionSelection::visit(const ir::StoreInst &store) {
   if (store_size == 0) {
     throw std::runtime_error("cannot store type with zero byte size");
   }
+  auto store_opcode = store_opcode_for_type(store.value()->type());
 
   if (slot) {
-    if (store_size == 1) {
-      current_block_->create_inst(InstOpcode::SB, nullptr,
-                                  {get_reg(src), slot});
-    } else if (store_size == 2) {
-      current_block_->create_inst(InstOpcode::SH, nullptr,
-                                  {get_reg(src), slot});
-    } else if (store_size == 4) {
-      current_block_->create_inst(InstOpcode::SW, nullptr,
-                                  {get_reg(src), slot});
-    } else {
-      throw std::runtime_error("unsupported store size: " +
-                               std::to_string(store_size));
-    }
+    current_block_->create_inst(store_opcode, nullptr, {get_reg(src), slot});
     return;
   }
 
   if (ptr->type == OperandType::REG) {
     auto base = get_reg(ptr);
     auto zero = create_immediate(0);
-    if (store_size == 1) {
-      current_block_->create_inst(InstOpcode::SB, nullptr,
-                                  {get_reg(src), base, zero});
-    } else if (store_size == 2) {
-      current_block_->create_inst(InstOpcode::SH, nullptr,
-                                  {get_reg(src), base, zero});
-    } else if (store_size == 4) {
-      current_block_->create_inst(InstOpcode::SW, nullptr,
-                                  {get_reg(src), base, zero});
-    } else {
-      throw std::runtime_error("unsupported store size: " +
-                               std::to_string(store_size));
-    }
+    current_block_->create_inst(store_opcode, nullptr, {get_reg(src), base, zero});
     return;
   }
 
@@ -723,7 +695,7 @@ void InstructionSelection::visit(const ir::CallInst &call) {
   }
 
   const size_t stack_arg_count = args.size() > 8 ? args.size() - 8 : 0;
-  const size_t stack_arg_bytes = align_to(stack_arg_count * 4, 16);
+  const size_t stack_arg_bytes = align_to(stack_arg_count * register_size_, 16);
   auto sp = create_physical_register(2);
 
   std::shared_ptr<Register> outgoing_sp;
@@ -732,9 +704,9 @@ void InstructionSelection::visit(const ir::CallInst &call) {
     emit_add_immediate(outgoing_sp, sp, -static_cast<int64_t>(stack_arg_bytes));
     for (size_t i = 8; i < arg_temps.size(); ++i) {
       current_block_->create_inst(
-          InstOpcode::SW, nullptr,
+          register_store_opcode(), nullptr,
           {arg_temps[i], outgoing_sp,
-           create_immediate(static_cast<int32_t>((i - 8) * 4))});
+           create_immediate(static_cast<int32_t>((i - 8) * register_size_))});
     }
   }
 
@@ -791,10 +763,10 @@ void InstructionSelection::visit(const ir::SExtInst &sext_inst) {
   auto src = resolve_operand_or_immediate(sext_inst.source(),
                                           "operand for SExtInst", &sext_inst);
   current_block_->create_inst(
-      InstOpcode::SLLI, dst,
+      binary_opcode(InstOpcode::SLLI, InstOpcode::SLLIW, sext_inst.type()), dst,
       {get_reg(src), create_immediate(32 - sext_inst.src_bits())});
   current_block_->create_inst(
-      InstOpcode::SRAI, dst,
+      binary_opcode(InstOpcode::SRAI, InstOpcode::SRAIW, sext_inst.type()), dst,
       {get_reg(dst), create_immediate(32 - sext_inst.src_bits())});
 }
 
@@ -820,7 +792,7 @@ void InstructionSelection::visit(const ir::MoveInst &move_inst) {
 
   auto src = resolve_operand_or_immediate(move_inst.source(),
                                           "operand for MoveInst", &move_inst);
-  current_block_->create_inst(InstOpcode::ADDI, dst,
+  current_block_->create_inst(immediate_add_opcode(move_inst.destination()->type()), dst,
                               {get_reg(src), create_immediate(0)});
 }
 
@@ -922,7 +894,8 @@ InstructionSelection::create_incoming_arg_slot(size_t arg_index) {
   if (arg_index < 8) {
     throw std::runtime_error("register argument requested as stack argument");
   }
-  return std::make_shared<StackSlot>((arg_index - 8) * 4, 4,
+  return std::make_shared<StackSlot>((arg_index - 8) * register_size_,
+                                     register_size_,
                                      StackSlotKind::INCOMING_ARG);
 }
 
@@ -947,6 +920,112 @@ size_t InstructionSelection::align_to(size_t offset, size_t align) const {
   }
   auto rem = offset % align;
   return rem ? (offset + (align - rem)) : offset;
+}
+
+bool InstructionSelection::use_rv64_word_ops(const ir::TypePtr &ty) const {
+  if (register_size_ != 8) {
+    return false;
+  }
+  auto int_ty = std::dynamic_pointer_cast<const ir::IntegerType>(ty);
+  return int_ty && int_ty->bits() <= 32;
+}
+
+bool InstructionSelection::needs_rv64_unsigned_word_normalize(
+    const ir::TypePtr &ty) const {
+  if (register_size_ != 8) {
+    return false;
+  }
+  auto int_ty = std::dynamic_pointer_cast<const ir::IntegerType>(ty);
+  return int_ty && int_ty->bits() == 32 && !int_ty->is_signed();
+}
+
+InstOpcode InstructionSelection::register_load_opcode() const {
+  return register_size_ == 8 ? InstOpcode::LD : InstOpcode::LW;
+}
+
+InstOpcode InstructionSelection::register_store_opcode() const {
+  return register_size_ == 8 ? InstOpcode::SD : InstOpcode::SW;
+}
+
+InstOpcode InstructionSelection::load_opcode_for_type(
+    const ir::TypePtr &ty) const {
+  if (std::dynamic_pointer_cast<const ir::PointerType>(ty)) {
+    return register_load_opcode();
+  }
+
+  auto int_ty = std::dynamic_pointer_cast<const ir::IntegerType>(ty);
+  if (!int_ty) {
+    throw std::runtime_error("unsupported load type");
+  }
+
+  size_t load_size = compute_type_byte_size(ty);
+  if (load_size == 1) {
+    if (register_size_ == 8 && !int_ty->is_signed()) {
+      return InstOpcode::LBU;
+    }
+    return InstOpcode::LB;
+  }
+  if (load_size == 2) {
+    if (register_size_ == 8 && !int_ty->is_signed()) {
+      return InstOpcode::LHU;
+    }
+    return InstOpcode::LH;
+  }
+  if (load_size == 4) {
+    if (register_size_ == 8 && !int_ty->is_signed()) {
+      return InstOpcode::LWU;
+    }
+    return InstOpcode::LW;
+  }
+  if (load_size == 8 && register_size_ == 8) {
+    return InstOpcode::LD;
+  }
+  throw std::runtime_error("unsupported load size: " + std::to_string(load_size));
+}
+
+InstOpcode InstructionSelection::store_opcode_for_type(
+    const ir::TypePtr &ty) const {
+  if (std::dynamic_pointer_cast<const ir::PointerType>(ty)) {
+    return register_store_opcode();
+  }
+
+  size_t store_size = compute_type_byte_size(ty);
+  if (store_size == 1) {
+    return InstOpcode::SB;
+  }
+  if (store_size == 2) {
+    return InstOpcode::SH;
+  }
+  if (store_size == 4) {
+    return InstOpcode::SW;
+  }
+  if (store_size == 8 && register_size_ == 8) {
+    return InstOpcode::SD;
+  }
+  throw std::runtime_error("unsupported store size: " +
+                           std::to_string(store_size));
+}
+
+InstOpcode InstructionSelection::binary_opcode(InstOpcode rv32_opcode,
+                                               InstOpcode rv64_word_opcode,
+                                               const ir::TypePtr &ty) const {
+  return use_rv64_word_ops(ty) ? rv64_word_opcode : rv32_opcode;
+}
+
+InstOpcode InstructionSelection::immediate_add_opcode(
+    const ir::TypePtr &ty) const {
+  return binary_opcode(InstOpcode::ADDI, InstOpcode::ADDIW, ty);
+}
+
+void InstructionSelection::normalize_rv64_unsigned_word(
+    const std::shared_ptr<Register> &reg, const ir::TypePtr &ty) {
+  if (!needs_rv64_unsigned_word_normalize(ty)) {
+    return;
+  }
+  current_block_->create_inst(InstOpcode::SLLI, reg,
+                              {reg, create_immediate(32)});
+  current_block_->create_inst(InstOpcode::SRLI, reg,
+                              {reg, create_immediate(32)});
 }
 
 InstructionSelection::TypeLayoutInfo
@@ -976,7 +1055,7 @@ InstructionSelection::compute_type_layout(const ir::TypePtr &ty) const {
     return {offset, max_align};
   }
   if (std::dynamic_pointer_cast<const ir::PointerType>(ty)) {
-    size_t ptr_bytes = 4;
+    size_t ptr_bytes = register_size_;
     return {ptr_bytes, ptr_bytes};
   }
   if (ty->is_void()) {
