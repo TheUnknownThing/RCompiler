@@ -16,7 +16,7 @@ void PassManager::run(ir::Module &module, std::ostream &os) {
   frame_pass.run(inst_select.functions());
 
   AsmEmitter asm_emitter;
-  asm_emitter.emit(inst_select.functions(), os);
+  asm_emitter.emit(inst_select.functions(), module.constants(), os);
 }
 
 void PassManager::run_rv64(ir::Module &module, std::ostream &os) {
@@ -34,7 +34,7 @@ void PassManager::run_rv64(ir::Module &module, std::ostream &os) {
   frame_pass.run(inst_select.functions());
 
   AsmEmitter asm_emitter;
-  asm_emitter.emit(inst_select.functions(), os);
+  asm_emitter.emit(inst_select.functions(), module.constants(), os);
 }
 
 } // namespace rc::backend

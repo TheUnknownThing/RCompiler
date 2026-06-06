@@ -4,7 +4,9 @@ namespace rc::backend {
 
 void
 AsmEmitter::emit(const std::vector<std::unique_ptr<AsmFunction>> &functions,
+                 const std::vector<std::shared_ptr<ir::Constant>> &constants,
                  std::ostream &os) const {
+  emit_constants(constants, os);
   os << "\t.text\n";
   for (const auto &function : functions) {
     if (!function) {
@@ -25,6 +27,69 @@ AsmEmitter::emit(const std::vector<std::unique_ptr<AsmFunction>> &functions,
       }
     }
   }
+}
+
+void AsmEmitter::emit_constants(
+    const std::vector<std::shared_ptr<ir::Constant>> &constants,
+    std::ostream &os) const {
+  bool emitted_header = false;
+  for (const auto &constant : constants) {
+    if (!constant) {
+      continue;
+    }
+    auto string_const = std::dynamic_pointer_cast<ir::ConstantString>(constant);
+    if (!string_const) {
+      continue;
+    }
+    if (!emitted_header) {
+      os << "\t.section\t.rodata\n";
+      emitted_header = true;
+    }
+    os << "\t.align\t3\n";
+    os << constant->name() << ":\n";
+    os << "\t.string\t\"" << escaped_string_data(string_const->data())
+       << "\"\n";
+  }
+  if (emitted_header) {
+    os << "\n";
+  }
+}
+
+std::string AsmEmitter::escaped_string_data(const std::string &data) const {
+  std::string out;
+  for (unsigned char ch : data) {
+    switch (ch) {
+    case '\0':
+      out += "\\000";
+      break;
+    case '\n':
+      out += "\\n";
+      break;
+    case '\r':
+      out += "\\r";
+      break;
+    case '\t':
+      out += "\\t";
+      break;
+    case '\\':
+      out += "\\\\";
+      break;
+    case '"':
+      out += "\\\"";
+      break;
+    default:
+      if (ch < 32 || ch >= 127) {
+        constexpr char hex[] = "0123456789abcdef";
+        out += "\\x";
+        out.push_back(hex[(ch >> 4) & 0xf]);
+        out.push_back(hex[ch & 0xf]);
+      } else {
+        out.push_back(static_cast<char>(ch));
+      }
+      break;
+    }
+  }
+  return out;
 }
 
 std::string AsmEmitter::opcode_name(InstOpcode opcode) const {

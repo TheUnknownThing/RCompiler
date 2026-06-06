@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -159,9 +160,11 @@ public:
       return false;
     }
 
-    const std::uint64_t a = lhs_c->value();
-    const std::uint64_t b = rhs_c->value();
-    std::optional<std::uint64_t> folded;
+    const std::uint32_t a = static_cast<std::uint32_t>(lhs_c->value());
+    const std::uint32_t b = static_cast<std::uint32_t>(rhs_c->value());
+    const auto sa = static_cast<std::int32_t>(a);
+    const auto sb = static_cast<std::int32_t>(b);
+    std::optional<std::uint32_t> folded;
 
     switch (bin->op()) {
     case ir::BinaryOpKind::ADD:
@@ -174,14 +177,26 @@ public:
       folded = a * b;
       break;
     case ir::BinaryOpKind::UDIV:
-    case ir::BinaryOpKind::SDIV:
       if (b == 0) {
         return false;
       }
       folded = a / b;
       break;
-    case ir::BinaryOpKind::UREM:
     case ir::BinaryOpKind::SREM:
+      if (sb == 0 || (sa == std::numeric_limits<std::int32_t>::min() &&
+                      sb == -1)) {
+        return false;
+      }
+      folded = static_cast<std::uint32_t>(sa % sb);
+      break;
+    case ir::BinaryOpKind::SDIV:
+      if (sb == 0 || (sa == std::numeric_limits<std::int32_t>::min() &&
+                      sb == -1)) {
+        return false;
+      }
+      folded = static_cast<std::uint32_t>(sa / sb);
+      break;
+    case ir::BinaryOpKind::UREM:
       if (b == 0) {
         return false;
       }
@@ -197,10 +212,21 @@ public:
       folded = a ^ b;
       break;
     case ir::BinaryOpKind::SHL:
+      if (b >= 32) {
+        return false;
+      }
       folded = a << b;
       break;
-    case ir::BinaryOpKind::LSHR:
     case ir::BinaryOpKind::ASHR:
+      if (b >= 32) {
+        return false;
+      }
+      folded = static_cast<std::uint32_t>(sa >> b);
+      break;
+    case ir::BinaryOpKind::LSHR:
+      if (b >= 32) {
+        return false;
+      }
       folded = a >> b;
       break;
     }
@@ -209,7 +235,7 @@ public:
       return false;
     }
 
-    auto c = ctx.get_i32(static_cast<int>(*folded));
+    auto c = ctx.get_i32(static_cast<std::int32_t>(*folded));
     return InstCombinePass::replace_inst_with_value(inst, c.get());
   }
 };
@@ -540,8 +566,10 @@ public:
     if (!lhs_c || !rhs_c) {
       return false;
     }
-    const std::uint64_t a = lhs_c->value();
-    const std::uint64_t b = rhs_c->value();
+    const std::uint32_t a = static_cast<std::uint32_t>(lhs_c->value());
+    const std::uint32_t b = static_cast<std::uint32_t>(rhs_c->value());
+    const auto sa = static_cast<std::int32_t>(a);
+    const auto sb = static_cast<std::int32_t>(b);
 
     bool res = false;
     switch (icmp->pred()) {
@@ -564,16 +592,16 @@ public:
       res = (a <= b);
       break;
     case ir::ICmpPred::SGT:
-      res = (static_cast<std::int64_t>(a) > static_cast<std::int64_t>(b));
+      res = (sa > sb);
       break;
     case ir::ICmpPred::SGE:
-      res = (static_cast<std::int64_t>(a) >= static_cast<std::int64_t>(b));
+      res = (sa >= sb);
       break;
     case ir::ICmpPred::SLT:
-      res = (static_cast<std::int64_t>(a) < static_cast<std::int64_t>(b));
+      res = (sa < sb);
       break;
     case ir::ICmpPred::SLE:
-      res = (static_cast<std::int64_t>(a) <= static_cast<std::int64_t>(b));
+      res = (sa <= sb);
       break;
     }
 

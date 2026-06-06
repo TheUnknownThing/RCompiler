@@ -1,6 +1,7 @@
 #pragma once
 
 #include "backend/nodes/instructions.hpp"
+#include "ir/instructions/type.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -14,11 +15,15 @@ namespace rc::backend {
 class AsmEmitter {
 public:
   void emit(const std::vector<std::unique_ptr<AsmFunction>> &functions,
+            const std::vector<std::shared_ptr<ir::Constant>> &constants,
             std::ostream &os) const;
 
 private:
   mutable size_t long_branch_id_{0};
 
+  void emit_constants(const std::vector<std::shared_ptr<ir::Constant>> &constants,
+                      std::ostream &os) const;
+  std::string escaped_string_data(const std::string &data) const;
   std::string opcode_name(InstOpcode opcode) const;
   std::string reg_name(const std::shared_ptr<AsmOperand> &operand) const;
   std::string symbol_name(const std::shared_ptr<AsmOperand> &operand) const;
