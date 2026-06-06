@@ -152,58 +152,62 @@ void SCCPVisitor::visit(ir::BinaryOpInst &binary_op_inst) {
           const auto rhs_u32 = static_cast<std::uint32_t>(rhs_value);
           const auto lhs_s32 = static_cast<std::int32_t>(lhs_u32);
           const auto rhs_s32 = static_cast<std::int32_t>(rhs_u32);
-          switch (binary_op_inst.op()) {
-          case ir::BinaryOpKind::ADD:
-            result_const = context_->get_int_constant(
-                static_cast<std::int32_t>(lhs_u32 + rhs_u32), false);
-            break;
-          case ir::BinaryOpKind::SUB:
-            result_const = context_->get_int_constant(
-                static_cast<std::int32_t>(lhs_u32 - rhs_u32), false);
-            break;
-          case ir::BinaryOpKind::MUL:
-            result_const = context_->get_int_constant(
-                static_cast<std::int32_t>(lhs_u32 * rhs_u32), false);
-            break;
-          case ir::BinaryOpKind::UDIV:
-            if (rhs_u32 != 0) {
-              result_const = context_->get_int_constant(
-                  static_cast<std::int32_t>(lhs_u32 / rhs_u32), false);
-            } else {
-              kind = LatticeValueKind::OVERDEF;
-            }
-            break;
-          case ir::BinaryOpKind::SDIV:
-            if (rhs_s32 != 0 &&
-                !(lhs_s32 == std::numeric_limits<std::int32_t>::min() &&
-                  rhs_s32 == -1)) {
-              result_const = context_->get_int_constant(lhs_s32 / rhs_s32,
-                                                        false);
-            } else {
-              kind = LatticeValueKind::OVERDEF;
-            }
-            break;
-          case ir::BinaryOpKind::UREM:
-            if (rhs_u32 != 0) {
-              result_const = context_->get_int_constant(
-                  static_cast<std::int32_t>(lhs_u32 % rhs_u32), false);
-            } else {
-              kind = LatticeValueKind::OVERDEF;
-            }
-            break;
-          case ir::BinaryOpKind::SREM:
-            if (rhs_s32 != 0 &&
-                !(lhs_s32 == std::numeric_limits<std::int32_t>::min() &&
-                  rhs_s32 == -1)) {
-              result_const = context_->get_int_constant(lhs_s32 % rhs_s32,
-                                                        false);
-            } else {
-              kind = LatticeValueKind::OVERDEF;
-            }
-            break;
-          default:
+          auto result_ty = std::dynamic_pointer_cast<const ir::IntegerType>(
+              binary_op_inst.type());
+          if (!result_ty) {
             kind = LatticeValueKind::OVERDEF;
-            break;
+          } else {
+            auto make_result = [&](std::uint64_t value) {
+              return context_->get_typed_int_constant(result_ty, value);
+            };
+            switch (binary_op_inst.op()) {
+            case ir::BinaryOpKind::ADD:
+              result_const = make_result(lhs_u32 + rhs_u32);
+              break;
+            case ir::BinaryOpKind::SUB:
+              result_const = make_result(lhs_u32 - rhs_u32);
+              break;
+            case ir::BinaryOpKind::MUL:
+              result_const = make_result(lhs_u32 * rhs_u32);
+              break;
+            case ir::BinaryOpKind::UDIV:
+              if (rhs_u32 != 0) {
+                result_const = make_result(lhs_u32 / rhs_u32);
+              } else {
+                kind = LatticeValueKind::OVERDEF;
+              }
+              break;
+            case ir::BinaryOpKind::SDIV:
+              if (rhs_s32 != 0 &&
+                  !(lhs_s32 == std::numeric_limits<std::int32_t>::min() &&
+                    rhs_s32 == -1)) {
+                result_const = make_result(static_cast<std::uint32_t>(
+                    lhs_s32 / rhs_s32));
+              } else {
+                kind = LatticeValueKind::OVERDEF;
+              }
+              break;
+            case ir::BinaryOpKind::UREM:
+              if (rhs_u32 != 0) {
+                result_const = make_result(lhs_u32 % rhs_u32);
+              } else {
+                kind = LatticeValueKind::OVERDEF;
+              }
+              break;
+            case ir::BinaryOpKind::SREM:
+              if (rhs_s32 != 0 &&
+                  !(lhs_s32 == std::numeric_limits<std::int32_t>::min() &&
+                    rhs_s32 == -1)) {
+                result_const = make_result(static_cast<std::uint32_t>(
+                    lhs_s32 % rhs_s32));
+              } else {
+                kind = LatticeValueKind::OVERDEF;
+              }
+              break;
+            default:
+              kind = LatticeValueKind::OVERDEF;
+              break;
+            }
           }
         } else {
           kind = LatticeValueKind::OVERDEF;
@@ -483,7 +487,7 @@ void SCCPVisitor::visit(ir::ICmpInst &icmp_inst) {
             kind = LatticeValueKind::OVERDEF;
             break;
           }
-          result_const = context_->get_int_constant(cmp_result ? 1 : 0, false);
+          result_const = context_->get_bool_constant(cmp_result);
         } else {
           kind = LatticeValueKind::OVERDEF;
         }

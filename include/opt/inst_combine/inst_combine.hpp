@@ -39,6 +39,20 @@ public:
     return ir::ConstantInt::get_i1(v);
   }
 
+  std::shared_ptr<ir::ConstantInt>
+  get_typed_int(const std::shared_ptr<const ir::IntegerType> &type,
+                std::uint64_t value) {
+    if (!type) {
+      throw std::invalid_argument("integer type is required");
+    }
+    if (const_ctx_) {
+      return const_ctx_->get_typed_int_constant(type, value);
+    }
+    return std::make_shared<ir::ConstantInt>(
+        std::make_shared<ir::IntegerType>(type->bits(), type->is_signed()),
+        value);
+  }
+
 private:
   ConstantContext *const_ctx_{nullptr};
 };
@@ -235,7 +249,11 @@ public:
       return false;
     }
 
-    auto c = ctx.get_i32(static_cast<std::int32_t>(*folded));
+    auto type = std::dynamic_pointer_cast<const ir::IntegerType>(bin->type());
+    if (!type) {
+      return false;
+    }
+    auto c = ctx.get_typed_int(type, *folded);
     return InstCombinePass::replace_inst_with_value(inst, c.get());
   }
 };

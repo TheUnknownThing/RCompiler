@@ -235,12 +235,15 @@ void IREmitter::visit(BinaryExpression &node) {
   auto rhs = pop_operand();
   lhs = load_ptr_value(lhs, context->lookup_type(node.left.get()));
   rhs = load_ptr_value(rhs, context->lookup_type(node.right.get()));
+  auto node_ty = context->resolve_type(context->lookup_type(&node));
+  auto lhs_sem_ty = context->resolve_type(context->lookup_type(node.left.get()));
 
   auto op_kind = token_to_op(node.op.type);
   if (op_kind) {
     LOG_DEBUG("[IREmitter] Emitting binary arithmetic/logical op");
 
-    auto lhs_int_ty = std::dynamic_pointer_cast<const IntegerType>(lhs->type());
+    auto lhs_int_ty =
+        std::dynamic_pointer_cast<const IntegerType>(lhs_sem_ty);
     bool is_unsigned = lhs_int_ty && !lhs_int_ty->is_signed();
     BinaryOpKind adjusted_op = *op_kind;
     if (is_unsigned) {
@@ -259,12 +262,12 @@ void IREmitter::visit(BinaryExpression &node) {
       }
     }
     auto result =
-        current_block_->append<BinaryOpInst>(adjusted_op, lhs, rhs, lhs->type());
+        current_block_->append<BinaryOpInst>(adjusted_op, lhs, rhs, node_ty);
     push_operand(result);
     return;
   }
 
-  auto lhs_int = std::dynamic_pointer_cast<const IntegerType>(lhs->type());
+  auto lhs_int = std::dynamic_pointer_cast<const IntegerType>(lhs_sem_ty);
 
   ICmpPred pred;
   switch (node.op.type) {
