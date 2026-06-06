@@ -1302,20 +1302,35 @@ void IREmitter::visit(LoopExpression &node) {
   auto cur_func = functions_.back();
   auto body_block = cur_func->create_block("loop_body");
   auto after_block = cur_func->create_block("loop_after");
+  auto result_sem_ty = context->lookup_type(&node);
+  auto result_ir_ty = context->resolve_type(result_sem_ty);
 
   current_block_->append<BranchInst>(body_block.get());
 
   current_block_ = body_block;
   // break -> afterBlock, continue -> bodyBlock
-  loop_stack_.push_back({after_block, body_block});
+  loop_stack_.push_back({after_block, body_block, result_ir_ty, {}});
   node.body->accept(*this);
+  auto loop_ctx = std::move(loop_stack_.back());
   if (!current_block_->is_terminated()) {
     current_block_->append<BranchInst>(body_block.get());
   }
   loop_stack_.pop_back();
 
   current_block_ = after_block;
-  push_operand(std::make_shared<ConstantUnit>());
+  if (result_ir_ty->is_void()) {
+    push_operand(std::make_shared<ConstantUnit>());
+  } else {
+    if (loop_ctx.result_incomings.empty()) {
+      current_block_->append<UnreachableInst>();
+      push_operand(std::make_shared<UndefValue>(result_ir_ty));
+      return;
+    }
+    auto phi =
+        current_block_->append<PhiInst>(result_ir_ty, loop_ctx.result_incomings,
+                                        "loop_result");
+    push_operand(phi);
+  }
   LOG_DEBUG("[IREmitter] Finished loop expression");
 }
 
@@ -1338,7 +1353,8 @@ void IREmitter::visit(WhileExpression &node) {
 
   current_block_ = body_block;
   // break -> afterBlock, continue -> condBlock
-  loop_stack_.push_back({after_block, cond_block});
+  loop_stack_.push_back(
+      {after_block, cond_block, std::make_shared<VoidType>(), {}});
   node.body->accept(*this);
   if (!current_block_->is_terminated()) {
     current_block_->append<BranchInst>(cond_block.get());
@@ -1580,14 +1596,30 @@ void IREmitter::visit(TupleExpression &) {
   throw std::runtime_error("TupleExpression emission not implemented");
 }
 
-void IREmitter::visit(BreakExpression &) {
+void IREmitter::visit(BreakExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting break expression");
   if (loop_stack_.empty()) {
     throw IRException("break used outside of loop"); // this should never happen
   }
+  auto &loop_ctx = loop_stack_.back();
+  ValuePtr stack_value = std::make_shared<ConstantUnit>();
+  if (node.expr) {
+    node.expr.value()->accept(*this);
+    auto break_value = pop_operand();
+    auto break_sem_ty = context->lookup_type(node.expr.value().get());
+    auto break_ir_ty = context->resolve_type(break_sem_ty);
+    break_value = load_ptr_value(break_value, break_sem_ty);
+    if (!loop_ctx.result_type->is_void()) {
+      if (is_aggregate_type(break_ir_ty)) {
+        throw IRException("aggregate break values are not supported");
+      }
+      loop_ctx.result_incomings.push_back({break_value, current_block_.get()});
+    }
+    stack_value = std::make_shared<UndefValue>(break_ir_ty);
+  }
   // break target is the first element of the pair
-  auto target_block = loop_stack_.back().first;
-  push_operand(std::make_shared<ConstantUnit>());
+  auto target_block = loop_ctx.break_target;
+  push_operand(stack_value);
   current_block_->append<BranchInst>(target_block.get());
   // should never have dead code, but just in case
   auto cur_func = functions_.back();
@@ -1601,7 +1633,7 @@ void IREmitter::visit(ContinueExpression &) {
     throw IRException(
         "continue used outside of loop"); // this should never happen
   }
-  auto target_block = loop_stack_.back().second;
+  auto target_block = loop_stack_.back().continue_target;
   push_operand(std::make_shared<ConstantUnit>());
   current_block_->append<BranchInst>(target_block.get());
   // should never have dead code, but just in case

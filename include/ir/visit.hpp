@@ -110,10 +110,13 @@ private:
       locals_; // local mapped to their memory location or SSA
 
   std::vector<ValuePtr> operand_stack_;
-  // pair<break_target, continue_target>
-  std::vector<
-      std::pair<std::shared_ptr<BasicBlock>, std::shared_ptr<BasicBlock>>>
-      loop_stack_;
+  struct LoopContext {
+    std::shared_ptr<BasicBlock> break_target;
+    std::shared_ptr<BasicBlock> continue_target;
+    TypePtr result_type;
+    std::vector<PhiInst::Incoming> result_incomings;
+  };
+  std::vector<LoopContext> loop_stack_;
 
   std::unordered_map<const FunctionMetaData *, TypePtr> sret_functions_;
   ValuePtr current_sret_ptr_;
