@@ -53,6 +53,7 @@ public:
 
 private:
   std::vector<ir::Instruction *> instruction_worklist_;
+  std::unordered_set<ir::Instruction *> in_worklist_;
   std::vector<std::pair<const ir::BasicBlock *, const ir::BasicBlock *>> edges_;
 
   std::unordered_map<ir::Value *, LatticeValueKind> lattice_values_;
@@ -66,6 +67,23 @@ private:
 
   void remove_dead_instructions(ir::Function &function);
   void remove_dead_blocks(ir::Function &function);
+
+  void push_inst(ir::Instruction *inst) {
+    if (!inst) {
+      return;
+    }
+    if (in_worklist_.insert(inst).second) {
+      instruction_worklist_.push_back(inst);
+    }
+  }
+
+  void push_users(ir::Value &value) {
+    for (auto *user : value.get_uses()) {
+      if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
+        push_inst(inst);
+      }
+    }
+  }
 
   LatticeValueKind get_lattice_value(ir::Value *value) {
     if (!value) {

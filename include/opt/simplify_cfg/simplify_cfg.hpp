@@ -34,6 +34,9 @@ private:
                           std::shared_ptr<ir::BasicBlock> new_bb);
   void merge_blocks(ir::Function *func, std::shared_ptr<ir::BasicBlock> from,
                    std::shared_ptr<ir::BasicBlock> to);
+  void merge_blocks_incremental(ir::Function *func,
+                                std::shared_ptr<ir::BasicBlock> from,
+                                std::shared_ptr<ir::BasicBlock> to);
   bool try_fold_trivial_phi(ir::BasicBlock &bb,
                          const std::shared_ptr<ir::PhiInst> &phi);
   bool fold_trivial_phis_in_block(ir::BasicBlock &bb);

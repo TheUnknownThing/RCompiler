@@ -37,10 +37,10 @@ public:
   void remove_dead_instructions(ir::Function &function);
 
 private:
-  std::unordered_map<const ir::BasicBlock *,
-                     std::unordered_set<ir::BasicBlock *>>
-      dominators_;
   std::unordered_map<ir::BasicBlock *, ir::BasicBlock *> idom_;
+  std::unordered_map<ir::BasicBlock *, std::size_t> rpo_index_;
+  std::unordered_map<ir::BasicBlock *, std::vector<ir::BasicBlock *>>
+      dom_tree_children_;
   std::unordered_map<const ir::BasicBlock *,
                      std::unordered_set<ir::BasicBlock *>>
       dominance_frontiers_;

@@ -15,14 +15,22 @@ AsmEmitter::emit(const std::vector<std::unique_ptr<AsmFunction>> &functions,
 
     os << "\t.globl\t" << function->name << "\n";
     os << function->name << ":\n";
-    for (const auto &block : function->blocks) {
+    for (std::size_t i = 0; i < function->blocks.size(); ++i) {
+      const auto &block = function->blocks[i];
       if (!block) {
         continue;
+      }
+      const std::string *next_block_name = nullptr;
+      for (std::size_t j = i + 1; j < function->blocks.size(); ++j) {
+        if (function->blocks[j]) {
+          next_block_name = &function->blocks[j]->name;
+          break;
+        }
       }
       os << block->name << ":\n";
       for (const auto &inst : block->instructions) {
         if (inst) {
-          emit_inst(*function, *inst, os);
+          emit_inst(*function, *inst, next_block_name, os);
         }
       }
     }
@@ -336,6 +344,7 @@ void AsmEmitter::emit_store(
 
 void AsmEmitter::emit_inst(const AsmFunction &function,
                                  const AsmInst &inst,
+                                 const std::string *next_block_name,
                                  std::ostream &os) const {
   const auto opcode = inst.get_opcode();
   const auto &uses = inst.get_uses();
@@ -420,12 +429,39 @@ void AsmEmitter::emit_inst(const AsmFunction &function,
   case InstOpcode::BEQZ:
   case InstOpcode::BNEZ:
     if (uses.size() >= 3) {
+      const auto true_label = symbol_name(uses.at(1));
+      const auto false_label = symbol_name(uses.at(2));
+      if (true_label == false_label) {
+        if (!next_block_name || *next_block_name != true_label) {
+          os << "\tj\t" << true_label << "\n";
+        }
+        return;
+      }
+
       std::string bridge = ".long_branch" + std::to_string(long_branch_id_++);
+      if (next_block_name && *next_block_name == true_label) {
+        os << "\t" << opcode_name(opcode) << "\t" << reg_name(uses.at(0))
+           << ", " << bridge << "\n";
+        os << "\tj\t" << false_label << "\n";
+        os << bridge << ":\n";
+        return;
+      }
+
+      if (next_block_name && *next_block_name == false_label) {
+        const auto inverted =
+            opcode == InstOpcode::BNEZ ? InstOpcode::BEQZ : InstOpcode::BNEZ;
+        os << "\t" << opcode_name(inverted) << "\t" << reg_name(uses.at(0))
+           << ", " << bridge << "\n";
+        os << "\tj\t" << true_label << "\n";
+        os << bridge << ":\n";
+        return;
+      }
+
       os << "\t" << opcode_name(opcode) << "\t" << reg_name(uses.at(0)) << ", "
          << bridge << "\n";
-      os << "\tj\t" << symbol_name(uses.at(2)) << "\n";
+      os << "\tj\t" << false_label << "\n";
       os << bridge << ":\n";
-      os << "\tj\t" << symbol_name(uses.at(1)) << "\n";
+      os << "\tj\t" << true_label << "\n";
       return;
     } else {
       throw std::runtime_error("we shouldn't have this case");

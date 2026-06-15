@@ -42,7 +42,7 @@ private:
                  const std::shared_ptr<AsmOperand> &slot_or_base,
                  const std::shared_ptr<AsmOperand> &maybe_offset) const;
   void emit_inst(const AsmFunction &function, const AsmInst &inst,
-                std::ostream &os) const;
+                const std::string *next_block_name, std::ostream &os) const;
 };
 
 } // namespace rc::backend

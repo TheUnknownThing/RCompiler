@@ -1,4 +1,6 @@
 #include "opt/function_inline/function_inline.hpp"
+#include "opt/utils/cfg_pretty_print.hpp"
+#include "opt/utils/ir_utils.hpp"
 
 namespace rc::opt {
 
@@ -70,23 +72,39 @@ void FunctionInline::merge_multiple_returns(ir::Function &function) {
 }
 
 void FunctionInline::check_inline(ir::Function &function) {
-  bool changed = true;
-  while (changed) {
-    changed = false;
+  // Single-sweep driver. After an inline we keep walking forward instead of
+  // restarting from block 0; the cloned blocks were appended at the end of
+  // the function so the next loop iteration of run() will pick up any new
+  // calls inside them on a subsequent pass.
+  bool any_inlined = true;
+  int outer_iters = 0;
+  constexpr int k_max_outer_iters = 16;
+  while (any_inlined && outer_iters++ < k_max_outer_iters) {
+    any_inlined = false;
 
+    // Snapshot the current block list. process_inline appends new blocks,
+    // but we don't want to chase those in this iteration to bound work.
     auto blocks = function.blocks();
     for (const auto &block : blocks) {
       if (!block) {
         continue;
       }
 
-      auto &insts = block->instructions();
-      for (std::size_t i = 0; i < insts.size(); ++i) {
-        const auto inst = insts[i];
-        auto *call_inst = dynamic_cast<ir::CallInst *>(inst.get());
+      // Snapshot call instructions in this block; inlining mutates the block.
+      std::vector<std::shared_ptr<ir::Instruction>> calls;
+      for (const auto &inst : block->instructions()) {
+        if (dynamic_cast<ir::CallInst *>(inst.get())) {
+          calls.push_back(inst);
+        }
+      }
+
+      for (const auto &inst_sp : calls) {
+        auto *call_inst = dynamic_cast<ir::CallInst *>(inst_sp.get());
         if (!call_inst) {
           continue;
         }
+        // If this call's parent is no longer `block`, it was already moved
+        // out by a previous split_block; skip.
         if (call_inst->parent() != block.get()) {
           continue;
         }
@@ -99,8 +117,6 @@ void FunctionInline::check_inline(ir::Function &function) {
         }
 
         if (!judge_inline(*callee)) {
-          LOG_DEBUG("Not inlining function " + callee->name() +
-                    " called from " + function.name());
           continue;
         }
 
@@ -121,13 +137,12 @@ void FunctionInline::check_inline(ir::Function &function) {
           replace_all_uses_with(function, *call_inst, ret_val.get());
         }
 
-        block->erase_instruction(inst);
+        block->erase_instruction(inst_sp);
 
-        changed = true;
-        break;
-      }
-
-      if (changed) {
+        any_inlined = true;
+        // The remaining `calls` in this block were moved into `return_bb`
+        // by split_block; stop walking this block's call list and let the
+        // outer iteration pick them up.
         break;
       }
     }
@@ -271,28 +286,30 @@ void
 FunctionInline::replace_phi_block(ir::Function &function,
                                 std::shared_ptr<ir::BasicBlock> old_bb,
                                 std::shared_ptr<ir::BasicBlock> new_bb) {
-  for (const auto &block : function.blocks()) {
-    for (const auto &inst : block->instructions()) {
-      if (auto phi = std::dynamic_pointer_cast<ir::PhiInst>(inst)) {
-        phi->replace_incoming_block(old_bb.get(), new_bb.get());
+  (void)function;
+  // Only successors of new_bb can possibly have a phi referencing old_bb,
+  // because new_bb inherited old_bb's terminator/successors when the block
+  // was split. Touching only those successors avoids a per-inline O(N) scan
+  // over every block in the function.
+  std::unordered_set<ir::BasicBlock *> visited;
+  for (auto *succ : utils::detail::successors(*new_bb)) {
+    if (!succ || !visited.insert(succ).second) {
+      continue;
+    }
+    for (const auto &inst : succ->instructions()) {
+      auto phi = std::dynamic_pointer_cast<ir::PhiInst>(inst);
+      if (!phi) {
+        break;
       }
+      phi->replace_incoming_block(old_bb.get(), new_bb.get());
     }
   }
 }
 
 void FunctionInline::replace_all_uses_with(ir::Function &function,
                                                ir::Value &from, ir::Value *to) {
-  for (const auto &bb : function.blocks()) {
-    if (!bb) {
-      continue;
-    }
-    for (const auto &inst : bb->instructions()) {
-      if (!inst) {
-        continue;
-      }
-      inst->replace_operand(&from, to);
-    }
-  }
+  (void)function;
+  utils::replace_all_uses_with(from, to);
 }
 
 bool FunctionInline::judge_inline(ir::Function &function) {

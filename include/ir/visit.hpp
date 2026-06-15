@@ -8,6 +8,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <variant>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -109,6 +110,27 @@ private:
   std::vector<std::unordered_map<std::string, ValuePtr>>
       locals_; // local mapped to their memory location or SSA
 
+  struct FoldedConst {
+    struct IntValue {
+      std::int64_t value;
+    };
+    using Storage = std::variant<bool, IntValue>;
+
+    Storage storage;
+
+    static FoldedConst bool_val(bool value) { return FoldedConst{value}; }
+    static FoldedConst int_val(std::int64_t value) {
+      return FoldedConst{IntValue{value}};
+    }
+    bool is_bool() const { return std::holds_alternative<bool>(storage); }
+    bool is_int() const { return std::holds_alternative<IntValue>(storage); }
+    bool as_bool() const { return std::get<bool>(storage); }
+    std::int64_t as_int() const { return std::get<IntValue>(storage).value; }
+  };
+
+  std::vector<std::unordered_map<std::string, std::optional<FoldedConst>>>
+      local_constants_;
+
   std::vector<ValuePtr> operand_stack_;
   struct LoopContext {
     std::shared_ptr<BasicBlock> break_target;
@@ -132,11 +154,22 @@ private:
   void push_operand(ValuePtr v);
   ValuePtr load_ptr_value(ValuePtr v, const SemType &sem_ty);
   ValuePtr materialize_condition(ValuePtr v, const SemType &sem_ty);
+  void emit_condition_branch(Expression *expr, BasicBlock *true_block,
+                             BasicBlock *false_block);
+  std::optional<FoldedConst> try_fold_const_expr(Expression *expr) const;
+  std::optional<bool> try_fold_const_condition(Expression *expr) const;
+  std::optional<FoldedConst>
+  fold_const_binary(TokenType op, const FoldedConst &left,
+                    const FoldedConst &right) const;
   ValuePtr create_alloca(const TypePtr &ty, const std::string &name = {},
                         ValuePtr array_size = nullptr, unsigned alignment = 0);
   bool type_equals(const TypePtr &a, const TypePtr &b) const;
   ValuePtr lookup_local(const std::string &name) const;
   void bind_local(const std::string &name, ValuePtr v);
+  std::optional<FoldedConst> lookup_local_constant(const std::string &name) const;
+  void bind_local_constant(const std::string &name, FoldedConst v);
+  void bind_nonconstant_local(const std::string &name);
+  void drop_local_constant(const std::string &name);
   void push_local_scope();
   void pop_local_scope();
 

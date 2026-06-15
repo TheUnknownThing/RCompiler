@@ -2,6 +2,41 @@
 
 namespace rc::ir {
 
+namespace {
+
+std::optional<std::int64_t> parse_integer_literal_value(std::string value) {
+  value.erase(std::remove(value.begin(), value.end(), '_'), value.end());
+  if (value.empty()) {
+    return std::nullopt;
+  }
+
+  std::size_t suffix_pos = value.size();
+  for (std::size_t i = 0; i < value.size(); ++i) {
+    char c =
+        static_cast<char>(std::tolower(static_cast<unsigned char>(value[i])));
+    const bool digit = std::isdigit(static_cast<unsigned char>(c));
+    const bool hex_digit = c >= 'a' && c <= 'f';
+    const bool prefix_x = (c == 'x' || c == 'b') && i == 1 && value[0] == '0';
+    const bool sign = (c == '+' || c == '-') && i == 0;
+    if (!digit && !hex_digit && !prefix_x && !sign) {
+      suffix_pos = i;
+      break;
+    }
+  }
+  value = value.substr(0, suffix_pos);
+  if (value.empty() || value == "+" || value == "-") {
+    return std::nullopt;
+  }
+
+  try {
+    return std::stoll(value, nullptr, 0);
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+} // namespace
+
 bool BasicBlock::is_terminated() const {
   if (instructions_.empty())
     return false;
@@ -33,6 +68,8 @@ void IREmitter::run(const std::shared_ptr<RootNode> &root,
   interned_strings_.clear();
   next_string_id_ = 0;
   locals_.emplace_back();
+  local_constants_.clear();
+  local_constants_.emplace_back();
 
   memset_fn_ = create_memset_fn();
   memcpy_fn_ = create_memcpy_fn();
@@ -120,6 +157,14 @@ void IREmitter::visit(BinaryExpression &node) {
   }
 
   if (is_assignment(node.op.type)) {
+    Expression *assigned_expr = node.left.get();
+    while (auto *group = dynamic_cast<GroupExpression *>(assigned_expr)) {
+      assigned_expr = group->inner.get();
+    }
+    if (auto *name = dynamic_cast<NameExpression *>(assigned_expr)) {
+      drop_local_constant(name->name);
+    }
+
     node.left->accept(*this);
     auto lhs = pop_operand();
 
@@ -409,6 +454,7 @@ void IREmitter::visit(LetStatement &node) {
   auto ir_ty = context->resolve_type(sem_ty);
 
   auto slot = create_alloca(ir_ty, ident->name);
+  auto folded_init = try_fold_const_expr(node.expr.get());
 
   if (is_aggregate_type(ir_ty)) {
     push_aggregate_init_target(ir_ty, slot);
@@ -432,6 +478,12 @@ void IREmitter::visit(LetStatement &node) {
   }
 
   bind_local(ident->name, slot);
+  if (!ident->is_mutable && !ident->is_ref && folded_init &&
+      (folded_init->is_bool() || folded_init->is_int())) {
+    bind_local_constant(ident->name, *folded_init);
+  } else {
+    bind_nonconstant_local(ident->name);
+  }
   LOG_DEBUG("[IREmitter] Bound local '" + ident->name + "'");
 }
 
@@ -901,11 +953,6 @@ void IREmitter::visit(GroupExpression &node) {
 
 void IREmitter::visit(IfExpression &node) {
   LOG_DEBUG("[IREmitter] Visiting if expression");
-  node.condition->accept(*this);
-  auto cond_val = pop_operand();
-  cond_val =
-      materialize_condition(cond_val, context->lookup_type(node.condition.get()));
-
   auto cur_func = functions_.back();
   auto then_block = cur_func->create_block("if_then");
   auto result_sem_ty = context->lookup_type(&node);
@@ -921,8 +968,8 @@ void IREmitter::visit(IfExpression &node) {
   if (node.else_block) {
     auto else_block = cur_func->create_block("if_else");
     auto merge_block = cur_func->create_block("if_merge");
-    current_block_->append<BranchInst>(cond_val, then_block.get(),
-                                       else_block.get());
+    emit_condition_branch(node.condition.get(), then_block.get(),
+                          else_block.get());
     // then block
     current_block_ = then_block;
     if (use_result_slot) {
@@ -1014,8 +1061,8 @@ void IREmitter::visit(IfExpression &node) {
     }
   } else {
     auto merge_block = cur_func->create_block("if_merge");
-    current_block_->append<BranchInst>(cond_val, then_block.get(),
-                                       merge_block.get());
+    emit_condition_branch(node.condition.get(), then_block.get(),
+                          merge_block.get());
     // then block
     current_block_ = then_block;
     if (use_result_slot) {
@@ -1347,12 +1394,8 @@ void IREmitter::visit(WhileExpression &node) {
   current_block_->append<BranchInst>(cond_block.get());
 
   current_block_ = cond_block;
-  node.condition->accept(*this);
-  auto cond_val = pop_operand();
-  cond_val =
-      materialize_condition(cond_val, context->lookup_type(node.condition.get()));
-  current_block_->append<BranchInst>(cond_val, body_block.get(),
-                                     after_block.get());
+  emit_condition_branch(node.condition.get(), body_block.get(),
+                        after_block.get());
 
   current_block_ = body_block;
   // break -> afterBlock, continue -> condBlock
@@ -1909,6 +1952,266 @@ ValuePtr IREmitter::materialize_condition(ValuePtr v, const SemType &sem_ty) {
   return current_block_->append<ICmpInst>(ICmpPred::NE, v, zero, "cond");
 }
 
+std::optional<IREmitter::FoldedConst>
+IREmitter::try_fold_const_expr(Expression *expr) const {
+  if (!expr) {
+    return std::nullopt;
+  }
+
+  if (auto *group = dynamic_cast<GroupExpression *>(expr)) {
+    return try_fold_const_expr(group->inner.get());
+  }
+
+  if (auto *lit = dynamic_cast<LiteralExpression *>(expr)) {
+    if (!lit->type.is_base()) {
+      return std::nullopt;
+    }
+    switch (lit->type.as_base()) {
+    case PrimitiveAstType::BOOL:
+      return FoldedConst::bool_val(lit->value == "true");
+    case PrimitiveAstType::ANY_INT:
+    case PrimitiveAstType::I32:
+    case PrimitiveAstType::U32:
+    case PrimitiveAstType::ISIZE:
+    case PrimitiveAstType::USIZE: {
+      auto value = parse_integer_literal_value(lit->value);
+      if (!value) {
+        return std::nullopt;
+      }
+      return FoldedConst::int_val(*value);
+    }
+    default:
+      return std::nullopt;
+    }
+  }
+
+  if (auto *name = dynamic_cast<NameExpression *>(expr)) {
+    if (lookup_local(name->name)) {
+      return lookup_local_constant(name->name);
+    }
+
+    if (current_scope_node) {
+      for (auto *scope = current_scope_node; scope; scope = scope->parent) {
+        auto *item = scope->find_value_item(name->name);
+        if (!item || item->kind != ItemKind::Constant ||
+            !item->has_constant_meta()) {
+          continue;
+        }
+
+        const auto &meta = item->as_constant_meta();
+        if (!meta.evaluated_value) {
+          return std::nullopt;
+        }
+        const auto &constant = *meta.evaluated_value;
+        if (constant.is_bool()) {
+          return FoldedConst::bool_val(constant.as_bool());
+        }
+        if (constant.is_any_int()) {
+          return FoldedConst::int_val(constant.as_any_int());
+        }
+        if (constant.is_i32()) {
+          return FoldedConst::int_val(constant.as_i32());
+        }
+        if (constant.is_u32()) {
+          return FoldedConst::int_val(constant.as_u32());
+        }
+        if (constant.is_isize()) {
+          return FoldedConst::int_val(constant.as_isize());
+        }
+        if (constant.is_usize() &&
+            constant.as_usize() <= static_cast<std::uint64_t>(
+                                       std::numeric_limits<std::int64_t>::max())) {
+          return FoldedConst::int_val(
+              static_cast<std::int64_t>(constant.as_usize()));
+        }
+        return std::nullopt;
+      }
+    }
+    return std::nullopt;
+  }
+
+  if (auto *prefix = dynamic_cast<PrefixExpression *>(expr)) {
+    auto operand = try_fold_const_expr(prefix->right.get());
+    if (!operand) {
+      return std::nullopt;
+    }
+    switch (prefix->op.type) {
+    case TokenType::NOT:
+      if (operand->is_bool()) {
+        return FoldedConst::bool_val(!operand->as_bool());
+      }
+      return std::nullopt;
+    case TokenType::MINUS:
+      if (operand->is_int()) {
+        return FoldedConst::int_val(-operand->as_int());
+      }
+      return std::nullopt;
+    default:
+      return std::nullopt;
+    }
+  }
+
+  auto *binary = dynamic_cast<BinaryExpression *>(expr);
+  if (!binary) {
+    return std::nullopt;
+  }
+
+  if (binary->op.type == TokenType::AND) {
+    auto left = try_fold_const_expr(binary->left.get());
+    if (!left || !left->is_bool()) {
+      return std::nullopt;
+    }
+    if (!left->as_bool()) {
+      return FoldedConst::bool_val(false);
+    }
+    auto right = try_fold_const_expr(binary->right.get());
+    if (right && right->is_bool()) {
+      return FoldedConst::bool_val(right->as_bool());
+    }
+    return std::nullopt;
+  }
+
+  if (binary->op.type == TokenType::OR) {
+    auto left = try_fold_const_expr(binary->left.get());
+    if (!left || !left->is_bool()) {
+      return std::nullopt;
+    }
+    if (left->as_bool()) {
+      return FoldedConst::bool_val(true);
+    }
+    auto right = try_fold_const_expr(binary->right.get());
+    if (right && right->is_bool()) {
+      return FoldedConst::bool_val(right->as_bool());
+    }
+    return std::nullopt;
+  }
+
+  auto left = try_fold_const_expr(binary->left.get());
+  auto right = try_fold_const_expr(binary->right.get());
+  if (!left || !right) {
+    return std::nullopt;
+  }
+  return fold_const_binary(binary->op.type, *left, *right);
+}
+
+std::optional<bool> IREmitter::try_fold_const_condition(Expression *expr) const {
+  auto value = try_fold_const_expr(expr);
+  if (!value || !value->is_bool()) {
+    return std::nullopt;
+  }
+  return value->as_bool();
+}
+
+std::optional<IREmitter::FoldedConst>
+IREmitter::fold_const_binary(TokenType op, const FoldedConst &left,
+                             const FoldedConst &right) const {
+  if (left.is_bool() && right.is_bool()) {
+    switch (op) {
+    case TokenType::EQ:
+      return FoldedConst::bool_val(left.as_bool() == right.as_bool());
+    case TokenType::NE:
+      return FoldedConst::bool_val(left.as_bool() != right.as_bool());
+    default:
+      return std::nullopt;
+    }
+  }
+
+  if (!left.is_int() || !right.is_int()) {
+    return std::nullopt;
+  }
+
+  const auto lhs = left.as_int();
+  const auto rhs = right.as_int();
+  switch (op) {
+  case TokenType::PLUS:
+    return FoldedConst::int_val(lhs + rhs);
+  case TokenType::MINUS:
+    return FoldedConst::int_val(lhs - rhs);
+  case TokenType::STAR:
+    return FoldedConst::int_val(lhs * rhs);
+  case TokenType::SLASH:
+    if (rhs == 0) {
+      return std::nullopt;
+    }
+    return FoldedConst::int_val(lhs / rhs);
+  case TokenType::PERCENT:
+    if (rhs == 0) {
+      return std::nullopt;
+    }
+    return FoldedConst::int_val(lhs % rhs);
+  case TokenType::AMPERSAND:
+    return FoldedConst::int_val(lhs & rhs);
+  case TokenType::PIPE:
+    return FoldedConst::int_val(lhs | rhs);
+  case TokenType::CARET:
+    return FoldedConst::int_val(lhs ^ rhs);
+  case TokenType::SHL:
+    if (rhs < 0 || rhs >= 63) {
+      return std::nullopt;
+    }
+    return FoldedConst::int_val(lhs << rhs);
+  case TokenType::SHR:
+    if (rhs < 0 || rhs >= 63) {
+      return std::nullopt;
+    }
+    return FoldedConst::int_val(lhs >> rhs);
+  case TokenType::EQ:
+    return FoldedConst::bool_val(lhs == rhs);
+  case TokenType::NE:
+    return FoldedConst::bool_val(lhs != rhs);
+  case TokenType::LT:
+    return FoldedConst::bool_val(lhs < rhs);
+  case TokenType::LE:
+    return FoldedConst::bool_val(lhs <= rhs);
+  case TokenType::GT:
+    return FoldedConst::bool_val(lhs > rhs);
+  case TokenType::GE:
+    return FoldedConst::bool_val(lhs >= rhs);
+  default:
+    return std::nullopt;
+  }
+}
+
+void IREmitter::emit_condition_branch(Expression *expr, BasicBlock *true_block,
+                                      BasicBlock *false_block) {
+  if (!expr) {
+    throw IRException("missing condition expression");
+  }
+
+  if (auto folded = try_fold_const_condition(expr)) {
+    current_block_->append<BranchInst>(*folded ? true_block : false_block);
+    return;
+  }
+
+  if (auto *group = dynamic_cast<GroupExpression *>(expr)) {
+    emit_condition_branch(group->inner.get(), true_block, false_block);
+    return;
+  }
+
+  if (auto *binary = dynamic_cast<BinaryExpression *>(expr)) {
+    if (binary->op.type == TokenType::AND) {
+      auto rhs_block = functions_.back()->create_block("shortcircuit_and_rhs");
+      emit_condition_branch(binary->left.get(), rhs_block.get(), false_block);
+      current_block_ = rhs_block;
+      emit_condition_branch(binary->right.get(), true_block, false_block);
+      return;
+    }
+
+    if (binary->op.type == TokenType::OR) {
+      auto rhs_block = functions_.back()->create_block("shortcircuit_or_rhs");
+      emit_condition_branch(binary->left.get(), true_block, rhs_block.get());
+      current_block_ = rhs_block;
+      emit_condition_branch(binary->right.get(), true_block, false_block);
+      return;
+    }
+  }
+
+  expr->accept(*this);
+  auto cond_val = pop_operand();
+  cond_val = materialize_condition(cond_val, context->lookup_type(expr));
+  current_block_->append<BranchInst>(cond_val, true_block, false_block);
+}
+
 bool IREmitter::type_equals(const TypePtr &a, const TypePtr &b) const {
   if (a->kind() != b->kind())
     return false;
@@ -1981,8 +2284,44 @@ void IREmitter::bind_local(const std::string &name, ValuePtr v) {
   LOG_DEBUG("[IREmitter] bindLocal: " + name);
 }
 
+std::optional<IREmitter::FoldedConst>
+IREmitter::lookup_local_constant(const std::string &name) const {
+  for (auto it = local_constants_.rbegin(); it != local_constants_.rend(); ++it) {
+    auto found = it->find(name);
+    if (found != it->end()) {
+      return found->second;
+    }
+  }
+  return std::nullopt;
+}
+
+void IREmitter::bind_local_constant(const std::string &name, FoldedConst v) {
+  if (local_constants_.empty()) {
+    local_constants_.emplace_back();
+  }
+  local_constants_.back()[name] = std::move(v);
+}
+
+void IREmitter::bind_nonconstant_local(const std::string &name) {
+  if (local_constants_.empty()) {
+    local_constants_.emplace_back();
+  }
+  local_constants_.back()[name] = std::nullopt;
+}
+
+void IREmitter::drop_local_constant(const std::string &name) {
+  for (auto it = local_constants_.rbegin(); it != local_constants_.rend(); ++it) {
+    auto found = it->find(name);
+    if (found != it->end()) {
+      found->second = std::nullopt;
+      return;
+    }
+  }
+}
+
 void IREmitter::push_local_scope() {
   locals_.emplace_back();
+  local_constants_.emplace_back();
   LOG_DEBUG("[IREmitter] pushLocalScope depth=" +
             std::to_string(locals_.size()));
 }
@@ -1990,6 +2329,8 @@ void IREmitter::push_local_scope() {
 void IREmitter::pop_local_scope() {
   if (!locals_.empty())
     locals_.pop_back();
+  if (!local_constants_.empty())
+    local_constants_.pop_back();
   LOG_DEBUG("[IREmitter] popLocalScope depth=" +
             std::to_string(locals_.size()));
 }
@@ -2375,6 +2716,7 @@ FuncPtr IREmitter::emit_function(const FunctionMetaData &meta,
     auto slot = create_alloca(param_ir_ty, param_name);
     current_block_->append<StoreInst>(fn->args()[arg_idx], slot);
     bind_local(param_name, slot);
+    bind_nonconstant_local(param_name);
     LOG_DEBUG("[IREmitter] emit_function: bound param '" + param_name + "'");
   }
 

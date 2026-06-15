@@ -4,8 +4,9 @@ namespace rc::opt {
 
 void Mem2RegVisitor::run(ir::Module &module) {
   for (const auto &function : module.functions()) {
-    dominators_.clear();
     idom_.clear();
+    rpo_index_.clear();
+    dom_tree_children_.clear();
     dominance_frontiers_.clear();
     rename_stacks_.clear();
     phi_nodes_.clear();
@@ -109,78 +110,94 @@ void Mem2RegVisitor::find_dominators(ir::Function &function) {
     return;
   }
 
-  auto all_blocks = std::unordered_set<ir::BasicBlock *>{};
+  std::unordered_map<ir::BasicBlock *, std::vector<ir::BasicBlock *>>
+      successors;
+  successors.reserve(blocks.size());
   for (const auto &bb : blocks) {
-    all_blocks.insert(bb.get());
-  }
-
-  for (const auto &bb : blocks) {
-    auto &doms = dominators_[bb.get()];
-    if (bb.get() == blocks.front().get()) {
-      doms.insert(bb.get());
-    } else {
-      doms = all_blocks;
+    auto &succ_list = successors[bb.get()];
+    for (auto *succ : utils::detail::successors(*bb)) {
+      succ_list.push_back(const_cast<ir::BasicBlock *>(succ));
     }
   }
+
+  auto *entry = blocks.front().get();
+  std::vector<ir::BasicBlock *> postorder;
+  std::unordered_set<ir::BasicBlock *> visited;
+  std::vector<std::pair<ir::BasicBlock *, std::size_t>> stack;
+  visited.insert(entry);
+  stack.push_back({entry, 0});
+
+  while (!stack.empty()) {
+    auto &[bb, next_idx] = stack.back();
+    const auto &succs = successors[bb];
+    if (next_idx < succs.size()) {
+      auto *succ = succs[next_idx++];
+      if (succ && visited.insert(succ).second) {
+        stack.push_back({succ, 0});
+      }
+      continue;
+    }
+
+    postorder.push_back(bb);
+    stack.pop_back();
+  }
+
+  std::vector<ir::BasicBlock *> rpo(postorder.rbegin(), postorder.rend());
+  for (std::size_t i = 0; i < rpo.size(); ++i) {
+    rpo_index_[rpo[i]] = i;
+    idom_[rpo[i]] = nullptr;
+  }
+
+  idom_[entry] = entry;
+
+  auto intersect = [&](ir::BasicBlock *lhs, ir::BasicBlock *rhs) {
+    while (lhs != rhs) {
+      while (rpo_index_[lhs] > rpo_index_[rhs]) {
+        lhs = idom_[lhs];
+      }
+      while (rpo_index_[rhs] > rpo_index_[lhs]) {
+        rhs = idom_[rhs];
+      }
+    }
+    return lhs;
+  };
 
   bool changed = true;
   while (changed) {
     changed = false;
-    for (const auto &bb : blocks) {
-      if (bb.get() == blocks.front().get()) {
+    for (auto *bb : rpo) {
+      if (bb == entry) {
         continue;
       }
-      auto new_doms = all_blocks;
-      // intersect dominators of predecessors
-      for (const auto &pred_bb : bb->predecessors()) {
-        const auto &pred_doms = dominators_[pred_bb];
-        auto intersection = std::unordered_set<ir::BasicBlock *>{};
-        for (const auto &d : new_doms) {
-          if (pred_doms.count(d)) {
-            intersection.insert(d);
-          }
+
+      ir::BasicBlock *new_idom = nullptr;
+      for (auto *pred : bb->predecessors()) {
+        if (!rpo_index_.count(pred)) {
+          continue;
         }
-        new_doms = std::move(intersection);
+        if (pred != entry && !idom_[pred]) {
+          continue;
+        }
+        new_idom = new_idom ? intersect(pred, new_idom) : pred;
       }
-      new_doms.insert(bb.get());
-      if (new_doms != dominators_[bb.get()]) {
-        dominators_[bb.get()] = std::move(new_doms);
+
+      if (new_idom && idom_[bb] != new_idom) {
+        idom_[bb] = new_idom;
         changed = true;
       }
     }
   }
+
+  idom_[entry] = nullptr;
 }
 
 void Mem2RegVisitor::find_i_dom(ir::Function &function) {
-  const auto &blocks = function.blocks();
-  if (blocks.empty()) {
-    return;
-  }
-
-  for (const auto &bb : blocks) {
-    if (bb.get() == blocks.front().get()) {
-      idom_[bb.get()] = nullptr; // entry block has no idom
-      continue;
+  (void)function;
+  dom_tree_children_.clear();
+  for (const auto &[bb, parent] : idom_) {
+    if (bb && parent) {
+      dom_tree_children_[parent].push_back(bb);
     }
-
-    auto &bb_doms = dominators_[bb.get()];
-    ir::BasicBlock *idom = nullptr;
-    for (const auto &d : bb_doms) {
-      if (d == bb.get()) {
-        continue;
-      }
-      if (idom == nullptr) {
-        idom = d;
-      } else if (dominators_[d].size() == dominators_[bb.get()].size() - 1) {
-        idom = d;
-      }
-    }
-
-    if (!idom) {
-      throw std::runtime_error("Failed to find immediate dominator");
-    }
-
-    idom_[bb.get()] = idom;
   }
 }
 
@@ -197,10 +214,15 @@ void Mem2RegVisitor::find_dom_frontiers(ir::Function &function) {
     }
 
     for (const auto &p : preds) {
-      for (const auto &elem : dominators_[p]) {
-        if (dominators_[bb.get()].count(elem) == 0) {
-          dominance_frontiers_[elem].insert(bb.get());
-        }
+      if (!rpo_index_.count(p)) {
+        continue;
+      }
+
+      auto *runner = p;
+      auto *stop = idom_[bb.get()];
+      while (runner && runner != stop) {
+        dominance_frontiers_[runner].insert(bb.get());
+        runner = idom_[runner];
       }
     }
   }
@@ -353,10 +375,8 @@ void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
   }
 
   // visit children in dominator tree
-  for (auto &child_bb_pair : idom_) {
-    if (child_bb_pair.second == &bb) {
-      rename(*child_bb_pair.first);
-    }
+  for (auto *child : dom_tree_children_[&bb]) {
+    rename(*child);
   }
 
   // pop

@@ -7,6 +7,7 @@ namespace rc::opt {
 void SCCPVisitor::run(ir::Module &module) {
   for (const auto &function : module.functions()) {
     instruction_worklist_.clear();
+    in_worklist_.clear();
     edges_.clear();
     lattice_values_.clear();
     constant_values_.clear();
@@ -80,7 +81,7 @@ void SCCPVisitor::visit(ir::Function &function) {
           if (!inst || dynamic_cast<ir::UnreachableInst *>(inst.get())) {
             break;
           }
-          instruction_worklist_.push_back(inst.get());
+          push_inst(inst.get());
         }
 
         if (utils::detail::successors(*to_bb).size() == 1) {
@@ -95,7 +96,7 @@ void SCCPVisitor::visit(ir::Function &function) {
           break;
         }
         if (auto *phi = dynamic_cast<ir::PhiInst *>(inst.get())) {
-          instruction_worklist_.push_back(phi);
+          push_inst(phi);
         } else {
           break; // PHI nodes are always at the beginning
         }
@@ -105,6 +106,7 @@ void SCCPVisitor::visit(ir::Function &function) {
     while (!instruction_worklist_.empty()) {
       auto *inst = instruction_worklist_.back();
       instruction_worklist_.pop_back();
+      in_worklist_.erase(inst);
       visit(*inst);
     }
   }
@@ -130,6 +132,7 @@ void SCCPVisitor::visit(ir::BasicBlock &basic_block) {
       break;
     }
     instruction_worklist_.push_back(inst.get());
+    in_worklist_.insert(inst.get());
   }
 }
 
@@ -225,7 +228,7 @@ void SCCPVisitor::visit(ir::BinaryOpInst &binary_op_inst) {
 
     for (auto *user : binary_op_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instruction_worklist_.push_back(inst);
+        push_inst(inst);
       }
     }
   }
@@ -280,7 +283,7 @@ void SCCPVisitor::visit(ir::AllocaInst &alloca_inst) {
 
     for (auto *user : alloca_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instruction_worklist_.push_back(inst);
+        push_inst(inst);
       }
     }
   }
@@ -295,7 +298,7 @@ void SCCPVisitor::visit(ir::LoadInst &load_inst) {
     if (prev != LatticeValueKind::CONSTANT) {
       for (auto *user : load_inst.get_uses()) {
         if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-          instruction_worklist_.push_back(inst);
+          push_inst(inst);
         }
       }
     }
@@ -306,7 +309,7 @@ void SCCPVisitor::visit(ir::LoadInst &load_inst) {
 
       for (auto *user : load_inst.get_uses()) {
         if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-          instruction_worklist_.push_back(inst);
+          push_inst(inst);
         }
       }
     }
@@ -332,7 +335,7 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &get_element_ptr_inst) {
 
           for (auto *user : get_element_ptr_inst.get_uses()) {
             if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-              instruction_worklist_.push_back(inst);
+              push_inst(inst);
             }
           }
         }
@@ -359,7 +362,7 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &get_element_ptr_inst) {
         if (prev != LatticeValueKind::CONSTANT) {
           for (auto *user : get_element_ptr_inst.get_uses()) {
             if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-              instruction_worklist_.push_back(inst);
+              push_inst(inst);
             }
           }
         }
@@ -372,7 +375,7 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &get_element_ptr_inst) {
           if (prev != LatticeValueKind::OVERDEF) {
             for (auto *user : get_element_ptr_inst.get_uses()) {
               if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-                instruction_worklist_.push_back(inst);
+                push_inst(inst);
               }
             }
           }
@@ -398,7 +401,7 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &get_element_ptr_inst) {
 
           for (auto *user : get_element_ptr_inst.get_uses()) {
             if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-              instruction_worklist_.push_back(inst);
+              push_inst(inst);
             }
           }
         }
@@ -413,7 +416,7 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &get_element_ptr_inst) {
     if (prev != LatticeValueKind::CONSTANT) {
       for (auto *user : get_element_ptr_inst.get_uses()) {
         if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-          instruction_worklist_.push_back(inst);
+          push_inst(inst);
         }
       }
     }
@@ -425,7 +428,7 @@ void SCCPVisitor::visit(ir::GetElementPtrInst &get_element_ptr_inst) {
 
       for (auto *user : get_element_ptr_inst.get_uses()) {
         if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-          instruction_worklist_.push_back(inst);
+          push_inst(inst);
         }
       }
     }
@@ -503,7 +506,7 @@ void SCCPVisitor::visit(ir::ICmpInst &icmp_inst) {
 
     for (auto *user : icmp_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instruction_worklist_.push_back(inst);
+        push_inst(inst);
       }
     }
   }
@@ -532,7 +535,7 @@ void SCCPVisitor::visit(ir::SExtInst &sext_inst) {
 
     for (auto *user : sext_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instruction_worklist_.push_back(inst);
+        push_inst(inst);
       }
     }
   }
@@ -558,7 +561,7 @@ void SCCPVisitor::visit(ir::ZExtInst &zext_inst) {
 
     for (auto *user : zext_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instruction_worklist_.push_back(inst);
+        push_inst(inst);
       }
     }
   }
@@ -590,7 +593,7 @@ void SCCPVisitor::visit(ir::TruncInst &trunc_inst) {
 
     for (auto *user : trunc_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instruction_worklist_.push_back(inst);
+        push_inst(inst);
       }
     }
   }
@@ -605,7 +608,7 @@ void SCCPVisitor::visit(ir::CallInst &call_inst) {
 
     for (auto *user : call_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instruction_worklist_.push_back(inst);
+        push_inst(inst);
       }
     }
   }
@@ -655,7 +658,7 @@ void SCCPVisitor::visit(ir::PhiInst &phi_inst) {
 
     for (auto *user : phi_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instruction_worklist_.push_back(inst);
+        push_inst(inst);
       }
     }
   }
@@ -697,7 +700,7 @@ void SCCPVisitor::visit(ir::SelectInst &select_inst) {
 
     for (auto *user : select_inst.get_uses()) {
       if (auto *inst = dynamic_cast<ir::Instruction *>(user)) {
-        instruction_worklist_.push_back(inst);
+        push_inst(inst);
       }
     }
   }

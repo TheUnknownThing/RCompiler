@@ -15,6 +15,14 @@ void PhiElimination::run(ir::Module *module) {
 }
 
 void PhiElimination::eliminate_critical_edge(ir::Function *func) {
+  auto starts_with_phi = [](const ir::BasicBlock *bb) {
+    if (!bb || bb->instructions().empty()) {
+      return false;
+    }
+    return dynamic_cast<ir::PhiInst *>(bb->instructions().front().get()) !=
+           nullptr;
+  };
+
   bool changed = true;
   while (changed) {
     changed = false;
@@ -27,7 +35,7 @@ void PhiElimination::eliminate_critical_edge(ir::Function *func) {
         if (!succ) {
           continue;
         }
-        if (succ->predecessors().size() > 1) {
+        if (starts_with_phi(succ) && succ->predecessors().size() > 1) {
           replace_critical_edge(func, bb.get(), succ);
           changed = true;
         }
