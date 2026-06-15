@@ -6,6 +6,7 @@
 #include "opt/dce/dce.hpp"
 #include "opt/function_inline/function_inline.hpp"
 #include "opt/inst_combine/inst_combine.hpp"
+#include "opt/local_memory/load_forwarding.hpp"
 #include "opt/mem2reg/mem2reg.hpp"
 #include "opt/sccp/context.hpp"
 #include "opt/sccp/sccp.hpp"

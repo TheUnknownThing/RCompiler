@@ -21,10 +21,15 @@ void PassManager::run(ir::Module &module) {
 
   revisit_cfg(module);
 
+  LoadForwardingPass load_forward;
+  load_forward.run(module);
+
   SCCPVisitor sccp(&const_ctx_);
   sccp.run(module);
 
   inst_combine.run(module);
+
+  load_forward.run(module);
 
   dce.run(module);
 
