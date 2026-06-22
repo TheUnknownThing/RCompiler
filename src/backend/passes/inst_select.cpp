@@ -839,6 +839,27 @@ void InstructionSelection::visit(const ir::CallInst &call) {
     args.push_back(prepare_call_argument(arg, call));
   }
 
+  // Snapshot every argument into a fresh virtual register BEFORE writing any
+  // outgoing argument location (a0..a7 or the outgoing stack area). This makes
+  // the argument setup a correct parallel copy: passing values in a permuted
+  // order -- e.g. a recursive call f(.., v2, v3, .., v1) that rotates its
+  // parameters -- would otherwise let a `mv a_i, a_j` clobber a source that a
+  // later move still needs. The temporaries break such copy cycles by
+  // construction, independent of how registers are allocated. They are not a
+  // cost: register coalescing collapses `mv tmp, x` / `mv a_i, tmp` back into a
+  // single move (or removes it entirely) whenever there is no cycle.
+  std::vector<std::shared_ptr<Register>> arg_temps;
+  arg_temps.reserve(args.size());
+  for (const auto &arg : args) {
+    auto temp = create_virtual_register();
+    if (as_immediate(arg)) {
+      current_block_->create_inst(InstOpcode::LI, temp, {arg});
+    } else {
+      current_block_->create_inst(InstOpcode::MV, temp, {get_reg(arg)});
+    }
+    arg_temps.push_back(temp);
+  }
+
   const size_t stack_arg_count = args.size() > 8 ? args.size() - 8 : 0;
   const size_t stack_arg_bytes = align_to(stack_arg_count * register_size_, 16);
   auto sp = create_physical_register(2);
@@ -847,28 +868,17 @@ void InstructionSelection::visit(const ir::CallInst &call) {
   if (stack_arg_bytes != 0) {
     outgoing_sp = create_virtual_register();
     emit_add_immediate(outgoing_sp, sp, -static_cast<int64_t>(stack_arg_bytes));
-    for (size_t i = 8; i < args.size(); ++i) {
+    for (size_t i = 8; i < arg_temps.size(); ++i) {
       current_block_->create_inst(
           register_store_opcode(), nullptr,
-          {get_reg(args[i]), outgoing_sp,
+          {arg_temps[i], outgoing_sp,
            create_immediate(static_cast<int32_t>((i - 8) * register_size_))});
     }
   }
 
-  // Move the first eight arguments directly into a0..a7 (li for immediates).
-  // The previous lowering first copied every argument into a fresh temp vreg
-  // and then moved the temp into the argument register -- two moves per
-  // argument. The intermediate temp is unnecessary: the register allocator's
-  // fixed-register-span check already prevents a source value from being placed
-  // in an argument register that is written earlier in this sequence, which is
-  // the only clobber hazard.
-  for (size_t i = 0; i < args.size() && i < 8; ++i) {
-    auto dst = create_physical_register(10 + i);
-    if (as_immediate(args[i])) {
-      current_block_->create_inst(InstOpcode::LI, dst, {args[i]});
-    } else {
-      current_block_->create_inst(InstOpcode::MV, dst, {get_reg(args[i])});
-    }
+  for (size_t i = 0; i < arg_temps.size() && i < 8; ++i) {
+    current_block_->create_inst(InstOpcode::MV, create_physical_register(10 + i),
+                                {arg_temps[i]});
   }
 
   if (stack_arg_bytes != 0) {
