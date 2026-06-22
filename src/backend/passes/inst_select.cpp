@@ -56,19 +56,6 @@ void InstructionSelection::visit(const ir::BasicBlock &basic_block) {
   auto asm_block = asm_function->create_block(label);
   current_block_ = asm_block;
   if (&basic_block == entry_ir_block_ && current_function_) {
-    std::vector<std::shared_ptr<StackSlot>> register_arg_slots;
-    const size_t register_arg_count =
-        std::min<size_t>(8, current_function_->args().size());
-    register_arg_slots.reserve(register_arg_count);
-    for (size_t i = 0; i < register_arg_count; ++i) {
-      auto slot = std::make_shared<StackSlot>(
-          align_to(stack_offset_, register_size_), register_size_);
-      stack_offset_ = slot->offset + slot->size;
-      register_arg_slots.push_back(slot);
-      current_block_->create_inst(register_store_opcode(), nullptr,
-                                  {create_physical_register(10 + i), slot});
-    }
-
     for (size_t i = 0; i < current_function_->args().size(); ++i) {
       auto dst = std::dynamic_pointer_cast<Register>(
           value_operand_map_[current_function_->args()[i].get()]);
@@ -77,12 +64,16 @@ void InstructionSelection::visit(const ir::BasicBlock &basic_block) {
       }
 
       if (i < 8) {
-        current_block_->create_inst(
-            load_opcode_for_type(current_function_->args()[i]->type()), dst,
-                                    {register_arg_slots[i]});
+        // Move the incoming argument register (a0..a7) directly into the
+        // argument's virtual register. The earlier scheme spilled each arg to a
+        // dead stack slot and reloaded it (two memory ops/arg) -- pure -O0
+        // overhead. Register allocation handles the live range from here.
+        current_block_->create_inst(InstOpcode::MV, dst,
+                                    {create_physical_register(10 + i)});
         continue;
       }
 
+      // Arguments beyond the eighth are passed on the stack by the caller.
       auto slot = create_incoming_arg_slot(i);
       current_block_->create_inst(
           load_opcode_for_type(current_function_->args()[i]->type()), dst,
@@ -271,7 +262,13 @@ void InstructionSelection::visit(const ir::BinaryOpInst &bin_op) {
   default:
     throw std::runtime_error("unhandled binary operation");
   }
-  normalize_rv64_unsigned_word(dst, bin_op.type());
+  // NOTE: we deliberately do NOT normalize unsigned 32-bit results here.
+  // All 32-bit integer values are kept in sign-extended form (which is also
+  // the RV64 ABI representation): RV64 *W arithmetic ops sign-extend their
+  // 32-bit result, AND/OR/XOR preserve sign-extension when their inputs are
+  // sign-extended, and 4-byte loads use LW. Zero-extension is only materialized
+  // where it is observable (unsigned comparisons), so we avoid the slli/srli
+  // pair after every single arithmetic op.
 }
 
 void InstructionSelection::visit(const ir::AllocaInst &alloca) {
@@ -586,6 +583,13 @@ InstructionSelection::emit_scaled_index(const std::shared_ptr<ir::Value> &index,
 
 void InstructionSelection::visit(const ir::BranchInst &branch) {
   if (branch.is_conditional()) {
+    if (const auto *cmp = fusible_branch_cmp(branch)) {
+      // Fuse the comparison directly into a two-operand conditional branch
+      // (blt/bge/beq/bne/bltu/bgeu) instead of materializing a boolean and
+      // testing it with bnez.
+      emit_fused_branch(*cmp, branch.dest(), branch.alt_dest());
+      return;
+    }
     auto cond = resolve_operand_or_immediate(
         branch.cond(), "conditional branch condition not materialized",
         &branch);
@@ -602,6 +606,134 @@ void InstructionSelection::visit(const ir::BranchInst &branch) {
   }
 }
 
+std::shared_ptr<AsmOperand>
+InstructionSelection::zero_extend_u32(const std::shared_ptr<AsmOperand> &op,
+                                      const ir::TypePtr &ty) {
+  if (register_size_ != 8) {
+    return op;
+  }
+  auto int_ty = std::dynamic_pointer_cast<const ir::IntegerType>(ty);
+  // Zero-extend any 32-bit integer operand (regardless of its declared
+  // signedness): this is only called at *unsigned* comparison sites, where the
+  // low 32 bits must be reinterpreted as an unsigned value. A signed-typed
+  // operand whose bit 31 is set would otherwise compare incorrectly, since our
+  // 32-bit values are stored sign-extended.
+  if (!int_ty || int_ty->bits() != 32) {
+    return op;
+  }
+  auto reg = get_reg(op);
+  auto tmp = create_virtual_register();
+  current_block_->create_inst(InstOpcode::SLLI, tmp,
+                              {reg, create_immediate(32)});
+  current_block_->create_inst(InstOpcode::SRLI, tmp,
+                              {tmp, create_immediate(32)});
+  return tmp;
+}
+
+const ir::ICmpInst *
+InstructionSelection::fusible_branch_cmp(const ir::BranchInst &branch) const {
+  if (!branch.is_conditional() || !branch.cond()) {
+    return nullptr;
+  }
+  const auto *cmp = dynamic_cast<const ir::ICmpInst *>(branch.cond().get());
+  if (!cmp) {
+    return nullptr;
+  }
+  const auto &uses = cmp->get_uses();
+  if (uses.size() != 1 ||
+      uses.front() != static_cast<const ir::Instruction *>(&branch)) {
+    return nullptr;
+  }
+  return cmp;
+}
+
+bool InstructionSelection::icmp_fused_into_branch(
+    const ir::ICmpInst &icmp) const {
+  const auto &uses = icmp.get_uses();
+  if (uses.size() != 1) {
+    return false;
+  }
+  const auto *br = dynamic_cast<const ir::BranchInst *>(uses.front());
+  return br && br->is_conditional() && br->cond().get() == &icmp;
+}
+
+void InstructionSelection::emit_fused_branch(const ir::ICmpInst &cmp,
+                                             const ir::BasicBlock *dest,
+                                             const ir::BasicBlock *alt) {
+  auto lhs = resolve_operand_or_immediate(cmp.lhs(),
+                                          "fused branch LHS operand", &cmp);
+  auto rhs = resolve_operand_or_immediate(cmp.rhs(),
+                                          "fused branch RHS operand", &cmp);
+
+  auto zx_lhs = [&]() { return zero_extend_u32(lhs, cmp.lhs()->type()); };
+  auto zx_rhs = [&]() { return zero_extend_u32(rhs, cmp.rhs()->type()); };
+
+  InstOpcode opcode;
+  std::shared_ptr<AsmOperand> a;
+  std::shared_ptr<AsmOperand> b;
+  // Branch is taken (to dest) when the predicate holds; alt is the fall-through
+  // target. Swap operands to realize >/<= from blt/bge.
+  switch (cmp.pred()) {
+  case ir::ICmpPred::EQ:
+    opcode = InstOpcode::BEQ;
+    a = lhs;
+    b = rhs;
+    break;
+  case ir::ICmpPred::NE:
+    opcode = InstOpcode::BNE;
+    a = lhs;
+    b = rhs;
+    break;
+  case ir::ICmpPred::SLT:
+    opcode = InstOpcode::BLT;
+    a = lhs;
+    b = rhs;
+    break;
+  case ir::ICmpPred::SGE:
+    opcode = InstOpcode::BGE;
+    a = lhs;
+    b = rhs;
+    break;
+  case ir::ICmpPred::SGT:
+    opcode = InstOpcode::BLT;
+    a = rhs;
+    b = lhs;
+    break;
+  case ir::ICmpPred::SLE:
+    opcode = InstOpcode::BGE;
+    a = rhs;
+    b = lhs;
+    break;
+  case ir::ICmpPred::ULT:
+    opcode = InstOpcode::BLTU;
+    a = zx_lhs();
+    b = zx_rhs();
+    break;
+  case ir::ICmpPred::UGE:
+    opcode = InstOpcode::BGEU;
+    a = zx_lhs();
+    b = zx_rhs();
+    break;
+  case ir::ICmpPred::UGT:
+    opcode = InstOpcode::BLTU;
+    a = zx_rhs();
+    b = zx_lhs();
+    break;
+  case ir::ICmpPred::ULE:
+    opcode = InstOpcode::BGEU;
+    a = zx_rhs();
+    b = zx_lhs();
+    break;
+  default:
+    throw std::runtime_error("unknown ICmp predicate in fused branch");
+  }
+
+  current_block_->create_inst(opcode, nullptr,
+                              {get_reg(a), get_reg(b),
+                               create_label_operand(dest),
+                               create_label_operand(alt)});
+}
+
 void InstructionSelection::visit(const ir::ReturnInst &ret) {
   if (!ret.is_void()) {
     auto ret_val = resolve_operand_or_immediate(
@@ -614,11 +746,32 @@ void InstructionSelection::visit(const ir::ReturnInst &ret) {
 
 void InstructionSelection::visit(const ir::UnreachableInst &) {}
 void InstructionSelection::visit(const ir::ICmpInst &icmp) {
+  if (icmp_fused_into_branch(icmp)) {
+    // The comparison is consumed solely by a conditional branch; it will be
+    // emitted as a fused branch (blt/bge/beq/...) when we visit that branch.
+    return;
+  }
+
   auto dst = get_or_create_result_register(&icmp);
   auto lhs = resolve_operand_or_immediate(icmp.lhs(),
                                           "LHS operand for ICmpInst", &icmp);
   auto rhs = resolve_operand_or_immediate(icmp.rhs(),
                                           "RHS operand for ICmpInst", &icmp);
+
+  // Unsigned 32-bit comparisons read the full 64-bit register, so the operands
+  // must be zero-extended (our 32-bit values are otherwise sign-extended).
+  switch (icmp.pred()) {
+  case ir::ICmpPred::UGT:
+  case ir::ICmpPred::UGE:
+  case ir::ICmpPred::ULT:
+  case ir::ICmpPred::ULE:
+    lhs = zero_extend_u32(lhs, icmp.lhs()->type());
+    rhs = zero_extend_u32(rhs, icmp.rhs()->type());
+    break;
+  default:
+    break;
+  }
+
   switch (icmp.pred()) {
   case ir::ICmpPred::EQ:
     // rd = (rs1 ^ rs2) == 0
@@ -795,12 +948,13 @@ void InstructionSelection::visit(const ir::TruncInst &trunc_inst) {
   auto src = resolve_operand_or_immediate(trunc_inst.source(),
                                           "operand for TruncInst", &trunc_inst);
   if (trunc_inst.dest_bits() == 32) {
-    current_block_->create_inst(InstOpcode::MV, dst, {get_reg(src)});
     if (register_size_ == 8) {
-      current_block_->create_inst(InstOpcode::SLLI, dst,
-                                  {dst, create_immediate(32)});
-      current_block_->create_inst(InstOpcode::SRLI, dst,
-                                  {dst, create_immediate(32)});
+      // sext.w: keep the low 32 bits and sign-extend, matching the
+      // sign-extended representation used for all 32-bit values.
+      current_block_->create_inst(InstOpcode::ADDIW, dst,
+                                  {get_reg(src), create_immediate(0)});
+    } else {
+      current_block_->create_inst(InstOpcode::MV, dst, {get_reg(src)});
     }
     return;
   }
@@ -1009,9 +1163,12 @@ InstOpcode InstructionSelection::load_opcode_for_type(
     return InstOpcode::LH;
   }
   if (load_size == 4) {
-    if (register_size_ == 8 && !int_ty->is_signed()) {
-      return InstOpcode::LWU;
-    }
+    // Always sign-extend 4-byte loads (LW). 32-bit values are kept
+    // sign-extended throughout (the RV64 ABI representation); unsigned
+    // semantics are recovered at the few observation points (unsigned
+    // compares). Using LWU here would make loaded u32 values disagree with
+    // arithmetic results, breaking eq/ne and signed compares.
+    (void)int_ty;
     return InstOpcode::LW;
   }
   if (load_size == 8 && register_size_ == 8) {

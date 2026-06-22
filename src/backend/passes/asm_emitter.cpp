@@ -421,10 +421,67 @@ void AsmEmitter::emit_inst(const AsmFunction &function,
   case InstOpcode::BLT:
   case InstOpcode::BGE:
   case InstOpcode::BLTU:
-  case InstOpcode::BGEU:
-    os << "\t" << opcode_name(opcode) << "\t" << reg_name(uses.at(0)) << ", "
-       << reg_name(uses.at(1)) << ", " << symbol_name(uses.at(2)) << "\n";
+  case InstOpcode::BGEU: {
+    // Fused two-operand conditional branch carrying both targets:
+    //   {rs1, rs2, true_label, false_label}.
+    // Mirror the BNEZ lowering: prefer falling through to the next block, and
+    // route the taken edge through a nearby ".long_branch" trampoline so the
+    // hardware branch never has to reach a far target directly.
+    const auto invert = [](InstOpcode op) {
+      switch (op) {
+      case InstOpcode::BEQ:
+        return InstOpcode::BNE;
+      case InstOpcode::BNE:
+        return InstOpcode::BEQ;
+      case InstOpcode::BLT:
+        return InstOpcode::BGE;
+      case InstOpcode::BGE:
+        return InstOpcode::BLT;
+      case InstOpcode::BLTU:
+        return InstOpcode::BGEU;
+      case InstOpcode::BGEU:
+        return InstOpcode::BLTU;
+      default:
+        throw std::runtime_error("not an invertible branch opcode");
+      }
+    };
+
+    const auto rs1 = reg_name(uses.at(0));
+    const auto rs2 = reg_name(uses.at(1));
+    const auto true_label = symbol_name(uses.at(2));
+    const auto false_label = symbol_name(uses.at(3));
+
+    if (true_label == false_label) {
+      if (!next_block_name || *next_block_name != true_label) {
+        os << "\tj\t" << true_label << "\n";
+      }
+      return;
+    }
+
+    std::string bridge = ".long_branch" + std::to_string(long_branch_id_++);
+    if (next_block_name && *next_block_name == true_label) {
+      os << "\t" << opcode_name(opcode) << "\t" << rs1 << ", " << rs2 << ", "
+         << bridge << "\n";
+      os << "\tj\t" << false_label << "\n";
+      os << bridge << ":\n";
+      return;
+    }
+
+    if (next_block_name && *next_block_name == false_label) {
+      os << "\t" << opcode_name(invert(opcode)) << "\t" << rs1 << ", " << rs2
+         << ", " << bridge << "\n";
+      os << "\tj\t" << true_label << "\n";
+      os << bridge << ":\n";
+      return;
+    }
+
+    os << "\t" << opcode_name(opcode) << "\t" << rs1 << ", " << rs2 << ", "
+       << bridge << "\n";
+    os << "\tj\t" << false_label << "\n";
+    os << bridge << ":\n";
+    os << "\tj\t" << true_label << "\n";
     return;
+  }
 
   case InstOpcode::BEQZ:
   case InstOpcode::BNEZ:

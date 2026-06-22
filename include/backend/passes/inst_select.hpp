@@ -99,6 +99,16 @@ private:
   InstOpcode immediate_add_opcode(const ir::TypePtr &ty) const;
   void normalize_rv64_unsigned_word(const std::shared_ptr<Register> &reg,
                                     const ir::TypePtr &ty);
+  // Zero-extend a value into a fresh register iff `ty` is an unsigned 32-bit
+  // integer on RV64 (otherwise returns the operand unchanged). Used to recover
+  // unsigned semantics at the few sites that observe the high 32 bits.
+  std::shared_ptr<AsmOperand>
+  zero_extend_u32(const std::shared_ptr<AsmOperand> &op, const ir::TypePtr &ty);
+  // Compare/branch fusion helpers.
+  const ir::ICmpInst *fusible_branch_cmp(const ir::BranchInst &branch) const;
+  bool icmp_fused_into_branch(const ir::ICmpInst &icmp) const;
+  void emit_fused_branch(const ir::ICmpInst &cmp, const ir::BasicBlock *dest,
+                         const ir::BasicBlock *alt);
   std::shared_ptr<Register>
   materialize_address(const std::shared_ptr<AsmOperand> &ptr,
                      const ir::Instruction *inst, const char *reason);
