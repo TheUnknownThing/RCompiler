@@ -71,6 +71,12 @@ private:
   std::unordered_map<int, FixedRegisterSpan>
   compute_fixed_register_spans(const AsmFunction &function) const;
   std::vector<LiveInterval> build_intervals(const AsmFunction &function) const;
+  // Precisely compute the set of virtual registers that are live across at
+  // least one call (live-out of the call and not produced by it). These are the
+  // only values that must avoid caller-saved registers.
+  std::unordered_set<size_t>
+  compute_cross_call_vregs(const AsmFunction &function,
+                           const std::vector<BlockLiveness> &blocks) const;
   void linear_scan(AsmFunction &function,
                   std::vector<LiveInterval> &intervals) const;
   void graph_color(AsmFunction &function,

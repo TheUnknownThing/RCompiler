@@ -273,7 +273,6 @@ RegAlloc::build_intervals(const AsmFunction &function) const {
   }
 
   std::unordered_map<size_t, LiveInterval> interval_map;
-  std::vector<size_t> call_positions;
   size_t position = 0;
 
   for (size_t block_index = 0; block_index < function.blocks.size();
@@ -297,10 +296,6 @@ RegAlloc::build_intervals(const AsmFunction &function) const {
         continue;
       }
 
-      if (is_call(*inst)) {
-        call_positions.push_back(position);
-      }
-
       size_t reg_id = 0;
       for (const auto &use : inst->get_uses()) {
         if (is_virtual_register_operand(use, &reg_id)) {
@@ -315,15 +310,16 @@ RegAlloc::build_intervals(const AsmFunction &function) const {
     }
   }
 
+  // Determine which vregs are live across a call from the dataflow liveness
+  // (precise), rather than asking whether a value's contiguous [start,end] span
+  // happens to bracket a call position (which flagged values that are actually
+  // dead across the call, needlessly confining them to callee-saved registers).
+  const auto cross_call = compute_cross_call_vregs(function, blocks);
+
   std::vector<LiveInterval> intervals;
   intervals.reserve(interval_map.size());
-  for (auto &[_, interval] : interval_map) {
-    for (size_t call_pos : call_positions) {
-      if (interval.start < call_pos && call_pos < interval.end) {
-        interval.crosses_call = true;
-        break;
-      }
-    }
+  for (auto &[id, interval] : interval_map) {
+    interval.crosses_call = cross_call.find(id) != cross_call.end();
     intervals.push_back(interval);
   }
 
@@ -339,6 +335,57 @@ RegAlloc::build_intervals(const AsmFunction &function) const {
             });
 
   return intervals;
+}
+
+std::unordered_set<size_t> RegAlloc::compute_cross_call_vregs(
+    const AsmFunction &function,
+    const std::vector<BlockLiveness> &blocks) const {
+  std::unordered_set<size_t> cross_call;
+
+  for (size_t block_index = 0; block_index < function.blocks.size();
+       ++block_index) {
+    const auto &block = function.blocks[block_index];
+    if (!block) {
+      continue;
+    }
+
+    // Walk the block backwards maintaining the live-after set, seeded with the
+    // block's live-out.
+    std::unordered_set<size_t> live = blocks[block_index].live_out;
+    for (auto it = block->instructions.rbegin();
+         it != block->instructions.rend(); ++it) {
+      const auto &inst = *it;
+      if (!inst) {
+        continue;
+      }
+
+      if (is_call(*inst)) {
+        // `live` is exactly the live-out set of this call. Every value live
+        // after the call that the call does not itself define must survive
+        // across it, so it cannot occupy a caller-saved register.
+        size_t dst_id = 0;
+        const bool has_dst =
+            is_virtual_register_operand(inst->get_dst(), &dst_id);
+        for (size_t reg_id : live) {
+          if (!has_dst || reg_id != dst_id) {
+            cross_call.insert(reg_id);
+          }
+        }
+      }
+
+      size_t reg_id = 0;
+      if (is_virtual_register_operand(inst->get_dst(), &reg_id)) {
+        live.erase(reg_id);
+      }
+      for (const auto &use : inst->get_uses()) {
+        if (is_virtual_register_operand(use, &reg_id)) {
+          live.insert(reg_id);
+        }
+      }
+    }
+  }
+
+  return cross_call;
 }
 
 void RegAlloc::linear_scan(AsmFunction &function,

@@ -839,14 +839,6 @@ void InstructionSelection::visit(const ir::CallInst &call) {
     args.push_back(prepare_call_argument(arg, call));
   }
 
-  std::vector<std::shared_ptr<Register>> arg_temps;
-  arg_temps.reserve(args.size());
-  for (const auto &arg : args) {
-    auto temp = create_virtual_register();
-    current_block_->create_inst(InstOpcode::MV, temp, {get_reg(arg)});
-    arg_temps.push_back(temp);
-  }
-
   const size_t stack_arg_count = args.size() > 8 ? args.size() - 8 : 0;
   const size_t stack_arg_bytes = align_to(stack_arg_count * register_size_, 16);
   auto sp = create_physical_register(2);
@@ -855,17 +847,28 @@ void InstructionSelection::visit(const ir::CallInst &call) {
   if (stack_arg_bytes != 0) {
     outgoing_sp = create_virtual_register();
     emit_add_immediate(outgoing_sp, sp, -static_cast<int64_t>(stack_arg_bytes));
-    for (size_t i = 8; i < arg_temps.size(); ++i) {
+    for (size_t i = 8; i < args.size(); ++i) {
       current_block_->create_inst(
           register_store_opcode(), nullptr,
-          {arg_temps[i], outgoing_sp,
+          {get_reg(args[i]), outgoing_sp,
            create_immediate(static_cast<int32_t>((i - 8) * register_size_))});
     }
   }
 
-  for (size_t i = 0; i < arg_temps.size() && i < 8; ++i) {
-    current_block_->create_inst(
-        InstOpcode::MV, create_physical_register(10 + i), {arg_temps[i]});
+  // Move the first eight arguments directly into a0..a7 (li for immediates).
+  // The previous lowering first copied every argument into a fresh temp vreg
+  // and then moved the temp into the argument register -- two moves per
+  // argument. The intermediate temp is unnecessary: the register allocator's
+  // fixed-register-span check already prevents a source value from being placed
+  // in an argument register that is written earlier in this sequence, which is
+  // the only clobber hazard.
+  for (size_t i = 0; i < args.size() && i < 8; ++i) {
+    auto dst = create_physical_register(10 + i);
+    if (as_immediate(args[i])) {
+      current_block_->create_inst(InstOpcode::LI, dst, {args[i]});
+    } else {
+      current_block_->create_inst(InstOpcode::MV, dst, {get_reg(args[i])});
+    }
   }
 
   if (stack_arg_bytes != 0) {
