@@ -4,10 +4,7 @@ namespace rc::opt {
 
 void Mem2RegVisitor::run(ir::Module &module) {
   for (const auto &function : module.functions()) {
-    idom_.clear();
-    rpo_index_.clear();
-    dom_tree_children_.clear();
-    dominance_frontiers_.clear();
+    dt_.clear();
     rename_stacks_.clear();
     phi_nodes_.clear();
     to_remove_.clear();
@@ -17,9 +14,7 @@ void Mem2RegVisitor::run(ir::Module &module) {
     remove_unused_allocas(*function);
     replace_use_with_value(*function);
 
-    find_dominators(*function);
-    find_i_dom(*function);
-    find_dom_frontiers(*function);
+    dt_.compute(*function);
     mem2reg(*function);
     remove_dead_instructions(*function);
   }
@@ -104,130 +99,6 @@ void Mem2RegVisitor::replace_use_with_value(ir::Function &function) {
   }
 }
 
-void Mem2RegVisitor::find_dominators(ir::Function &function) {
-  const auto &blocks = function.blocks();
-  if (blocks.empty()) {
-    return;
-  }
-
-  std::unordered_map<ir::BasicBlock *, std::vector<ir::BasicBlock *>>
-      successors;
-  successors.reserve(blocks.size());
-  for (const auto &bb : blocks) {
-    auto &succ_list = successors[bb.get()];
-    for (auto *succ : utils::detail::successors(*bb)) {
-      succ_list.push_back(const_cast<ir::BasicBlock *>(succ));
-    }
-  }
-
-  auto *entry = blocks.front().get();
-  std::vector<ir::BasicBlock *> postorder;
-  std::unordered_set<ir::BasicBlock *> visited;
-  std::vector<std::pair<ir::BasicBlock *, std::size_t>> stack;
-  visited.insert(entry);
-  stack.push_back({entry, 0});
-
-  while (!stack.empty()) {
-    auto &[bb, next_idx] = stack.back();
-    const auto &succs = successors[bb];
-    if (next_idx < succs.size()) {
-      auto *succ = succs[next_idx++];
-      if (succ && visited.insert(succ).second) {
-        stack.push_back({succ, 0});
-      }
-      continue;
-    }
-
-    postorder.push_back(bb);
-    stack.pop_back();
-  }
-
-  std::vector<ir::BasicBlock *> rpo(postorder.rbegin(), postorder.rend());
-  for (std::size_t i = 0; i < rpo.size(); ++i) {
-    rpo_index_[rpo[i]] = i;
-    idom_[rpo[i]] = nullptr;
-  }
-
-  idom_[entry] = entry;
-
-  auto intersect = [&](ir::BasicBlock *lhs, ir::BasicBlock *rhs) {
-    while (lhs != rhs) {
-      while (rpo_index_[lhs] > rpo_index_[rhs]) {
-        lhs = idom_[lhs];
-      }
-      while (rpo_index_[rhs] > rpo_index_[lhs]) {
-        rhs = idom_[rhs];
-      }
-    }
-    return lhs;
-  };
-
-  bool changed = true;
-  while (changed) {
-    changed = false;
-    for (auto *bb : rpo) {
-      if (bb == entry) {
-        continue;
-      }
-
-      ir::BasicBlock *new_idom = nullptr;
-      for (auto *pred : bb->predecessors()) {
-        if (!rpo_index_.count(pred)) {
-          continue;
-        }
-        if (pred != entry && !idom_[pred]) {
-          continue;
-        }
-        new_idom = new_idom ? intersect(pred, new_idom) : pred;
-      }
-
-      if (new_idom && idom_[bb] != new_idom) {
-        idom_[bb] = new_idom;
-        changed = true;
-      }
-    }
-  }
-
-  idom_[entry] = nullptr;
-}
-
-void Mem2RegVisitor::find_i_dom(ir::Function &function) {
-  (void)function;
-  dom_tree_children_.clear();
-  for (const auto &[bb, parent] : idom_) {
-    if (bb && parent) {
-      dom_tree_children_[parent].push_back(bb);
-    }
-  }
-}
-
-void Mem2RegVisitor::find_dom_frontiers(ir::Function &function) {
-  const auto &blocks = function.blocks();
-  if (blocks.empty()) {
-    return;
-  }
-
-  for (const auto &bb : blocks) {
-    auto preds = bb->predecessors();
-    if (preds.size() < 2) {
-      continue;
-    }
-
-    for (const auto &p : preds) {
-      if (!rpo_index_.count(p)) {
-        continue;
-      }
-
-      auto *runner = p;
-      auto *stop = idom_[bb.get()];
-      while (runner && runner != stop) {
-        dominance_frontiers_[runner].insert(bb.get());
-        runner = idom_[runner];
-      }
-    }
-  }
-}
-
 void Mem2RegVisitor::mem2reg(ir::Function &function) {
   const auto &blocks = function.blocks();
   if (blocks.empty()) {
@@ -296,7 +167,7 @@ void Mem2RegVisitor::place_phi_nodes(ir::BasicBlock &bb,
                                           ir::AllocaInst *alloca) {
 
   // place it at bb's dominance frontiers
-  const auto &frontiers = dominance_frontiers_[&bb];
+  const auto &frontiers = dt_.dom_frontier(&bb);
   for (auto *df_bb : frontiers) {
     if (phi_nodes_[df_bb].count(alloca) || df_bb == &bb) {
       continue; // already placed
@@ -375,7 +246,7 @@ void Mem2RegVisitor::rename(ir::BasicBlock &bb) {
   }
 
   // visit children in dominator tree
-  for (auto *child : dom_tree_children_[&bb]) {
+  for (auto *child : dt_.children(&bb)) {
     rename(*child);
   }
 

@@ -79,7 +79,9 @@ enum class InstOpcode {
   RET,
   BEQZ,
   BNEZ,
-  J
+  J,
+  LA, // load address of a symbol (pseudo: la rd, sym)
+  JR  // indirect jump (pseudo: jr rs == jalr x0, 0(rs))
 };
 
 class AsmInst {
@@ -100,6 +102,8 @@ public:
     case InstOpcode::BEQZ:
     case InstOpcode::BNEZ:
     case InstOpcode::J:
+    case InstOpcode::LA:
+    case InstOpcode::JR:
       return true;
     default:
       return false;
@@ -133,10 +137,19 @@ public:
   }
 };
 
+// A read-only jump table emitted to .rodata for a SwitchInst lowered as an
+// indexed jump. `entry_labels` holds one block label per index in [lo, hi];
+// holes are filled with the default label.
+struct JumpTable {
+  std::string label;
+  std::vector<std::string> entry_labels;
+};
+
 class AsmFunction {
 public:
   std::string name;
   std::vector<std::unique_ptr<AsmBlock>> blocks;
+  std::vector<JumpTable> jump_tables;
   size_t stack_size{0};
 
   AsmBlock *create_block(const std::string &label) {

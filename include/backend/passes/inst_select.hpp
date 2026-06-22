@@ -39,6 +39,7 @@ public:
   void visit(const ir::GetElementPtrInst &) override;
 
   void visit(const ir::BranchInst &) override;
+  void visit(const ir::SwitchInst &) override;
   void visit(const ir::ReturnInst &) override;
   void visit(const ir::UnreachableInst &) override;
 
@@ -104,6 +105,12 @@ private:
   // unsigned semantics at the few sites that observe the high 32 bits.
   std::shared_ptr<AsmOperand>
   zero_extend_u32(const std::shared_ptr<AsmOperand> &op, const ir::TypePtr &ty);
+  // Switch lowering helpers.
+  void emit_switch_compare_chain(const ir::SwitchInst &sw,
+                                 const std::shared_ptr<AsmOperand> &scrut);
+  void emit_switch_jump_table(const ir::SwitchInst &sw,
+                              const std::shared_ptr<AsmOperand> &scrut,
+                              int64_t lo, int64_t hi);
   // Compare/branch fusion helpers.
   const ir::ICmpInst *fusible_branch_cmp(const ir::BranchInst &branch) const;
   bool icmp_fused_into_branch(const ir::ICmpInst &icmp) const;

@@ -10,6 +10,7 @@ class StoreInst;
 class GetElementPtrInst;
 
 class BranchInst;
+class SwitchInst;
 class ReturnInst;
 class UnreachableInst;
 
@@ -33,6 +34,7 @@ struct InstructionVisitor {
   virtual void visit(const GetElementPtrInst &) = 0;
 
   virtual void visit(const BranchInst &) = 0;
+  virtual void visit(const SwitchInst &) = 0;
   virtual void visit(const ReturnInst &) = 0;
   virtual void visit(const UnreachableInst &) = 0;
 

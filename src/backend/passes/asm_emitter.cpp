@@ -35,6 +35,31 @@ AsmEmitter::emit(const std::vector<std::unique_ptr<AsmFunction>> &functions,
       }
     }
   }
+  emit_jump_tables(functions, os);
+}
+
+void AsmEmitter::emit_jump_tables(
+    const std::vector<std::unique_ptr<AsmFunction>> &functions,
+    std::ostream &os) const {
+  const char *directive = register_size_ == 8 ? ".dword" : ".word";
+  const int align = register_size_ == 8 ? 3 : 2;
+  bool emitted_header = false;
+  for (const auto &function : functions) {
+    if (!function) {
+      continue;
+    }
+    for (const auto &jt : function->jump_tables) {
+      if (!emitted_header) {
+        os << "\t.section\t.rodata\n";
+        emitted_header = true;
+      }
+      os << "\t.align\t" << align << "\n";
+      os << jt.label << ":\n";
+      for (const auto &entry : jt.entry_labels) {
+        os << "\t" << directive << "\t" << entry << "\n";
+      }
+    }
+  }
 }
 
 void AsmEmitter::emit_constants(
@@ -234,6 +259,10 @@ std::string AsmEmitter::opcode_name(InstOpcode opcode) const {
     return "bnez";
   case InstOpcode::J:
     return "j";
+  case InstOpcode::LA:
+    return "la";
+  case InstOpcode::JR:
+    return "jr";
   }
   throw std::runtime_error("unknown opcode");
 }
@@ -527,6 +556,17 @@ void AsmEmitter::emit_inst(const AsmFunction &function,
 
   case InstOpcode::J:
     os << "\tj\t" << symbol_name(uses.at(0)) << "\n";
+    return;
+
+  case InstOpcode::LA:
+    os << "\tla\t" << reg_name(inst.get_dst()) << ", " << symbol_name(uses.at(0))
+       << "\n";
+    return;
+
+  case InstOpcode::JR:
+    // uses[0] is the target register; any trailing Symbols are successor hints
+    // for register allocation only and are not emitted.
+    os << "\tjr\t" << reg_name(uses.at(0)) << "\n";
     return;
 
   case InstOpcode::LI:

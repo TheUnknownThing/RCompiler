@@ -1,5 +1,7 @@
 #include "backend/passes/inst_select.hpp"
 
+#include <unordered_set>
+
 namespace rc::backend {
 
 void InstructionSelection::generate(const ir::Module &module) {
@@ -604,6 +606,127 @@ void InstructionSelection::visit(const ir::BranchInst &branch) {
     current_block_->create_inst(InstOpcode::J, nullptr,
                                 {create_label_operand(branch.dest())});
   }
+}
+
+void InstructionSelection::visit(const ir::SwitchInst &sw) {
+  auto scrut = resolve_operand_or_immediate(
+      sw.scrutinee(), "switch scrutinee not materialized", &sw);
+
+  // Case values come from icmp-eq against i32 constants; interpret them as
+  // signed 32-bit to compute the dense range.
+  int64_t lo = std::numeric_limits<int64_t>::max();
+  int64_t hi = std::numeric_limits<int64_t>::min();
+  for (const auto &c : sw.cases()) {
+    int64_t v = static_cast<int32_t>(static_cast<uint32_t>(c.first->value()));
+    lo = std::min(lo, v);
+    hi = std::max(hi, v);
+  }
+  const size_t n = sw.cases().size();
+  const int64_t span = sw.cases().empty() ? 0 : (hi - lo + 1);
+  // Jump table when the cases are numerous and dense enough that the table
+  // (one pointer per index in [lo,hi]) is worth O(1) dispatch; otherwise fall
+  // back to a comparison chain (also the correct lowering for sparse/small).
+  const bool dense = n >= 6 && span > 0 &&
+                     span <= 2 * static_cast<int64_t>(n) &&
+                     span <= std::numeric_limits<int32_t>::max();
+  if (dense) {
+    emit_switch_jump_table(sw, scrut, lo, hi);
+  } else {
+    emit_switch_compare_chain(sw, scrut);
+  }
+}
+
+void InstructionSelection::emit_switch_compare_chain(
+    const ir::SwitchInst &sw, const std::shared_ptr<AsmOperand> &scrut) {
+  auto scrut_reg = get_reg(scrut);
+  for (const auto &c : sw.cases()) {
+    auto k_reg = get_reg(create_immediate(
+        static_cast<int32_t>(static_cast<uint32_t>(c.first->value()))));
+    // The non-matching edge continues to a fresh block that tests the next case.
+    auto cont = functions_.back()->create_block(
+        current_block_->name + ".swc" + std::to_string(unique_name_id_++));
+    current_block_->create_inst(
+        InstOpcode::BEQ, nullptr,
+        {scrut_reg, k_reg, create_label_operand(c.second),
+         std::make_shared<Symbol>(cont->name, false)});
+    current_block_ = cont;
+  }
+  current_block_->create_inst(InstOpcode::J, nullptr,
+                              {create_label_operand(sw.default_dest())});
+}
+
+void InstructionSelection::emit_switch_jump_table(
+    const ir::SwitchInst &sw, const std::shared_ptr<AsmOperand> &scrut,
+    int64_t lo, int64_t hi) {
+  auto scrut_reg = get_reg(scrut);
+  const int64_t span = hi - lo + 1;
+
+  // idx = scrutinee - lo
+  auto idx = create_virtual_register();
+  emit_add_immediate(idx, scrut_reg, -lo);
+
+  // Bounds check: an unsigned compare catches both idx<0 (wraps to a huge
+  // value) and idx>=span, routing out-of-range scrutinees to the default.
+  auto count_reg =
+      get_reg(create_immediate(static_cast<int32_t>(span)));
+  auto tbl_block = functions_.back()->create_block(
+      current_block_->name + ".swjt" + std::to_string(unique_name_id_++));
+  current_block_->create_inst(
+      InstOpcode::BGEU, nullptr,
+      {idx, count_reg, create_label_operand(sw.default_dest()),
+       std::make_shared<Symbol>(tbl_block->name, false)});
+
+  current_block_ = tbl_block;
+
+  // off = idx << log2(entry_size); addr = table + off; target = *(addr)
+  const int32_t shift = register_size_ == 8 ? 3 : 2;
+  auto off = create_virtual_register();
+  current_block_->create_inst(InstOpcode::SLLI, off,
+                              {idx, create_immediate(shift)});
+  std::string table_label =
+      functions_.back()->name + ".swtab" + std::to_string(unique_name_id_++);
+  auto tbl_addr = create_virtual_register();
+  current_block_->create_inst(InstOpcode::LA, tbl_addr,
+                              {std::make_shared<Symbol>(table_label, false)});
+  auto entry_addr = create_virtual_register();
+  current_block_->create_inst(InstOpcode::ADD, entry_addr, {tbl_addr, off});
+  auto target = create_virtual_register();
+  current_block_->create_inst(register_load_opcode(), target,
+                              {entry_addr, create_immediate(0)});
+
+  // Build the table (one entry per index in [lo,hi]; holes -> default) and the
+  // jr's successor labels. The labels are carried as Symbol uses so register
+  // allocation liveness and CFG successor computation can see the edges of the
+  // otherwise label-less indirect jump.
+  std::unordered_map<int64_t, std::string> case_label;
+  for (const auto &c : sw.cases()) {
+    int64_t v = static_cast<int32_t>(static_cast<uint32_t>(c.first->value()));
+    case_label[v] = get_unique_label(c.second);
+  }
+  const std::string default_label = get_unique_label(sw.default_dest());
+
+  JumpTable jt;
+  jt.label = table_label;
+  jt.entry_labels.reserve(static_cast<size_t>(span));
+  std::vector<std::shared_ptr<AsmOperand>> jr_uses;
+  jr_uses.push_back(target);
+  std::unordered_set<std::string> seen_labels;
+  auto add_successor = [&](const std::string &lbl) {
+    if (seen_labels.insert(lbl).second) {
+      jr_uses.push_back(std::make_shared<Symbol>(lbl, false));
+    }
+  };
+  for (int64_t v = lo; v <= hi; ++v) {
+    auto it = case_label.find(v);
+    const std::string &lbl =
+        it != case_label.end() ? it->second : default_label;
+    jt.entry_labels.push_back(lbl);
+    add_successor(lbl);
+  }
+  add_successor(default_label);
+
+  functions_.back()->jump_tables.push_back(std::move(jt));
+  current_block_->create_inst(InstOpcode::JR, nullptr, std::move(jr_uses));
 }
 
 std::shared_ptr<AsmOperand>

@@ -451,6 +451,7 @@ private:
           fn(*br.cond());
         }
       }
+      void visit(const SwitchInst &sw) override { fn(*sw.scrutinee()); }
       void visit(const ReturnInst &r) override {
         if (!r.is_void() && r.value()) {
           fn(*r.value());
@@ -568,6 +569,18 @@ private:
         } else {
           self.out_ << "br label %" << self.local_label(br.dest());
         }
+      }
+
+      void visit(const SwitchInst &sw) override {
+        self.out_ << "switch " << self.typed_value_ref(*sw.scrutinee())
+                  << ", label %" << self.local_label(sw.default_dest())
+                  << " [";
+        for (const auto &c : sw.cases()) {
+          self.out_ << " " << self.type_to_string(c.first->type()) << " "
+                    << self.value_ref(*c.first) << ", label %"
+                    << self.local_label(c.second);
+        }
+        self.out_ << " ]";
       }
 
       void visit(const ReturnInst &r) override {

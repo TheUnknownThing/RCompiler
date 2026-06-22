@@ -11,6 +11,8 @@ void CFGVisitor::visit(ir::Value &value) {
     visit(*basic_block);
   } else if (auto branch = dynamic_cast<ir::BranchInst *>(&value)) {
     visit(*branch);
+  } else if (auto sw = dynamic_cast<ir::SwitchInst *>(&value)) {
+    visit(*sw);
   } else if (auto ret = dynamic_cast<ir::ReturnInst *>(&value)) {
     visit(*ret);
   }
@@ -57,6 +59,18 @@ void CFGVisitor::visit(ir::BranchInst &branch_inst) {
   } else {
     if (branch_inst.dest()) {
       branch_inst.dest()->add_predecessor(parent);
+    }
+  }
+}
+
+void CFGVisitor::visit(ir::SwitchInst &switch_inst) {
+  auto parent = switch_inst.parent();
+  if (switch_inst.default_dest()) {
+    switch_inst.default_dest()->add_predecessor(parent);
+  }
+  for (const auto &c : switch_inst.cases()) {
+    if (c.second) {
+      c.second->add_predecessor(parent);
     }
   }
 }

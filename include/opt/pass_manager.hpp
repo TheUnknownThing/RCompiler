@@ -8,9 +8,11 @@
 #include "opt/inst_combine/inst_combine.hpp"
 #include "opt/local_memory/load_forwarding.hpp"
 #include "opt/mem2reg/mem2reg.hpp"
+#include "opt/licm/licm.hpp"
 #include "opt/sccp/context.hpp"
 #include "opt/sccp/sccp.hpp"
 #include "opt/simplify_cfg/simplify_cfg.hpp"
+#include "opt/switch_recovery/switch_recovery.hpp"
 
 namespace rc::opt {
 

@@ -19,6 +19,7 @@ public:
 
   virtual void visit(ir::BinaryOpInst &binary_op_inst);
   virtual void visit(ir::BranchInst &branch_inst);
+  virtual void visit(ir::SwitchInst &switch_inst);
   virtual void visit(ir::UnreachableInst &unreachable_inst);
   virtual void visit(ir::ReturnInst &return_inst);
   virtual void visit(ir::AllocaInst &alloca_inst);

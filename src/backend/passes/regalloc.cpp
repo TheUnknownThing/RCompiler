@@ -138,6 +138,21 @@ RegAlloc::compute_successors(const AsmFunction &function) const {
       continue;
     }
 
+    if (opcode == InstOpcode::JR) {
+      // Indirect jump (jump table): every Symbol use is a possible target.
+      for (const auto &use : uses) {
+        auto label = std::dynamic_pointer_cast<Symbol>(use);
+        if (!label) {
+          continue;
+        }
+        auto it = block_index_by_name.find(label->name);
+        if (it != block_index_by_name.end()) {
+          successors[i].push_back(it->second);
+        }
+      }
+      continue;
+    }
+
     if (opcode == InstOpcode::BNEZ || opcode == InstOpcode::BEQZ ||
         opcode == InstOpcode::BEQ || opcode == InstOpcode::BNE ||
         opcode == InstOpcode::BLT || opcode == InstOpcode::BGE ||
@@ -1118,6 +1133,7 @@ bool RegAlloc::is_terminator(const AsmInst &inst) const {
   case InstOpcode::BGE:
   case InstOpcode::BLTU:
   case InstOpcode::BGEU:
+  case InstOpcode::JR:
     return true;
   default:
     return false;
@@ -1162,6 +1178,8 @@ RegAlloc::block_label_index(const std::vector<std::shared_ptr<AsmOperand>> &uses
   case InstOpcode::BLTU:
   case InstOpcode::BGEU:
     return 2;
+  case InstOpcode::JR:
+    return 1; // uses[0] is the target register; labels follow
   default:
     return 0;
   }

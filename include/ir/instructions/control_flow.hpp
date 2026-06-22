@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "type.hpp"
 #include "visitor.hpp"
@@ -80,6 +82,83 @@ private:
   std::shared_ptr<Value> cond_;
   BasicBlock *dest_{nullptr};    // unconditional/true target
   BasicBlock *alt_dest_{nullptr}; // false target when conditional
+};
+
+// Multi-way branch on an integer scrutinee. Each case maps a distinct integer
+// constant to a target block; any value not listed goes to the default. Lowered
+// either to a jump table or a comparison chain in the backend. Produced by the
+// switch-recovery pass from icmp-eq if/else ladders.
+class SwitchInst : public Instruction {
+public:
+  using Case = std::pair<std::shared_ptr<ConstantInt>, BasicBlock *>;
+
+  SwitchInst(BasicBlock *parent, std::shared_ptr<Value> scrutinee,
+             BasicBlock *default_dest, std::vector<Case> cases)
+      : Instruction(parent, std::make_shared<VoidType>()),
+        scrutinee_(std::move(scrutinee)), default_dest_(default_dest),
+        cases_(std::move(cases)) {
+    if (!scrutinee_) {
+      throw std::invalid_argument("SwitchInst requires a scrutinee value");
+    }
+    // Only the scrutinee participates in the use-def graph; case constants are
+    // immutable and targets are block pointers (mirrors BranchInst).
+    add_operand(scrutinee_);
+  }
+
+  const std::shared_ptr<Value> &scrutinee() const { return scrutinee_; }
+  BasicBlock *default_dest() const { return default_dest_; }
+  void set_default_dest(BasicBlock *bb) { default_dest_ = bb; }
+  const std::vector<Case> &cases() const { return cases_; }
+  std::vector<Case> &cases() { return cases_; }
+  void add_case(std::shared_ptr<ConstantInt> v, BasicBlock *bb) {
+    cases_.emplace_back(std::move(v), bb);
+  }
+
+  void accept(InstructionVisitor &v) const override { v.visit(*this); }
+  bool is_terminator() const override { return true; }
+
+  void replace_operand(Value *old_op, Value *new_op) override {
+    for (auto &op : operands) {
+      if (op == old_op) {
+        old_op->remove_use(this);
+        op = new_op;
+        new_op->add_use(this);
+      }
+    }
+    if (scrutinee_.get() == old_op) {
+      scrutinee_ = std::static_pointer_cast<Value>(new_op->shared_from_this());
+    }
+  }
+
+  void replace_block(BasicBlock *old_bb, BasicBlock *new_bb) {
+    if (default_dest_ == old_bb) {
+      default_dest_ = new_bb;
+    }
+    for (auto &c : cases_) {
+      if (c.second == old_bb) {
+        c.second = new_bb;
+      }
+    }
+  }
+
+  std::shared_ptr<Instruction>
+  clone_inst(BasicBlock *new_parent, const ValueRemapMap &value_map,
+            const BlockRemapMap &block_map) const override {
+    std::vector<Case> new_cases;
+    new_cases.reserve(cases_.size());
+    for (const auto &c : cases_) {
+      new_cases.emplace_back(c.first, remap_block(c.second, block_map));
+    }
+    return std::make_shared<SwitchInst>(new_parent,
+                                        remap_value(scrutinee_, value_map),
+                                        remap_block(default_dest_, block_map),
+                                        std::move(new_cases));
+  }
+
+private:
+  std::shared_ptr<Value> scrutinee_;
+  BasicBlock *default_dest_{nullptr};
+  std::vector<Case> cases_;
 };
 
 class ReturnInst : public Instruction {

@@ -15,7 +15,7 @@ void PassManager::run(ir::Module &module, std::ostream &os) {
   PrologueEpiloguePass frame_pass;
   frame_pass.run(inst_select.functions());
 
-  AsmEmitter asm_emitter;
+  AsmEmitter asm_emitter(/*register_size=*/4);
   asm_emitter.emit(inst_select.functions(), module.constants(), os);
 }
 
@@ -33,7 +33,7 @@ void PassManager::run_rv64(ir::Module &module, std::ostream &os) {
                                   InstOpcode::LD);
   frame_pass.run(inst_select.functions());
 
-  AsmEmitter asm_emitter;
+  AsmEmitter asm_emitter(/*register_size=*/8);
   asm_emitter.emit(inst_select.functions(), module.constants(), os);
 }
 

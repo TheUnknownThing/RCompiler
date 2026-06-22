@@ -186,6 +186,9 @@ void PhiElimination::replace_critical_edge(ir::Function *func,
     if (auto branch = std::dynamic_pointer_cast<ir::BranchInst>(inst)) {
       branch->replace_block(to, new_bb.get());
       break;
+    } else if (auto sw = std::dynamic_pointer_cast<ir::SwitchInst>(inst)) {
+      sw->replace_block(to, new_bb.get());
+      break;
     } else if (std::dynamic_pointer_cast<ir::ReturnInst>(inst) ||
                std::dynamic_pointer_cast<ir::UnreachableInst>(inst)) {
       break;

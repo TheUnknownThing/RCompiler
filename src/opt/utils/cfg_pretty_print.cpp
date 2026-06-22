@@ -44,6 +44,17 @@ std::vector<const ir::BasicBlock *> successors(const ir::BasicBlock &bb) {
       }
       break;
     }
+    if (auto *sw = dynamic_cast<const ir::SwitchInst *>(inst.get())) {
+      if (sw->default_dest()) {
+        outs.push_back(sw->default_dest());
+      }
+      for (const auto &c : sw->cases()) {
+        if (c.second) {
+          outs.push_back(c.second);
+        }
+      }
+      break;
+    }
     if (dynamic_cast<const ir::ReturnInst *>(inst.get()) ||
         dynamic_cast<const ir::UnreachableInst *>(inst.get())) {
       break;
@@ -70,6 +81,17 @@ std::vector<ir::BasicBlock *> successors(ir::BasicBlock &bb) {
       }
       if (br->is_conditional() && br->alt_dest()) {
         outs.push_back(br->alt_dest());
+      }
+      break;
+    }
+    if (auto *sw = dynamic_cast<const ir::SwitchInst *>(inst.get())) {
+      if (sw->default_dest()) {
+        outs.push_back(sw->default_dest());
+      }
+      for (const auto &c : sw->cases()) {
+        if (c.second) {
+          outs.push_back(c.second);
+        }
       }
       break;
     }

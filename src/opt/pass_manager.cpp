@@ -37,6 +37,31 @@ void PassManager::run(ir::Module &module) {
   simplify_cfg.run(&module);
 
   revisit_cfg(module);
+
+  // Hoist loop-invariant pure computation into preheaders before switch
+  // recovery — recovery's pattern match assumes canonical compare-and-branch
+  // test blocks, and LICM moves invariants out of those without disturbing the
+  // ladder shape.
+  LICMPass licm;
+  licm.run(module);
+
+  revisit_cfg(module);
+
+  inst_combine.run(module);
+  dce.run(module);
+
+  revisit_cfg(module);
+
+  // Collapse if/else-if ladders into switches once the CFG is canonical
+  // (constants folded, blocks merged), then clean up the now-dead test blocks.
+  SwitchRecovery switch_recovery;
+  switch_recovery.run(module);
+
+  revisit_cfg(module);
+
+  dce.run(module);
+
+  revisit_cfg(module);
 }
 
 } // namespace rc::opt

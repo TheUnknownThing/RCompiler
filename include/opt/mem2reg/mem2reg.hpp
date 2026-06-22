@@ -7,6 +7,7 @@
 #include "ir/instructions/top_level.hpp"
 #include "ir/instructions/type.hpp"
 
+#include "opt/analysis/dominator_tree.hpp"
 #include "opt/base/base_visitor.hpp"
 #include "opt/utils/cfg_pretty_print.hpp"
 #include "opt/utils/ir_utils.hpp"
@@ -27,23 +28,13 @@ public:
   void remove_unused_allocas(ir::Function &function);
   void replace_use_with_value(ir::Function &function);
 
-  void find_dominators(ir::Function &function);
-  void find_i_dom(ir::Function &function);
-  void find_dom_frontiers(ir::Function &function);
-
   void mem2reg(ir::Function &function);
   void place_phi_nodes(ir::BasicBlock &bb, ir::AllocaInst *alloca);
   void rename(ir::BasicBlock &bb);
   void remove_dead_instructions(ir::Function &function);
 
 private:
-  std::unordered_map<ir::BasicBlock *, ir::BasicBlock *> idom_;
-  std::unordered_map<ir::BasicBlock *, std::size_t> rpo_index_;
-  std::unordered_map<ir::BasicBlock *, std::vector<ir::BasicBlock *>>
-      dom_tree_children_;
-  std::unordered_map<const ir::BasicBlock *,
-                     std::unordered_set<ir::BasicBlock *>>
-      dominance_frontiers_;
+  DominatorTree dt_;
 
   std::unordered_map<const ir::AllocaInst *, std::vector<ir::Value *>>
       rename_stacks_;

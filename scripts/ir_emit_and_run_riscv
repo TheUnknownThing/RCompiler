@@ -130,6 +130,27 @@ get_qemu_rv64() {
     exit 1
 }
 
+# Resolve a portable `timeout` command. GNU coreutils provides `timeout`,
+# macOS provides it as `gtimeout` (brew coreutils). If neither exists, run
+# without a timeout wrapper so the script still works.
+if command -v timeout > /dev/null 2>&1; then
+    TIMEOUT_CMD="timeout"
+elif command -v gtimeout > /dev/null 2>&1; then
+    TIMEOUT_CMD="gtimeout"
+else
+    TIMEOUT_CMD=""
+    echo "Warning: no 'timeout'/'gtimeout' found; running without a timeout guard."
+fi
+run_with_timeout() {
+    # Usage: run_with_timeout <duration> <cmd...>
+    local duration="$1"; shift
+    if [ -n "$TIMEOUT_CMD" ]; then
+        "$TIMEOUT_CMD" "$duration" "$@"
+    else
+        "$@"
+    fi
+}
+
 QEMU_RISCV64=""
 QEMU_TIMEOUT="${QEMU_TIMEOUT:-30s}"
 if [ "$ARCH" = "rv64" ]; then
@@ -264,9 +285,9 @@ run_test() {
         echo "Running with qemu-riscv64..."
         set +e
         if [ -f "$INPUT_FILE" ]; then
-            timeout "$QEMU_TIMEOUT" "$QEMU_RISCV64" "test.elf" < "$INPUT_FILE" > "tmp.out" 2> "qemu_err.txt"
+            run_with_timeout "$QEMU_TIMEOUT" "$QEMU_RISCV64" "test.elf" < "$INPUT_FILE" > "tmp.out" 2> "qemu_err.txt"
         else
-            timeout "$QEMU_TIMEOUT" "$QEMU_RISCV64" "test.elf" > "tmp.out" 2> "qemu_err.txt"
+            run_with_timeout "$QEMU_TIMEOUT" "$QEMU_RISCV64" "test.elf" > "tmp.out" 2> "qemu_err.txt"
         fi
         QEMU_RC=$?
         set -e
@@ -302,9 +323,9 @@ run_test() {
         echo "Running with reimu..."
         set +e
         if [ -f "$INPUT_FILE" ]; then
-            timeout "$REIMU_TIMEOUT" "$REIMU" -i="$INPUT_FILE" -s=8M -o="tmp.out" -f=builtin.s,test.s > "reimu_output.txt" 2> "reimu_err.txt"
+            run_with_timeout "$REIMU_TIMEOUT" "$REIMU" -i="$INPUT_FILE" -s=8M -o="tmp.out" -f=builtin.s,test.s > "reimu_output.txt" 2> "reimu_err.txt"
         else
-            timeout "$REIMU_TIMEOUT" "$REIMU" -s=8M -o="tmp.out" -f=builtin.s,test.s > "reimu_output.txt" 2> "reimu_err.txt"
+            run_with_timeout "$REIMU_TIMEOUT" "$REIMU" -s=8M -o="tmp.out" -f=builtin.s,test.s > "reimu_output.txt" 2> "reimu_err.txt"
         fi
         REIMU_RC=$?
         set -e

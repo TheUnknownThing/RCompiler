@@ -7,6 +7,7 @@ void IRBaseVisitor::visit(ir::Function &) {}
 void IRBaseVisitor::visit(ir::BasicBlock &) {}
 void IRBaseVisitor::visit(ir::BinaryOpInst &) {}
 void IRBaseVisitor::visit(ir::BranchInst &) {}
+void IRBaseVisitor::visit(ir::SwitchInst &) {}
 void IRBaseVisitor::visit(ir::UnreachableInst &) {}
 void IRBaseVisitor::visit(ir::ReturnInst &) {}
 void IRBaseVisitor::visit(ir::AllocaInst &) {}

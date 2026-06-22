@@ -14,15 +14,22 @@ namespace rc::backend {
 
 class AsmEmitter {
 public:
+  AsmEmitter() = default;
+  explicit AsmEmitter(size_t register_size) : register_size_(register_size) {}
+
   void emit(const std::vector<std::unique_ptr<AsmFunction>> &functions,
             const std::vector<std::shared_ptr<ir::Constant>> &constants,
             std::ostream &os) const;
 
 private:
   mutable size_t long_branch_id_{0};
+  size_t register_size_{4};
 
   void emit_constants(const std::vector<std::shared_ptr<ir::Constant>> &constants,
                       std::ostream &os) const;
+  void emit_jump_tables(
+      const std::vector<std::unique_ptr<AsmFunction>> &functions,
+      std::ostream &os) const;
   std::string escaped_string_data(const std::string &data) const;
   std::string opcode_name(InstOpcode opcode) const;
   std::string reg_name(const std::shared_ptr<AsmOperand> &operand) const;

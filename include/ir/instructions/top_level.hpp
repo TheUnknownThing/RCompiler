@@ -121,6 +121,55 @@ public:
     }
   }
 
+  // Splice helpers — like erase_instruction / insert_before<T> but they neither
+  // drop the instruction's operand uses nor construct a new instruction. Used
+  // by LICM to physically move an existing instruction between blocks while
+  // keeping the use-def graph intact.
+  void detach_instruction(const std::shared_ptr<Instruction> &inst) {
+    auto it = std::find(instructions_.begin(), instructions_.end(), inst);
+    if (it == instructions_.end()) {
+      return;
+    }
+    auto *prev = (*it)->prev();
+    auto *next = (*it)->next();
+    if (prev) {
+      prev->set_next(next);
+    }
+    if (next) {
+      next->set_prev(prev);
+    }
+    (*it)->set_prev(nullptr);
+    (*it)->set_next(nullptr);
+    std::size_t idx = std::distance(instructions_.begin(), it);
+    instructions_.erase(it);
+    if (idx < prologue_insert_pos_) {
+      --prologue_insert_pos_;
+    }
+  }
+
+  void insert_existing_before(const std::shared_ptr<Instruction> &pos,
+                              const std::shared_ptr<Instruction> &inst) {
+    auto it = std::find(instructions_.begin(), instructions_.end(), pos);
+    if (it == instructions_.end()) {
+      throw std::invalid_argument("Position instruction not found in block");
+    }
+    Instruction *before =
+        (it == instructions_.begin()) ? nullptr : (*(it - 1)).get();
+    Instruction *at_pos = (*it).get();
+    inst->set_prev(before);
+    inst->set_next(at_pos);
+    if (before) {
+      before->set_next(inst.get());
+    }
+    at_pos->set_prev(inst.get());
+    inst->set_parent(this);
+    std::size_t idx = std::distance(instructions_.begin(), it);
+    instructions_.insert(it, inst);
+    if (idx < prologue_insert_pos_) {
+      ++prologue_insert_pos_;
+    }
+  }
+
   bool is_terminated() const;
 
   Function *parent() const { return parent_; }
