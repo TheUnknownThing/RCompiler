@@ -42,6 +42,7 @@ RegAlloc::allocate(const std::vector<std::unique_ptr<AsmFunction>> &functions) {
 
       if (!has_spills) {
         assign_physical_registers(*function, intervals);
+        remove_redundant_moves(*function);
         finished = true;
         break;
       }
@@ -489,7 +490,6 @@ void RegAlloc::linear_scan(AsmFunction &function,
 void RegAlloc::graph_color(AsmFunction &function,
                                  std::vector<LiveInterval> &intervals) const {
   std::unordered_set<size_t> spilled_ids;
-  const auto fixed_reg_spans = compute_fixed_register_spans(function);
   const size_t n = intervals.size();
   const size_t original_stack_size = function.stack_size;
   constexpr size_t k_graph_color_interval_limit = 1024;
@@ -580,6 +580,14 @@ void RegAlloc::graph_color(AsmFunction &function,
     }
   }
 
+  // Per-node set of physical registers the value may not occupy. Built from
+  // precise liveness: a vreg conflicts with a physical register P exactly when
+  // it is live at a point where P is also live (i.e. across a definition of P,
+  // such as an argument/return move). This replaces the old whole-function
+  // min/max "fixed span" which reserved a0..a7 across the entire function (they
+  // appear at the entry parameter moves and the return) and so made the eight
+  // argument registers unusable for general allocation.
+  std::vector<std::unordered_set<int>> forbidden_phys(n);
   for (size_t block_index = 0; block_index < function.blocks.size();
        ++block_index) {
     const auto &block = function.blocks[block_index];
@@ -588,6 +596,12 @@ void RegAlloc::graph_color(AsmFunction &function,
     }
 
     auto live = blocks[block_index].live_out;
+    // Physical registers used as allocation candidates (a*/t*/s*) are only ever
+    // produced and consumed within a single block by instruction selection
+    // (argument/result/parameter moves around a call, the return value), so it
+    // is sound to start each block with no live physical registers. sp/x0 do
+    // cross blocks but are never allocation candidates, so they are irrelevant.
+    std::unordered_set<int> live_phys;
     for (auto inst_it = block->instructions.rbegin();
          inst_it != block->instructions.rend(); ++inst_it) {
       const auto &inst = *inst_it;
@@ -596,10 +610,14 @@ void RegAlloc::graph_color(AsmFunction &function,
       }
 
       std::vector<size_t> use_regs;
+      std::vector<int> use_phys;
       size_t reg_id = 0;
+      int phys_id = -1;
       for (const auto &use : inst->get_uses()) {
         if (is_virtual_register_operand(use, &reg_id)) {
           use_regs.push_back(reg_id);
+        } else if (is_physical_register_operand(use, &phys_id)) {
+          use_phys.push_back(phys_id);
         }
       }
       for (size_t i = 0; i < use_regs.size(); ++i) {
@@ -609,15 +627,34 @@ void RegAlloc::graph_color(AsmFunction &function,
       }
 
       size_t dst_id = 0;
+      int dst_phys = -1;
       if (is_virtual_register_operand(inst->get_dst(), &dst_id)) {
         for (size_t live_reg : live) {
           add_edge(dst_id, live_reg);
         }
+        auto dst_it = index_by_vreg.find(dst_id);
+        if (dst_it != index_by_vreg.end()) {
+          for (int p : live_phys) {
+            forbidden_phys[dst_it->second].insert(p);
+          }
+        }
         live.erase(dst_id);
+      } else if (is_physical_register_operand(inst->get_dst(), &dst_phys)) {
+        // A live vreg cannot occupy a physical register that is written here.
+        for (size_t live_reg : live) {
+          auto it = index_by_vreg.find(live_reg);
+          if (it != index_by_vreg.end()) {
+            forbidden_phys[it->second].insert(dst_phys);
+          }
+        }
+        live_phys.erase(dst_phys);
       }
 
       for (size_t use_reg : use_regs) {
         live.insert(use_reg);
+      }
+      for (int p : use_phys) {
+        live_phys.insert(p);
       }
     }
   }
@@ -626,15 +663,12 @@ void RegAlloc::graph_color(AsmFunction &function,
     graph[i].assign(edge_sets[i].begin(), edge_sets[i].end());
   }
 
-  auto available_colors = [&](const LiveInterval &interval) {
+  auto available_colors = [&](size_t node) {
     std::vector<int> colors;
-    const auto &candidates = candidate_registers(interval.crosses_call);
+    const auto &candidates = candidate_registers(intervals[node].crosses_call);
     colors.reserve(candidates.size());
     for (int phys_reg : candidates) {
-      auto fixed_it = fixed_reg_spans.find(phys_reg);
-      if (fixed_it != fixed_reg_spans.end() &&
-          overlaps_fixed_register(fixed_it->second, interval.start,
-                                interval.end)) {
+      if (forbidden_phys[node].find(phys_reg) != forbidden_phys[node].end()) {
         continue;
       }
       colors.push_back(phys_reg);
@@ -645,7 +679,7 @@ void RegAlloc::graph_color(AsmFunction &function,
   std::vector<std::vector<int>> colors(n);
   std::vector<size_t> order(n);
   for (size_t i = 0; i < n; ++i) {
-    colors[i] = available_colors(intervals[i]);
+    colors[i] = available_colors(i);
     order[i] = i;
   }
   std::sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) {
@@ -663,6 +697,59 @@ void RegAlloc::graph_color(AsmFunction &function,
     return intervals[lhs].vreg_id < intervals[rhs].vreg_id;
   });
 
+  // Move-bias / conservative coalescing data. For each node we collect the
+  // other nodes it is connected to by a `mv` (so we can prefer giving them the
+  // same color) and any physical registers it is moved to/from (so we can try
+  // to land the value directly in that register). Honoring a preference is
+  // always optional -- we only ever pick an already-available color -- so the
+  // coloring stays valid; coalesced copies become `mv xN, xN` and are deleted
+  // afterwards by remove_redundant_moves.
+  std::vector<std::vector<size_t>> move_partners(n);
+  std::vector<std::vector<int>> move_phys_prefs(n);
+  for (const auto &block : function.blocks) {
+    if (!block) {
+      continue;
+    }
+    for (const auto &inst : block->instructions) {
+      if (!inst || inst->get_opcode() != InstOpcode::MV) {
+        continue;
+      }
+      const auto &uses = inst->get_uses();
+      if (uses.empty()) {
+        continue;
+      }
+      size_t dv = 0, sv = 0;
+      int dp = -1, sp = -1;
+      const bool dst_vreg = is_virtual_register_operand(inst->get_dst(), &dv);
+      const bool src_vreg = is_virtual_register_operand(uses[0], &sv);
+      const bool dst_phys = is_physical_register_operand(inst->get_dst(), &dp);
+      const bool src_phys = is_physical_register_operand(uses[0], &sp);
+
+      auto idx_of = [&](size_t vreg) -> long {
+        auto it = index_by_vreg.find(vreg);
+        return it == index_by_vreg.end() ? -1 : static_cast<long>(it->second);
+      };
+
+      if (dst_vreg && src_vreg) {
+        long di = idx_of(dv), si = idx_of(sv);
+        if (di >= 0 && si >= 0 && di != si) {
+          move_partners[di].push_back(static_cast<size_t>(si));
+          move_partners[si].push_back(static_cast<size_t>(di));
+        }
+      } else if (dst_vreg && src_phys) {
+        long di = idx_of(dv);
+        if (di >= 0) {
+          move_phys_prefs[di].push_back(sp);
+        }
+      } else if (dst_phys && src_vreg) {
+        long si = idx_of(sv);
+        if (si >= 0) {
+          move_phys_prefs[si].push_back(dp);
+        }
+      }
+    }
+  }
+
   std::vector<int> assigned(n, -1);
   for (size_t index : order) {
     std::unordered_set<int> unavailable;
@@ -672,11 +759,36 @@ void RegAlloc::graph_color(AsmFunction &function,
       }
     }
 
+    auto is_allowed = [&](int candidate) {
+      return std::find(colors[index].begin(), colors[index].end(), candidate) !=
+                 colors[index].end() &&
+             unavailable.find(candidate) == unavailable.end();
+    };
+
     int color = -1;
-    for (int candidate : colors[index]) {
-      if (unavailable.find(candidate) == unavailable.end()) {
-        color = candidate;
+    // Prefer a move-related color first: a physical register this value is
+    // copied to/from, or the color already given to a move-related node.
+    for (int pref : move_phys_prefs[index]) {
+      if (is_allowed(pref)) {
+        color = pref;
         break;
+      }
+    }
+    if (color < 0) {
+      for (size_t partner : move_partners[index]) {
+        if (assigned[partner] >= 0 && is_allowed(assigned[partner])) {
+          color = assigned[partner];
+          break;
+        }
+      }
+    }
+
+    if (color < 0) {
+      for (int candidate : colors[index]) {
+        if (unavailable.find(candidate) == unavailable.end()) {
+          color = candidate;
+          break;
+        }
       }
     }
 
@@ -883,6 +995,31 @@ RegAlloc::create_spill_slot(AsmFunction &function) const {
   auto slot = std::make_shared<StackSlot>(offset, spill_slot_size_);
   function.stack_size = offset + spill_slot_size_;
   return slot;
+}
+
+void RegAlloc::remove_redundant_moves(AsmFunction &function) const {
+  for (auto &block : function.blocks) {
+    if (!block) {
+      continue;
+    }
+    std::vector<std::unique_ptr<AsmInst>> kept;
+    kept.reserve(block->instructions.size());
+    for (auto &inst : block->instructions) {
+      if (inst && inst->get_opcode() == InstOpcode::MV) {
+        const auto &uses = inst->get_uses();
+        int dst_id = -1;
+        int src_id = -1;
+        if (!uses.empty() &&
+            is_physical_register_operand(inst->get_dst(), &dst_id) &&
+            is_physical_register_operand(uses[0], &src_id) &&
+            dst_id == src_id) {
+          continue; // `mv xN, xN` is a no-op.
+        }
+      }
+      kept.push_back(std::move(inst));
+    }
+    block->instructions = std::move(kept);
+  }
 }
 
 void RegAlloc::clear_spill_flags(AsmFunction &function) const {

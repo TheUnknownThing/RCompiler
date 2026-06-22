@@ -91,6 +91,9 @@ private:
   std::shared_ptr<Register> create_physical_register(size_t id) const;
   std::shared_ptr<StackSlot> create_spill_slot(AsmFunction &function) const;
   void clear_spill_flags(AsmFunction &function) const;
+  // Drop `mv xN, xN` instructions left behind once move-biased coloring has
+  // coalesced both ends of a copy onto the same physical register.
+  void remove_redundant_moves(AsmFunction &function) const;
   void mark_spilled_registers(AsmFunction &function,
                             const std::unordered_set<size_t> &spilled) const;
   bool is_virtual_register_operand(const std::shared_ptr<AsmOperand> &operand,
